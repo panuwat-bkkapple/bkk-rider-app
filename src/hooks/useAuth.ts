@@ -7,7 +7,11 @@ export const useAuth = () => {
   useEffect(() => {
     const saved = sessionStorage.getItem('bkk_session');
     if (saved) {
-      setCurrentUser(JSON.parse(saved));
+      try {
+        setCurrentUser(JSON.parse(saved));
+      } catch {
+        sessionStorage.removeItem('bkk_session');
+      }
     }
   }, []);
 

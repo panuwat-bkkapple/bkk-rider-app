@@ -32,8 +32,12 @@ export const Register = ({ onBack }: { onBack: () => void }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!files.idCard || !files.selfie || !files.license) {
-      setError('กรุณาอัปโหลดเอกสารให้ครบถ้วน'); return;
+    const missingDocs = [];
+    if (!files.idCard) missingDocs.push('บัตรประชาชน');
+    if (!files.selfie) missingDocs.push('รูปเซลฟี่');
+    if (!files.license) missingDocs.push('ใบอนุญาตขับขี่');
+    if (missingDocs.length > 0) {
+      setError(`กรุณาอัปโหลดเอกสารให้ครบ: ${missingDocs.join(', ')}`); return;
     }
 
     setLoading(true); setError('');

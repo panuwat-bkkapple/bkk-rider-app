@@ -50,13 +50,13 @@ export const printReceipt = (job: any) => {
         <div class="info-grid">
           <div class="box">
             <div class="label">ผู้ขาย (Customer)</div>
-            <div class="value">${job.customer}</div>
-            <div style="margin-top: 5px; font-size: 14px;">โทร: ${job.phone}</div>
+            <div class="value">${job.customer || job.cust_name || '-'}</div>
+            <div style="margin-top: 5px; font-size: 14px;">โทร: ${job.phone || job.cust_phone || '-'}</div>
           </div>
           <div class="box">
             <div class="label">ผู้รับเครื่อง (Receiver)</div>
             <div class="value">BKK System (Admin)</div>
-            <div style="margin-top: 5px; font-size: 14px;">Method: ${job.method}</div>
+            <div style="margin-top: 5px; font-size: 14px;">Method: ${job.method || job.receive_method || '-'}</div>
           </div>
         </div>
 

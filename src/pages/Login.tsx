@@ -23,8 +23,8 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
     // ระบบตรวจสอบ PIN
     useEffect(() => {
         if (mode === 'enter_pin' && pin.length === 4) {
-            if (pin === savedPin) {
-                onLoginSuccess(savedRiderId!);
+            if (pin === savedPin && savedRiderId) {
+                onLoginSuccess(savedRiderId);
             } else {
                 setError('รหัส PIN ไม่ถูกต้อง');
                 setPin('');

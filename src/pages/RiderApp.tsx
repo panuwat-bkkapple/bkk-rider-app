@@ -334,7 +334,7 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string,
   const handleOpenNavigation = (job: any) => {
     const targetAddress = job.cust_address || job.address;
     if (!targetAddress) return alert("ไม่พบพิกัดหรือที่อยู่สำหรับนำทาง");
-    window.open(`https://www.google.com/maps/search/?api=1&query=$${encodeURIComponent(targetAddress)}`, '_blank');
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(targetAddress)}`, '_blank');
   };
 
   const handleCallCustomer = (job: any) => {
@@ -473,7 +473,7 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string,
     if (!amount || amount < 100) return alert('ระบุขั้นต่ำ 100 บาท');
     if (amount > jobData.balance) return alert('ยอดเงินไม่เพียงพอ');
     try {
-      await push(ref(db, 'jobs'), { rider_id: riderInfo.id, rider_name: riderInfo.name, withdraw_amount: amount, status: 'Withdrawal Requested', requested_at: Date.now(), type: 'Withdrawal', bank_name: riderInfo.bankName, bank_account: riderInfo.accountNo });
+      await push(ref(db, 'withdrawals'), { rider_id: riderInfo.id, rider_name: riderInfo.name, withdraw_amount: amount, status: 'Withdrawal Requested', requested_at: Date.now(), type: 'Withdrawal', bank_name: riderInfo.bankName, bank_account: riderInfo.accountNo });
       sendAdminNotification('💰 คำขอถอนเงิน', `ไรเดอร์ ${riderInfo.name} ขอเบิกเงิน ${formatCurrency(amount)}`);
       alert('ส่งคำขอถอนเงินสำเร็จ!'); setIsWithdrawModalOpen(false); setWithdrawAmount('');
     } catch (e) { alert(e); }
@@ -1075,7 +1075,7 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string,
             <div className="space-y-4">
               <div className="bg-gray-50 p-4 rounded-2xl"><label className="text-xs font-medium text-gray-500 block mb-1">ธนาคาร</label><input className="w-full bg-transparent font-bold text-gray-900 outline-none" value={riderInfo.bankName} onChange={e => setRiderInfo({ ...riderInfo, bankName: e.target.value })} /></div>
               <div className="bg-gray-50 p-4 rounded-2xl"><label className="text-xs font-medium text-gray-500 block mb-1">เลขบัญชี</label><input className="w-full bg-transparent font-bold text-gray-900 outline-none" value={riderInfo.accountNo} onChange={e => setRiderInfo({ ...riderInfo, accountNo: e.target.value })} /></div>
-              <button onClick={() => setIsBankModalOpen(false)} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold mt-4">บันทึกข้อมูล</button>
+              <button onClick={async () => { try { await update(ref(db, `riders/${currentRiderId}/bank`), { name: riderInfo.bankName, account: riderInfo.accountNo }); setIsBankModalOpen(false); } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e); } }} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold mt-4">บันทึกข้อมูล</button>
             </div>
           </div>
         </div>

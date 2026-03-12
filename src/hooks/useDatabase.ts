@@ -11,11 +11,11 @@ export const useDatabase = (path: string) => {
     const dbRef = ref(db, path);
     const unsubscribe = onValue(dbRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
+      if (val && typeof val === 'object') {
         // แปลง Object จาก Firebase เป็น Array พร้อมใส่ ID
         const list = Object.entries(val).map(([id, data]: [string, any]) => ({
           id,
-          ...data,
+          ...(typeof data === 'object' && data !== null ? data : { value: data }),
         }));
         setData(list);
       } else {

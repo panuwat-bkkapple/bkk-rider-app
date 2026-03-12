@@ -27,6 +27,7 @@ export const formatDate = (timestamp: number | string): string => {
 export const generateRefNo = (prefix: 'JOB' | 'PAY' | 'TXN' = 'TXN'): string => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeStr = now.getTime().toString(36).slice(-4).toUpperCase();
   const randomStr = Math.floor(1000 + Math.random() * 9000).toString();
-  return `${prefix}-${dateStr}-${randomStr}`;
+  return `${prefix}-${dateStr}-${timeStr}${randomStr}`;
 };
