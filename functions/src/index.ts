@@ -95,6 +95,7 @@ async function sendToRider(
 export const onJobStatusChanged = onValueWritten(
   {
     ref: "jobs/{jobId}/status",
+    instance: "bkk-apple-tradein-default-rtdb",
     region: "asia-southeast1",
   },
   async (event) => {
@@ -177,6 +178,7 @@ export const onJobStatusChanged = onValueWritten(
 export const onNewChatMessage = onValueWritten(
   {
     ref: "jobs/{jobId}/chats/{messageId}",
+    instance: "bkk-apple-tradein-default-rtdb",
     region: "asia-southeast1",
   },
   async (event) => {
@@ -232,6 +234,7 @@ export const onNewChatMessage = onValueWritten(
 export const onBroadcastJob = onValueWritten(
   {
     ref: "jobs/{jobId}/status",
+    instance: "bkk-apple-tradein-default-rtdb",
     region: "asia-southeast1",
   },
   async (event) => {
