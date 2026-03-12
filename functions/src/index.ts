@@ -1,4 +1,5 @@
 import * as admin from "firebase-admin";
+import * as functions from "firebase-functions";
 import { onValueWritten } from "firebase-functions/v2/database";
 import * as logger from "firebase-functions/logger";
 
@@ -174,25 +175,21 @@ export const onJobStatusChanged = onValueWritten(
 
 // ============================================================
 // 2. New Chat Message - notify rider when customer/admin sends
+// Uses v1 API for reliable RTDB onCreate trigger
 // ============================================================
-export const onNewChatMessage = onValueWritten(
-  {
-    ref: "jobs/{jobId}/chats/{messageId}",
-    instance: "bkk-apple-tradein-default-rtdb",
-    region: "asia-southeast1",
-  },
-  async (event) => {
-    // Only trigger on NEW messages (not updates)
-    if (event.data.before.exists()) return;
+export const onNewChatMessage = functions
+  .region("asia-southeast1")
+  .database.instance("bkk-apple-tradein-default-rtdb")
+  .ref("jobs/{jobId}/chats/{messageId}")
+  .onCreate(async (snapshot, context) => {
+    const message = snapshot.val();
+    const jobId = context.params.jobId;
 
-    const message = event.data.after.val();
-    const jobId = event.params.jobId;
-
-    logger.info("Chat message received", { jobId, sender: message?.sender, text: message?.text?.slice(0, 50) });
+    logger.info("Chat onCreate triggered", { jobId, sender: message?.sender, text: message?.text?.slice(0, 50) });
 
     // Only notify for messages NOT from rider
     if (!message || message.sender === "rider") {
-      logger.info("Skipping - sender is rider or no message");
+      logger.info("Skipping - sender is rider");
       return;
     }
 
@@ -210,7 +207,7 @@ export const onNewChatMessage = onValueWritten(
     }
 
     const tokens = await getRiderTokens(riderId);
-    logger.info("Rider tokens found", { riderId, tokenCount: tokens.length });
+    logger.info("Rider tokens", { riderId, count: tokens.length });
 
     if (tokens.length === 0) return;
 
@@ -221,12 +218,11 @@ export const onNewChatMessage = onValueWritten(
     await sendToRider(riderId, tokens, `💬 ${senderName}`, bodyText, {
       type: "chat",
       jobId,
-      messageId: event.params.messageId,
+      messageId: context.params.messageId,
     });
 
-    logger.info("Chat notification sent", { riderId, senderName });
-  }
-);
+    logger.info("Chat notification sent!", { riderId, senderName });
+  });
 
 // ============================================================
 // 3. Broadcast Job - notify all online riders for broadcast jobs
