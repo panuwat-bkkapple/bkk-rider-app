@@ -1,0 +1,150 @@
+// src/types/index.ts
+
+export interface RiderInfo {
+  name: string;
+  id: string;
+  bankName: string;
+  accountNo: string;
+  accountName: string;
+  idCardImg: string | null;
+  licenseImg: string | null;
+}
+
+export interface Job {
+  id: string;
+  model: string;
+  status: string;
+  rider_id?: string;
+  uid?: string;
+  OID?: string;
+  ref_no?: string;
+  receive_method?: string;
+  cust_name?: string;
+  customerName?: string;
+  customer_name?: string;
+  customer?: string;
+  cust_phone?: string;
+  customer_phone?: string;
+  phone?: string;
+  cust_address?: string;
+  address?: string;
+  address_detail?: string;
+  note?: string;
+  remark?: string;
+  price?: number;
+  final_price?: number;
+  net_payout?: number;
+  rider_fee?: number;
+  rider_fee_status?: string;
+  pickup_fee?: number;
+  applied_coupon?: { value?: number; actual_value?: number };
+  devices?: Device[];
+  photos?: string[];
+  deductions?: string[];
+  chats?: Record<string, ChatMessage>;
+  qc_logs?: QCLog[];
+  appointment_time?: number;
+  created_at?: number;
+  updated_at?: number;
+  completed_at?: number;
+  inspected_at?: number;
+  customer_accepted_at?: number;
+  cancel_reason?: string;
+  method?: string;
+  imei?: string;
+  slip_url?: string;
+  payment_slip?: string;
+  slipUrl?: string;
+  payment_info?: { slip_url?: string };
+  assessment_details?: { isNewDevice?: boolean; rawConditions?: Record<string, any> };
+  customer_conditions?: string[];
+}
+
+export interface Device {
+  device_id: string;
+  model: string;
+  variant?: string;
+  estimated_price?: number;
+  price?: number;
+  base_price?: number;
+  isNewDevice?: boolean;
+  rawConditions?: Record<string, any>;
+  customer_conditions?: string[];
+  photos?: string[];
+  deductions?: string[];
+  inspection_status?: string;
+}
+
+export interface ChatMessage {
+  sender: 'rider' | 'admin' | 'Customer';
+  senderName?: string;
+  text: string;
+  imageUrl?: string;
+  timestamp: number;
+  read: boolean;
+}
+
+export interface QCLog {
+  action: string;
+  by: string;
+  timestamp: number;
+  details: string;
+}
+
+export interface Transaction {
+  id: string;
+  rider_id: string;
+  amount: number;
+  type: 'CREDIT' | 'DEBIT';
+  category: string;
+  timestamp: number;
+  description?: string;
+  ref_job_id?: string;
+}
+
+export interface ConditionOption {
+  id: string;
+  label: string;
+  t1?: number;
+  t2?: number;
+  t3?: number;
+}
+
+export interface ConditionGroup {
+  id: string;
+  title: string;
+  options?: ConditionOption[];
+}
+
+export interface ModelData {
+  id: string;
+  name: string;
+  conditionSetId?: string;
+  variants?: ModelVariant[];
+}
+
+export interface ModelVariant {
+  name: string;
+  price?: number;
+  usedPrice?: number;
+}
+
+export interface InspectedDeviceData {
+  checks: string[];
+  photos: string[];
+  photoFiles: File[];
+  deductions: string[];
+  final_price: number;
+}
+
+export type TabId = 'home' | 'history' | 'wallet' | 'profile';
+export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
+
+export const REJECT_REASONS = [
+  'ลูกค้าไม่รับสาย / ติดต่อไม่ได้',
+  'ลูกค้าขอยกเลิก / เปลี่ยนใจ',
+  'รถเสีย / เกิดอุบัติเหตุฉุกเฉิน',
+  'สภาพอากาศไม่เอื้ออำนวย (ฝนตกหนัก)',
+  'ระยะทางไกลเกินไป / ไม่สะดวกรับงาน',
+  'อื่นๆ (โปรดระบุในแชท)'
+];

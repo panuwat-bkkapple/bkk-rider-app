@@ -4,6 +4,8 @@ import { ref, get } from 'firebase/database';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../api/firebase';
 
+const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
 export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (riderId: string) => void, onGoToRegister: () => void }) => {
     const savedRiderId = localStorage.getItem('rider_id');
     const savedPin = localStorage.getItem('device_pin');
@@ -20,7 +22,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // ระบบตรวจสอบ PIN
+    // PIN verification
     useEffect(() => {
         if (mode === 'enter_pin' && pin.length === 4) {
             if (pin === savedPin && savedRiderId) {
@@ -38,15 +40,12 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
             } else if (step === 2 && pin.length === 4) {
                 if (pin === confirmPin) {
                     localStorage.setItem('device_pin', pin);
-
-                    // ดึง ID ตัวจริงที่บันทึกไว้ตอนใส่อีเมลมาใช้
                     const currentId = localStorage.getItem('rider_id');
                     if (currentId) {
                         onLoginSuccess(currentId);
                     } else {
                         setError('เกิดข้อผิดพลาด กรุณาออกจากระบบแล้วเข้าใหม่');
                     }
-
                 } else {
                     setError('รหัสไม่ตรงกัน กรุณาตั้งใหม่');
                     setStep(1);
@@ -57,39 +56,39 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
         }
     }, [pin, mode, step, savedPin, savedRiderId, confirmPin, onLoginSuccess]);
 
-    // ระบบเข้าสู่ระบบด้วย Email
+    // Email login with validation
     const handleEmailLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true); 
-        setError('');
-        
-        localStorage.removeItem('rider_id');
-        localStorage.removeItem('device_pin');
-
-        // ตัดช่องว่างล่องหนทิ้งให้หมด
         const cleanEmail = email.trim();
         const cleanPassword = password.trim();
 
+        if (!validateEmail(cleanEmail)) {
+            setError('รูปแบบอีเมลไม่ถูกต้อง');
+            return;
+        }
+        if (cleanPassword.length < 6) {
+            setError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+        localStorage.removeItem('rider_id');
+        localStorage.removeItem('device_pin');
+
         try {
-            // 1. ล็อกอินเข้า Firebase
             const userCred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-            
-            // 2. ดึงแค่ข้อมูลของตัวเอง (ใช้ UID)
             const uid = userCred.user.uid;
             const snapshot = await get(ref(db, `riders/${uid}`));
 
             if (snapshot.exists()) {
                 const riderData = snapshot.val();
-
-                // 3. เช็คว่าแอดมินอนุมัติหรือยัง
                 if (riderData.status === 'Pending') {
                     await signOut(auth);
                     setError('บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน');
                     setLoading(false);
                     return;
                 }
-
-                // 4. บันทึกและพาไปหน้าตั้ง PIN
                 localStorage.setItem('rider_id', uid);
                 setMode('create_pin');
                 setPin('');
@@ -99,8 +98,6 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
             }
         } catch (err: any) {
             console.error("Login Error:", err.message);
-            
-            // แยกประเภท Error ให้ชัดเจน
             if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
                 setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
             } else {
@@ -111,31 +108,31 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
         }
     };
 
-    // 🌟 ระบบส่งลิงก์รีเซ็ตรหัสผ่าน (แก้ไขอาการปุ่มโหลดค้าง)
+    // Forgot password with validation
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!email.trim()) {
+        const cleanEmail = email.trim();
+        if (!cleanEmail) {
             setError('กรุณากรอกอีเมลของคุณก่อนครับ');
             return;
         }
-        
+        if (!validateEmail(cleanEmail)) {
+            setError('รูปแบบอีเมลไม่ถูกต้อง');
+            return;
+        }
+
         setLoading(true);
         setError('');
-        
+
         try {
-            await sendPasswordResetEmail(auth, email.trim());
-            
-            // 🌟 THE FIX: สั่งปิด Loading และเปลี่ยนหน้าทันที "ก่อน" ที่จะเรียก Alert
+            await sendPasswordResetEmail(auth, cleanEmail);
             setLoading(false);
-            setMode('email'); 
-            
-            // ใช้ setTimeout ช่วยหน่วงนิดนึงให้ React เรนเดอร์หน้าเสร็จก่อนเด้งแจ้งเตือน
+            setMode('email');
             setTimeout(() => {
                 alert('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! \nกรุณาเช็คกล่องข้อความ (หรือโฟลเดอร์ขยะ/Spam) ด้วยนะครับ');
             }, 100);
-
         } catch (err: any) {
-            setLoading(false); // ปิดโหลดเมื่อเกิด Error
+            setLoading(false);
             console.error("Reset Password Error:", err.message);
             if (err.code === 'auth/invalid-email') {
                 setError('รูปแบบอีเมลไม่ถูกต้องครับ');
@@ -145,7 +142,6 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
         }
     };
 
-    // ปุ่มรีเซ็ตเครื่อง / สลับบัญชี
     const handleResetDevice = async () => {
         if (window.confirm('ต้องการออกจากระบบและตั้งค่าเครื่องใหม่หรือไม่?')) {
             await signOut(auth);
@@ -162,7 +158,6 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
     return (
         <div className="min-h-screen bg-[#F3F4F6] flex flex-col justify-center items-center p-6 relative">
-            {/* ปุ่มสลับบัญชี (จะโชว์เฉพาะตอนที่มี PIN ผูกกับเครื่องแล้ว) */}
             {mode === 'enter_pin' && (
                 <button onClick={handleResetDevice} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 flex items-center gap-1 text-xs font-medium bg-white px-3 py-2 rounded-full shadow-sm">
                     <LogOut size={14} /> สลับบัญชี
@@ -171,12 +166,11 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
             <div className="w-full max-w-sm bg-white rounded-[2.5rem] p-8 shadow-xl text-center">
                 <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-                    {mode === 'email' ? <Mail size={40} /> : <Lock size={40} />}
+                    {mode === 'email' || mode === 'forgot_password' ? <Mail size={40} /> : <Lock size={40} />}
                 </div>
 
                 <h1 className="text-2xl font-bold text-gray-900 mb-2">BKK Rider</h1>
 
-                {/* 🌟 แสดงข้อความอธิบายให้ตรงกับโหมด */}
                 <p className="text-sm text-gray-500 mb-8">
                     {mode === 'forgot_password' ? 'กรอกอีเมลของคุณเพื่อรับลิงก์ตั้งรหัสผ่านใหม่' :
                     mode === 'email' ? 'เข้าสู่ระบบด้วยอีเมลพนักงาน' :
@@ -187,15 +181,14 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
                 {error && <div className="text-red-500 text-sm mb-4 font-medium animate-pulse bg-red-50 p-2 rounded-xl">{error}</div>}
 
-                {/* 🌟 โหมดลืมรหัสผ่าน */}
                 {mode === 'forgot_password' ? (
                     <form onSubmit={handleForgotPassword} className="space-y-4">
                         <div className="relative">
                             <Mail className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                            <input 
-                                type="email" placeholder="อีเมลพนักงาน" required 
+                            <input
+                                type="email" placeholder="อีเมลพนักงาน" required
                                 value={email} onChange={(e) => setEmail(e.target.value)}
-                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium" 
+                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium"
                             />
                         </div>
                         <button type="submit" disabled={loading} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold text-lg shadow-lg hover:bg-emerald-600 active:scale-95 transition-all mt-4">
@@ -205,27 +198,25 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
                             ย้อนกลับ
                         </button>
                     </form>
-
                 ) : mode === 'email' ? (
                     <form onSubmit={handleEmailLogin} className="space-y-4">
                         <div className="relative">
                             <Mail className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                            <input 
-                                type="email" placeholder="อีเมลพนักงาน" required 
+                            <input
+                                type="email" placeholder="อีเมลพนักงาน" required
                                 value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" autoComplete="off"
-                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium" 
+                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium"
                             />
                         </div>
                         <div className="relative">
                             <Lock className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                            <input 
-                                type="password" placeholder="รหัสผ่าน (6 ตัวอักษรขึ้นไป)" required 
+                            <input
+                                type="password" placeholder="รหัสผ่าน (6 ตัวอักษรขึ้นไป)" required
                                 value={password} onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium" 
+                                className="w-full bg-gray-50 py-3 pl-12 pr-4 rounded-2xl border border-gray-200 outline-none focus:border-emerald-500 transition-all font-medium"
                             />
                         </div>
 
-                        {/* 🌟 ปุ่มลืมรหัสผ่าน (เพิ่มเข้ามาใหม่) */}
                         <div className="flex justify-end">
                             <button type="button" onClick={() => { setMode('forgot_password'); setError(''); }} className="text-sm font-bold text-emerald-600 hover:text-emerald-700">
                                 ลืมรหัสผ่าน?
