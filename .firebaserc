@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "bkk-apple-tradein"
+  },
+  "targets": {
+    "bkk-apple-tradein": {
+      "hosting": {
+        "rider": ["bkk-rider-app"]
+      }
+    }
+  }
+}
