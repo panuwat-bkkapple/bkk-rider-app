@@ -32,7 +32,8 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
     jobData, riderInfo, setRiderInfo,
     isOnline, setIsOnline,
     modelsData, conditionSets,
-    jobsLoading
+    jobsLoading,
+    hasMoreTx, loadMoreTx
   } = useRiderData(currentRiderId);
 
   const actions = useJobActions(riderInfo);
@@ -160,6 +161,8 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
         <WalletTab
           balance={jobData.balance}
           transactions={jobData.transactions}
+          hasMoreTx={hasMoreTx}
+          onLoadMoreTx={loadMoreTx}
           onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
         />
       )}

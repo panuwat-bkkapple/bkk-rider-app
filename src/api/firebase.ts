@@ -2,18 +2,26 @@ import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyB4AMaQ2cAEj8zVkLpIOSIiW9CV_wzP7BQ",
-    authDomain: "bkk-apple-tradein.firebaseapp.com",
-    databaseURL: "https://bkk-apple-tradein-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "bkk-apple-tradein",
-    storageBucket: "bkk-apple-tradein.firebasestorage.app",
-    messagingSenderId: "786220636196",
-    appId: "1:786220636196:web:91c95c2f9265d5f66ba0b1"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+// FCM - initialize only if supported (not in all browsers)
+export const getFirebaseMessaging = async () => {
+  const supported = await isSupported();
+  if (supported) return getMessaging(app);
+  return null;
+};

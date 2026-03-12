@@ -4,11 +4,12 @@ import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
-import type { RiderInfo, Job, Transaction } from '../types';
+import { usePaginatedDatabase } from './usePaginatedDatabase';
+import type { RiderInfo } from '../types';
 
 export const useRiderData = (currentRiderId: string) => {
   const { data: jobs, loading: jobsLoading } = useDatabase('jobs');
-  const { data: transactions, loading: txLoading } = useDatabase('transactions');
+  const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp');
   const { data: modelsData, loading: modelsLoading } = useDatabase('models');
   const { data: conditionSets, loading: conditionsLoading } = useDatabase('settings/condition_sets');
 
@@ -124,6 +125,7 @@ export const useRiderData = (currentRiderId: string) => {
     isOnline, setIsOnline,
     modelsData, conditionSets,
     jobsLoading, txLoading, modelsLoading, conditionsLoading,
+    hasMoreTx, loadMoreTx,
     dispatchMode
   };
 };

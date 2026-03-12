@@ -5,10 +5,12 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 interface WalletTabProps {
   balance: number;
   transactions: any[];
+  hasMoreTx?: boolean;
+  onLoadMoreTx?: () => void;
   onOpenWithdraw: () => void;
 }
 
-export const WalletTab = ({ balance, transactions, onOpenWithdraw }: WalletTabProps) => (
+export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
   <div className="h-full bg-[#F9FAFB] overflow-y-auto pb-32 animate-in fade-in">
     {/* Header */}
     <div className="bg-emerald-600 p-8 pt-16 pb-12 text-white rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
@@ -45,6 +47,14 @@ export const WalletTab = ({ balance, transactions, onOpenWithdraw }: WalletTabPr
             </div>
           </div>
         ))
+      )}
+      {hasMoreTx && onLoadMoreTx && (
+        <button
+          onClick={onLoadMoreTx}
+          className="w-full py-3 text-sm font-bold text-emerald-600 bg-emerald-50 rounded-2xl hover:bg-emerald-100 transition-colors"
+        >
+          โหลดเพิ่มเติม
+        </button>
       )}
     </div>
   </div>
