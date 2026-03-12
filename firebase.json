@@ -8,6 +8,6 @@
   "functions": {
     "source": "functions",
     "codebase": "rider-notifications",
-    "runtime": "nodejs18"
+    "runtime": "nodejs20"
   }
 }
