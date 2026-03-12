@@ -176,7 +176,7 @@ export const onJobStatusChanged = onValueWritten(
 // ============================================================
 export const onNewChatMessage = onValueCreated(
   {
-    ref: "jobs/{jobId}/chat/{messageId}",
+    ref: "jobs/{jobId}/chats/{messageId}",
     region: "asia-southeast1",
   },
   async (event) => {
@@ -184,7 +184,7 @@ export const onNewChatMessage = onValueCreated(
     const jobId = event.params.jobId;
 
     // Only notify for messages NOT from rider
-    if (message.sender_type === "rider") return;
+    if (message.sender === "rider") return;
 
     // Get job to find rider_id
     const jobSnap = await db.ref(`jobs/${jobId}`).get();
@@ -196,8 +196,8 @@ export const onNewChatMessage = onValueCreated(
     const tokens = await getRiderTokens(riderId);
     if (tokens.length === 0) return;
 
-    const senderName = message.sender_name || "ลูกค้า";
-    const isImage = message.type === "image";
+    const senderName = message.senderName || (message.sender === "Customer" ? "ลูกค้า" : "แอดมิน");
+    const isImage = !!message.imageUrl;
     const bodyText = isImage ? "📷 ส่งรูปภาพ" : (message.text || "ข้อความใหม่");
 
     await sendToRider(riderId, tokens, `💬 ${senderName}`, bodyText, {
