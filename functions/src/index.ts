@@ -1,6 +1,6 @@
 import * as admin from "firebase-admin";
 import { onValueWritten } from "firebase-functions/v2/database";
-import { onValueCreated } from "firebase-functions/v2/database";
+import * as logger from "firebase-functions/logger";
 
 admin.initializeApp();
 
@@ -174,26 +174,42 @@ export const onJobStatusChanged = onValueWritten(
 // ============================================================
 // 2. New Chat Message - notify rider when customer/admin sends
 // ============================================================
-export const onNewChatMessage = onValueCreated(
+export const onNewChatMessage = onValueWritten(
   {
     ref: "jobs/{jobId}/chats/{messageId}",
     region: "asia-southeast1",
   },
   async (event) => {
-    const message = event.data.val();
+    // Only trigger on NEW messages (not updates)
+    if (event.data.before.exists()) return;
+
+    const message = event.data.after.val();
     const jobId = event.params.jobId;
 
+    logger.info("Chat message received", { jobId, sender: message?.sender, text: message?.text?.slice(0, 50) });
+
     // Only notify for messages NOT from rider
-    if (message.sender === "rider") return;
+    if (!message || message.sender === "rider") {
+      logger.info("Skipping - sender is rider or no message");
+      return;
+    }
 
     // Get job to find rider_id
     const jobSnap = await db.ref(`jobs/${jobId}`).get();
-    if (!jobSnap.exists()) return;
+    if (!jobSnap.exists()) {
+      logger.warn("Job not found", { jobId });
+      return;
+    }
     const job = jobSnap.val();
     const riderId = job.rider_id;
-    if (!riderId) return;
+    if (!riderId) {
+      logger.warn("No rider_id on job", { jobId });
+      return;
+    }
 
     const tokens = await getRiderTokens(riderId);
+    logger.info("Rider tokens found", { riderId, tokenCount: tokens.length });
+
     if (tokens.length === 0) return;
 
     const senderName = message.senderName || (message.sender === "Customer" ? "ลูกค้า" : "แอดมิน");
@@ -205,6 +221,8 @@ export const onNewChatMessage = onValueCreated(
       jobId,
       messageId: event.params.messageId,
     });
+
+    logger.info("Chat notification sent", { riderId, senderName });
   }
 );
 
