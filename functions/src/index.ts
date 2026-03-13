@@ -1,6 +1,6 @@
 import * as admin from "firebase-admin";
-import * as functions from "firebase-functions";
 import { onValueWritten } from "firebase-functions/v2/database";
+import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 
 admin.initializeApp();
@@ -174,55 +174,66 @@ export const onJobStatusChanged = onValueWritten(
 );
 
 // ============================================================
-// 2. New Chat Message - notify rider when customer/admin sends
-// Uses v1 API for reliable RTDB onCreate trigger
+// 2. Chat Notification - HTTP endpoint called by client apps
+// POST /notifyChatMessage { jobId, sender, senderName, text }
 // ============================================================
-export const onNewChatMessage = functions
-  .region("asia-southeast1")
-  .database.instance("bkk-apple-tradein-default-rtdb")
-  .ref("jobs/{jobId}/chats/{messageId}")
-  .onCreate(async (snapshot, context) => {
-    const message = snapshot.val();
-    const jobId = context.params.jobId;
+export const notifyChatMessage = onRequest(
+  { region: "asia-southeast1", cors: true },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method not allowed");
+      return;
+    }
 
-    logger.info("Chat onCreate triggered", { jobId, sender: message?.sender, text: message?.text?.slice(0, 50) });
+    const { jobId, sender, senderName, text, imageUrl } = req.body;
 
-    // Only notify for messages NOT from rider
-    if (!message || message.sender === "rider") {
-      logger.info("Skipping - sender is rider");
+    logger.info("notifyChatMessage called", { jobId, sender, senderName });
+
+    if (!jobId || !sender) {
+      res.status(400).json({ error: "jobId and sender are required" });
+      return;
+    }
+
+    // Don't notify rider for their own messages
+    if (sender === "rider") {
+      res.status(200).json({ skipped: true, reason: "sender is rider" });
       return;
     }
 
     // Get job to find rider_id
     const jobSnap = await db.ref(`jobs/${jobId}`).get();
     if (!jobSnap.exists()) {
-      logger.warn("Job not found", { jobId });
+      res.status(404).json({ error: "Job not found" });
       return;
     }
     const job = jobSnap.val();
     const riderId = job.rider_id;
     if (!riderId) {
-      logger.warn("No rider_id on job", { jobId });
+      res.status(200).json({ skipped: true, reason: "no rider_id" });
       return;
     }
 
     const tokens = await getRiderTokens(riderId);
     logger.info("Rider tokens", { riderId, count: tokens.length });
 
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      res.status(200).json({ skipped: true, reason: "no tokens" });
+      return;
+    }
 
-    const senderName = message.senderName || (message.sender === "Customer" ? "ลูกค้า" : "แอดมิน");
-    const isImage = !!message.imageUrl;
-    const bodyText = isImage ? "📷 ส่งรูปภาพ" : (message.text || "ข้อความใหม่");
+    const displayName = senderName || (sender === "Customer" ? "ลูกค้า" : "แอดมิน");
+    const isImage = !!imageUrl;
+    const bodyText = isImage ? "📷 ส่งรูปภาพ" : (text || "ข้อความใหม่");
 
-    await sendToRider(riderId, tokens, `💬 ${senderName}`, bodyText, {
+    await sendToRider(riderId, tokens, `💬 ${displayName}`, bodyText, {
       type: "chat",
       jobId,
-      messageId: context.params.messageId,
     });
 
-    logger.info("Chat notification sent!", { riderId, senderName });
-  });
+    logger.info("Chat notification sent!", { riderId, displayName });
+    res.status(200).json({ success: true, tokenCount: tokens.length });
+  }
+);
 
 // ============================================================
 // 3. Broadcast Job - notify all online riders for broadcast jobs
