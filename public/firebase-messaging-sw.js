@@ -8,12 +8,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT.firebasestorage.app',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID'
+  apiKey: 'AIzaSyB4AMaQ2cAEj8zVkLpIOSIiW9CV_wzP7BQ',
+  authDomain: 'bkk-apple-tradein.firebaseapp.com',
+  projectId: 'bkk-apple-tradein',
+  storageBucket: 'bkk-apple-tradein.firebasestorage.app',
+  messagingSenderId: '786220636196',
+  appId: '1:786220636196:web:91c95c2f9265d5f66ba0b1'
 });
 
 const messaging = firebase.messaging();
