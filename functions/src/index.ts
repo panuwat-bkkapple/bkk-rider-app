@@ -173,9 +173,76 @@ export const onJobStatusChanged = onValueWritten(
   }
 );
 
+// Helper: Get all admin FCM tokens
+async function getAllAdminTokens(): Promise<{ tokens: string[]; tokenPaths: string[] }> {
+  const tokens: string[] = [];
+  const tokenPaths: string[] = [];
+
+  const adminTokensSnap = await db.ref("admin_fcm_tokens").get();
+  if (!adminTokensSnap.exists()) return { tokens, tokenPaths };
+
+  const allAdmins = adminTokensSnap.val();
+  for (const staffId of Object.keys(allAdmins)) {
+    const staffTokens = allAdmins[staffId];
+    for (const key of Object.keys(staffTokens)) {
+      if (staffTokens[key]?.token) {
+        tokens.push(staffTokens[key].token);
+        tokenPaths.push(`admin_fcm_tokens/${staffId}/${key}`);
+      }
+    }
+  }
+
+  return { tokens, tokenPaths };
+}
+
+// Helper: Send notification to admin tokens, clean up invalid ones
+async function sendToAdmins(
+  tokens: string[],
+  tokenPaths: string[],
+  title: string,
+  body: string,
+  data?: Record<string, string>
+): Promise<void> {
+  if (tokens.length === 0) return;
+
+  const message: admin.messaging.MulticastMessage = {
+    tokens,
+    notification: { title, body },
+    data: data || {},
+    webpush: {
+      notification: {
+        icon: "/vite.svg",
+      },
+    },
+  };
+
+  const response = await messaging.sendEachForMulticast(message);
+
+  // Clean up invalid tokens
+  if (response.failureCount > 0) {
+    const updates: Record<string, null> = {};
+    response.responses.forEach((resp, idx) => {
+      if (!resp.success) {
+        const errorCode = resp.error?.code;
+        if (
+          errorCode === "messaging/invalid-registration-token" ||
+          errorCode === "messaging/registration-token-not-registered"
+        ) {
+          updates[tokenPaths[idx]] = null;
+        }
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      await db.ref().update(updates);
+    }
+  }
+}
+
 // ============================================================
 // 2. Chat Notification - HTTP endpoint called by client apps
 // POST /notifyChatMessage { jobId, sender, senderName, text }
+// Notifies rider (from admin/customer) AND admins (from rider/customer)
 // ============================================================
 export const notifyChatMessage = onRequest(
   { region: "asia-southeast1", cors: true },
@@ -194,44 +261,52 @@ export const notifyChatMessage = onRequest(
       return;
     }
 
-    // Don't notify rider for their own messages
-    if (sender === "rider") {
-      res.status(200).json({ skipped: true, reason: "sender is rider" });
-      return;
-    }
-
-    // Get job to find rider_id
     const jobSnap = await db.ref(`jobs/${jobId}`).get();
     if (!jobSnap.exists()) {
       res.status(404).json({ error: "Job not found" });
       return;
     }
     const job = jobSnap.val();
-    const riderId = job.rider_id;
-    if (!riderId) {
-      res.status(200).json({ skipped: true, reason: "no rider_id" });
-      return;
-    }
 
-    const tokens = await getRiderTokens(riderId);
-    logger.info("Rider tokens", { riderId, count: tokens.length });
-
-    if (tokens.length === 0) {
-      res.status(200).json({ skipped: true, reason: "no tokens" });
-      return;
-    }
-
-    const displayName = senderName || (sender === "Customer" ? "ลูกค้า" : "แอดมิน");
+    const displayName = senderName || (sender === "Customer" ? "ลูกค้า" : sender === "rider" ? "ไรเดอร์" : "แอดมิน");
     const isImage = !!imageUrl;
     const bodyText = isImage ? "📷 ส่งรูปภาพ" : (text || "ข้อความใหม่");
+    const modelName = job.model || job.devices?.[0]?.model || "";
 
-    await sendToRider(riderId, tokens, `💬 ${displayName}`, bodyText, {
-      type: "chat",
-      jobId,
-    });
+    const results: string[] = [];
 
-    logger.info("Chat notification sent!", { riderId, displayName });
-    res.status(200).json({ success: true, tokenCount: tokens.length });
+    // 1. Notify rider (if sender is NOT rider)
+    if (sender !== "rider") {
+      const riderId = job.rider_id;
+      if (riderId) {
+        const tokens = await getRiderTokens(riderId);
+        if (tokens.length > 0) {
+          await sendToRider(riderId, tokens, `💬 ${displayName}`, bodyText, {
+            type: "chat",
+            jobId,
+          });
+          results.push(`rider:${tokens.length}`);
+        }
+      }
+    }
+
+    // 2. Notify admins (if sender is NOT admin)
+    if (sender !== "Admin" && sender !== "admin") {
+      const { tokens, tokenPaths } = await getAllAdminTokens();
+      if (tokens.length > 0) {
+        await sendToAdmins(
+          tokens,
+          tokenPaths,
+          `💬 ${displayName} (${modelName || jobId.slice(-4)})`,
+          bodyText,
+          { type: "chat", jobId }
+        );
+        results.push(`admins:${tokens.length}`);
+      }
+    }
+
+    logger.info("Chat notification sent!", { results });
+    res.status(200).json({ success: true, notified: results });
   }
 );
 

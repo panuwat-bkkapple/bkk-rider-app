@@ -35,11 +35,18 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   const handleSendMessage = async () => {
     if (!chatJob || !chatText.trim()) return;
     try {
+      const msgText = chatText.trim();
       await push(ref(db, `jobs/${chatJob.id}/chats`), {
         sender: 'rider', senderName: riderInfo.name,
-        text: chatText.trim(), timestamp: Date.now(), read: false
+        text: msgText, timestamp: Date.now(), read: false
       });
       sendAdminNotification('แชทใหม่จากไรเดอร์', `ไรเดอร์ ${riderInfo.name} ส่งข้อความในงาน ${orderIdDisplay}`);
+      // Notify admins via Cloud Function (push notification)
+      fetch('https://asia-southeast1-bkk-apple-tradein.cloudfunctions.net/notifyChatMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: chatJob.id, sender: 'rider', senderName: riderInfo.name, text: msgText }),
+      }).catch(() => {});
       setChatText('');
     } catch {
       alert('ไม่สามารถส่งข้อความได้ กรุณาลองใหม่');
@@ -57,6 +64,11 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
         text: 'ส่งรูปภาพ', imageUrl, timestamp: Date.now(), read: false
       });
       sendAdminNotification('รูปภาพใหม่จากไรเดอร์', `ไรเดอร์ ${riderInfo.name} ส่งรูปภาพในงาน ${orderIdDisplay}`);
+      fetch('https://asia-southeast1-bkk-apple-tradein.cloudfunctions.net/notifyChatMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: chatJob.id, sender: 'rider', senderName: riderInfo.name, imageUrl }),
+      }).catch(() => {});
     } catch {
       alert('ไม่สามารถอัปโหลดรูปภาพได้ กรุณาลองใหม่');
     } finally {
