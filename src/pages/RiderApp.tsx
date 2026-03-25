@@ -61,15 +61,15 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
     : null;
 
   // Handlers
-  const handleUpdateStatus = (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => {
-    actions.updateStatus(jobId, nextStatus, logMsg, extraData || {}, {
+  const handleUpdateStatus = async (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => {
+    await actions.updateStatus(jobId, nextStatus, logMsg, extraData || {}, {
       activeList: jobData.activeList,
       incomingList: jobData.incomingList
     });
   };
 
-  const handleAcceptJob = (jobId: string, extraData: any) => {
-    handleUpdateStatus(jobId, 'Accepted', 'ไรเดอร์กดรับงาน', extraData);
+  const handleAcceptJob = async (jobId: string, extraData: any) => {
+    await handleUpdateStatus(jobId, 'Accepted', 'ไรเดอร์กดรับงาน', extraData);
   };
 
   const handleInspectionSubmit = async (job: any, inspectedData: Record<number, InspectedDeviceData>) => {
