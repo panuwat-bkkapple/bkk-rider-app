@@ -22,6 +22,10 @@ export const useDatabase = (path: string) => {
         setData([]);
       }
       setLoading(false);
+    }, (error) => {
+      console.error(`useDatabase error on "${path}":`, error.message);
+      setData([]);
+      setLoading(false);
     });
 
     return () => unsubscribe();
