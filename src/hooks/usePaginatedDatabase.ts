@@ -40,6 +40,11 @@ export const usePaginatedDatabase = (path: string, orderBy: string = 'timestamp'
         setHasMore(false);
       }
       setLoading(false);
+    }, (error) => {
+      console.error(`usePaginatedDatabase error on "${path}":`, error.message);
+      setData([]);
+      setHasMore(false);
+      setLoading(false);
     });
 
     return () => unsubscribe();
