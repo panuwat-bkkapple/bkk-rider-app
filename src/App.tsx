@@ -5,6 +5,7 @@ import { auth } from './api/firebase';
 import { RiderApp } from './pages/RiderApp';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Checkout } from './pages/Checkout';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -25,6 +26,11 @@ const LoginPage = ({ onLoginSuccess }: { onLoginSuccess: (id: string) => void })
 const RegisterPage = () => {
   const navigate = useNavigate();
   return <Register onBack={() => navigate('/login')} />;
+};
+
+const CheckoutPage = () => {
+  const navigate = useNavigate();
+  return <Checkout onBack={() => navigate('/')} />;
 };
 
 function App() {
@@ -80,6 +86,12 @@ function App() {
             path="/register"
             element={
               riderId ? <Navigate to="/" replace /> : <RegisterPage />
+            }
+          />
+          <Route
+            path="/checkout"
+            element={
+              riderId ? <CheckoutPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
