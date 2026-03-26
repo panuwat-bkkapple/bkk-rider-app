@@ -1,5 +1,5 @@
 // src/pages/Checkout.tsx - Checkout page with multi-step form
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   ArrowLeft,
   User,
@@ -63,10 +63,26 @@ export const Checkout = ({ onBack }: CheckoutProps) => {
     }, 2000);
   };
 
+  // Tour requests a target that's on a different form step
+  const STEP2_TARGETS = ['location-bar', 'service-cards', 'confirm-button'];
+  const STEP1_TARGETS = ['fullname', 'phone', 'email', 'next-button'];
+
+  const handleTourRequestStep = useCallback((target: string) => {
+    if (STEP2_TARGETS.some((t) => target.includes(t)) && step !== 2) {
+      setStep(2);
+      return true;
+    }
+    if (STEP1_TARGETS.some((t) => target.includes(t)) && step !== 1) {
+      setStep(1);
+      return true;
+    }
+    return false;
+  }, [step]);
+
   return (
     <div className="min-h-screen bg-[#F3F4F6] max-w-md mx-auto relative font-sans text-gray-800">
       {/* Product Tour */}
-      <ProductTour />
+      <ProductTour onRequestStep={handleTourRequestStep} />
 
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 z-20">

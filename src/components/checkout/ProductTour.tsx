@@ -10,11 +10,10 @@ export interface TourStep {
   /** Description shown in the tooltip */
   description: string;
   /** Position of the tooltip relative to the target */
-  placement?: 'top' | 'bottom' | 'left' | 'right';
+  placement?: 'top' | 'bottom';
 }
 
 const TOUR_STORAGE_KEY = 'checkout_tour_completed';
-const MOBILE_MAX_WIDTH = 768;
 
 const DEFAULT_STEPS: TourStep[] = [
   {
@@ -61,19 +60,22 @@ const DEFAULT_STEPS: TourStep[] = [
   },
 ];
 
-/** Check if the device is mobile-sized */
-function isMobile(): boolean {
-  return window.innerWidth <= MOBILE_MAX_WIDTH;
-}
-
 /** Check if tour was already completed */
 function isTourCompleted(): boolean {
-  return localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
+  try {
+    return localStorage.getItem(TOUR_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
 }
 
 /** Mark the tour as completed */
 function markTourCompleted(): void {
-  localStorage.setItem(TOUR_STORAGE_KEY, 'true');
+  try {
+    localStorage.setItem(TOUR_STORAGE_KEY, 'true');
+  } catch {
+    // localStorage not available
+  }
 }
 
 interface SpotlightRect {
@@ -83,27 +85,27 @@ interface SpotlightRect {
   height: number;
 }
 
-interface TooltipPosition {
-  top?: number;
-  bottom?: number;
-  left: number;
-  maxWidth: number;
+interface TooltipStyle {
+  top?: string;
+  bottom?: string;
+  left: string;
+  width: string;
 }
 
 function getSpotlightRect(el: Element, padding = 8): SpotlightRect {
   const rect = el.getBoundingClientRect();
   return {
-    top: rect.top - padding + window.scrollY,
+    top: rect.top - padding,
     left: rect.left - padding,
     width: rect.width + padding * 2,
     height: rect.height + padding * 2,
   };
 }
 
-function getTooltipPosition(
+function getTooltipStyle(
   spotlight: SpotlightRect,
-  placement: 'top' | 'bottom' | 'left' | 'right'
-): TooltipPosition {
+  placement: 'top' | 'bottom'
+): TooltipStyle {
   const gap = 12;
   const maxWidth = Math.min(320, window.innerWidth - 32);
   const centeredLeft = Math.max(
@@ -116,40 +118,43 @@ function getTooltipPosition(
 
   if (placement === 'top') {
     return {
-      bottom: window.innerHeight - (spotlight.top - window.scrollY) + gap,
-      left: centeredLeft,
-      maxWidth,
+      bottom: `${window.innerHeight - spotlight.top + gap}px`,
+      left: `${centeredLeft}px`,
+      width: `${maxWidth}px`,
     };
   }
-  // default: bottom
   return {
-    top: spotlight.top - window.scrollY + spotlight.height + gap,
-    left: centeredLeft,
-    maxWidth,
+    top: `${spotlight.top + spotlight.height + gap}px`,
+    left: `${centeredLeft}px`,
+    width: `${maxWidth}px`,
   };
 }
 
 export function ProductTour({
   steps = DEFAULT_STEPS,
   onComplete,
+  onRequestStep,
   forceShow = false,
 }: {
   steps?: TourStep[];
   onComplete?: () => void;
+  /** Called when the tour needs a target that isn't in the DOM yet.
+   *  The parent should switch to the correct form step so the target becomes visible.
+   *  Returns true if the parent handled it. */
+  onRequestStep?: (target: string) => boolean;
   forceShow?: boolean;
 }) {
   const [active, setActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<TooltipPosition | null>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const [tooltipStyle, setTooltipStyle] = useState<TooltipStyle | null>(null);
+  const [fadeIn, setFadeIn] = useState(false);
+  const retryRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Decide whether to show the tour
   useEffect(() => {
-    if (forceShow || (!isTourCompleted() && isMobile())) {
-      // Small delay to let the page render first
-      const timer = setTimeout(() => setActive(true), 600);
+    if (forceShow || !isTourCompleted()) {
+      const timer = setTimeout(() => setActive(true), 800);
       return () => clearTimeout(timer);
     }
   }, [forceShow]);
@@ -161,29 +166,50 @@ export function ProductTour({
     if (!step) return;
 
     const el = document.querySelector(step.target);
-    if (!el) return;
 
-    // Scroll the element into view
+    if (!el) {
+      // Target not in DOM — ask parent to switch form step
+      const handled = onRequestStep?.(step.target);
+      if (handled) {
+        // Retry after parent re-renders
+        retryRef.current = setTimeout(() => positionStep(), 400);
+        return;
+      }
+      // Skip this step if target truly doesn't exist
+      if (currentStep < steps.length - 1) {
+        setCurrentStep((prev) => prev + 1);
+      } else {
+        markTourCompleted();
+        setActive(false);
+        onComplete?.();
+      }
+      return;
+    }
+
+    // Scroll element into view
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // Recalculate after scroll settles
-    const timer = setTimeout(() => {
+    // Wait for scroll to settle, then measure
+    retryRef.current = setTimeout(() => {
       const rect = getSpotlightRect(el);
       setSpotlight(rect);
-      setTooltipPos(getTooltipPosition(rect, step.placement || 'bottom'));
-      setIsAnimating(true);
-      setTimeout(() => setIsAnimating(false), 300);
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [active, currentStep, steps]);
+      setTooltipStyle(getTooltipStyle(rect, step.placement || 'bottom'));
+      // Trigger fade-in
+      setFadeIn(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setFadeIn(true));
+      });
+    }, 400);
+  }, [active, currentStep, steps, onRequestStep, onComplete]);
 
   useEffect(() => {
-    const cleanup = positionStep();
-    return cleanup;
+    positionStep();
+    return () => {
+      if (retryRef.current) clearTimeout(retryRef.current);
+    };
   }, [positionStep]);
 
-  // Reposition on resize
+  // Reposition on window resize
   useEffect(() => {
     if (!active) return;
     const handleResize = () => positionStep();
@@ -205,78 +231,87 @@ export function ProductTour({
     }
   }, [currentStep, steps.length, finish]);
 
-  const handleSkip = useCallback(() => {
-    finish();
-  }, [finish]);
-
-  if (!active || !spotlight || !tooltipPos) return null;
+  if (!active || !spotlight || !tooltipStyle) return null;
 
   const step = steps[currentStep];
   const isLastStep = currentStep === steps.length - 1;
 
+  // SVG overlay with a rectangular cutout for the spotlight
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-[200]"
-      style={{ pointerEvents: 'auto' }}
-    >
-      {/* Dark overlay with spotlight cutout using CSS clip-path */}
+    <div className="fixed inset-0 z-[200]" style={{ pointerEvents: 'auto' }}>
+      {/* SVG overlay — uses a path with evenodd to cut a hole */}
+      <svg
+        className="absolute inset-0 w-full h-full transition-all duration-300"
+        style={{ pointerEvents: 'none' }}
+      >
+        <defs>
+          <mask id="tour-spotlight-mask">
+            <rect width="100%" height="100%" fill="white" />
+            <rect
+              x={spotlight.left}
+              y={spotlight.top}
+              width={spotlight.width}
+              height={spotlight.height}
+              rx={12}
+              fill="black"
+              className="transition-all duration-300"
+            />
+          </mask>
+        </defs>
+        <rect
+          width={viewW}
+          height={viewH}
+          fill="rgba(0,0,0,0.7)"
+          mask="url(#tour-spotlight-mask)"
+          className="transition-all duration-300"
+        />
+      </svg>
+
+      {/* Click-away overlay (outside the spotlight) */}
       <div
-        className="absolute inset-0 transition-all duration-300"
-        style={{
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          clipPath: `polygon(
-            0% 0%, 0% 100%, 100% 100%, 100% 0%, 0% 0%,
-            ${spotlight.left}px ${spotlight.top - window.scrollY}px,
-            ${spotlight.left}px ${spotlight.top - window.scrollY + spotlight.height}px,
-            ${spotlight.left + spotlight.width}px ${spotlight.top - window.scrollY + spotlight.height}px,
-            ${spotlight.left + spotlight.width}px ${spotlight.top - window.scrollY}px,
-            ${spotlight.left}px ${spotlight.top - window.scrollY}px
-          )`,
-        }}
-        onClick={handleSkip}
+        className="absolute inset-0"
+        style={{ pointerEvents: 'auto' }}
+        onClick={finish}
       />
 
       {/* Spotlight border ring */}
       <div
-        className="absolute rounded-xl border-2 border-emerald-400 transition-all duration-300"
+        className="absolute rounded-xl border-2 border-emerald-400 transition-all duration-300 pointer-events-none"
         style={{
-          top: spotlight.top - window.scrollY,
+          top: spotlight.top,
           left: spotlight.left,
           width: spotlight.width,
           height: spotlight.height,
-          boxShadow: '0 0 0 4px rgba(52, 211, 153, 0.3)',
-          pointerEvents: 'none',
+          boxShadow: '0 0 0 4px rgba(52, 211, 153, 0.3), 0 0 20px 2px rgba(52, 211, 153, 0.15)',
         }}
       />
 
-      {/* Pulse animation on spotlight */}
+      {/* Pulse ring */}
       <div
-        className="absolute rounded-xl animate-pulse"
+        className="absolute rounded-xl animate-pulse pointer-events-none"
         style={{
-          top: spotlight.top - window.scrollY - 2,
-          left: spotlight.left - 2,
-          width: spotlight.width + 4,
-          height: spotlight.height + 4,
-          border: '2px solid rgba(52, 211, 153, 0.4)',
-          pointerEvents: 'none',
+          top: spotlight.top - 3,
+          left: spotlight.left - 3,
+          width: spotlight.width + 6,
+          height: spotlight.height + 6,
+          border: '2px solid rgba(52, 211, 153, 0.35)',
         }}
       />
 
       {/* Tooltip */}
       <div
-        className={`absolute bg-white rounded-2xl shadow-2xl p-4 transition-all duration-300 ${
-          isAnimating ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
-        }`}
+        className="absolute bg-white rounded-2xl shadow-2xl p-4 transition-all duration-300"
         style={{
-          top: tooltipPos.top,
-          bottom: tooltipPos.bottom,
-          left: tooltipPos.left,
-          maxWidth: tooltipPos.maxWidth,
-          width: tooltipPos.maxWidth,
+          ...tooltipStyle,
+          opacity: fadeIn ? 1 : 0,
+          transform: fadeIn ? 'translateY(0)' : 'translateY(8px)',
+          pointerEvents: 'auto',
         }}
       >
-        {/* Step indicator */}
+        {/* Step dots */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex gap-1.5">
             {steps.map((_, i) => (
@@ -292,7 +327,7 @@ export function ProductTour({
               />
             ))}
           </div>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-gray-400 tabular-nums">
             {currentStep + 1}/{steps.length}
           </span>
         </div>
@@ -306,7 +341,7 @@ export function ProductTour({
         {/* Actions */}
         <div className="flex items-center justify-between">
           <button
-            onClick={handleSkip}
+            onClick={finish}
             className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2 py-1"
           >
             ข้าม
@@ -330,11 +365,12 @@ export function ProductTour({
         </div>
       </div>
 
-      {/* Skip button at top right */}
+      {/* Top-right close button */}
       <button
-        onClick={handleSkip}
+        onClick={finish}
         className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors"
         aria-label="ปิด"
+        style={{ pointerEvents: 'auto' }}
       >
         <X size={20} />
       </button>
