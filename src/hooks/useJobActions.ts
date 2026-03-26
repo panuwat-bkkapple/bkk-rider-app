@@ -57,8 +57,12 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       } else if (nextStatus === 'Pending QC') {
         sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
       }
-    } catch {
-      alert('เกิดข้อผิดพลาดในการอัปเดตข้อมูล');
+    } catch (error: any) {
+      console.error('updateStatus error:', error);
+      const msg = error?.code === 'PERMISSION_DENIED'
+        ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
+        : `เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ${error?.message || error}`;
+      alert(msg);
     }
   };
 
