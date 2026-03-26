@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { auth } from './api/firebase';
 import { RiderApp } from './pages/RiderApp';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
+import { LoadingSpinner } from './components/common/LoadingSpinner';
 import { useAutoLogout } from './hooks/useAutoLogout';
 import { usePushNotifications } from './hooks/usePushNotifications';
 
@@ -28,9 +31,28 @@ function App() {
   const [riderId, setRiderId] = useState<string | null>(
     localStorage.getItem('rider_id') && localStorage.getItem('device_pin') ? localStorage.getItem('rider_id') : null
   );
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Verify Firebase Auth session is still valid
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user && riderId) {
+        // Firebase Auth expired but localStorage thinks we're logged in → force re-login
+        console.warn('Firebase Auth session expired, clearing local session');
+        localStorage.removeItem('rider_id');
+        localStorage.removeItem('device_pin');
+        setRiderId(null);
+      }
+      setAuthChecked(true);
+    });
+    return () => unsubscribe();
+  }, [riderId]);
 
   // Auto-logout after 30 min of inactivity
   useAutoLogout(!!riderId);
+
+  // Wait for auth check before rendering
+  if (!authChecked) return <LoadingSpinner />;
 
   // Setup push notifications
   usePushNotifications(riderId);
