@@ -35,6 +35,23 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         status: nextStatus, updated_at: Date.now(), qc_logs: updatedLogs, ...extraData
       });
 
+      // เมื่อสถานะเป็น Heading to Customer → push พิกัดไรเดอร์ไปที่ riders/{id} ทันที
+      // เพื่อให้ frontend อ่าน lat/lng แสดงแผนที่ direction ได้
+      if (nextStatus === 'Heading to Customer') {
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          try {
+            await update(ref(db, `riders/${riderInfo.id}`), {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              last_updated: Date.now()
+            });
+          } catch (e) {
+            console.error('Failed to update rider location:', e);
+          }
+        }, (err) => console.error('Geolocation error on Heading to Customer:', err),
+        { enableHighAccuracy: true });
+      }
+
       const shortJobId = jobId.slice(-4).toUpperCase();
 
       if (nextStatus === 'Accepted') {
