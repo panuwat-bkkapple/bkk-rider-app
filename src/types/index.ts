@@ -157,7 +157,7 @@ export const DISCREPANCY_CATEGORIES = [
   { id: 'other', label: 'อื่นๆ', description: 'ปัญหาอื่นที่ไม่อยู่ในหมวดหมู่ข้างต้น' },
 ];
 
-export type TabId = 'home' | 'history' | 'wallet' | 'profile';
+export type TabId = 'home' | 'history' | 'wallet' | 'profile' | 'faq';
 export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
 
 export const REJECT_REASONS = [

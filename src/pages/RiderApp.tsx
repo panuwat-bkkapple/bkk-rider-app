@@ -18,6 +18,7 @@ import { HistoryTab } from '../components/history/HistoryTab';
 import { WalletTab } from '../components/wallet/WalletTab';
 import { WithdrawModal } from '../components/wallet/WithdrawModal';
 import { ProfileTab } from '../components/profile/ProfileTab';
+import { FAQTab } from '../components/faq/FAQTab';
 import { BankModal } from '../components/profile/BankModal';
 import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
@@ -178,6 +179,10 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
           onOpenDoc={() => setIsDocModalOpen(true)}
           onLogout={handleLogout}
         />
+      )}
+
+      {activeTab === 'faq' && (
+        <FAQTab onGoHome={() => setActiveTab('home')} />
       )}
 
       {/* Modals */}

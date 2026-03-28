@@ -1,5 +1,5 @@
 // src/components/layout/BottomNav.tsx
-import { Navigation, History, Wallet as WalletIcon } from 'lucide-react';
+import { Navigation, History, Wallet as WalletIcon, HelpCircle } from 'lucide-react';
 import type { TabId } from '../../types';
 
 interface BottomNavProps {
@@ -11,6 +11,7 @@ const tabs = [
   { id: 'home' as TabId, icon: Navigation, label: 'หน้าหลัก' },
   { id: 'history' as TabId, icon: History, label: 'ประวัติ' },
   { id: 'wallet' as TabId, icon: WalletIcon, label: 'กระเป๋าเงิน' },
+  { id: 'faq' as TabId, icon: HelpCircle, label: 'FAQ' },
 ];
 
 export const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => (
