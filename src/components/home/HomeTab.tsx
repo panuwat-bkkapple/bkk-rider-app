@@ -21,6 +21,7 @@ interface HomeTabProps {
   onOpenNavigation: (job: any) => void;
   onInspectJob: (job: any) => void;
   onCompleteJob: (job: any) => void;
+  onReportDiscrepancy: (job: any) => void;
   onGoToProfile: () => void;
 }
 
@@ -29,7 +30,7 @@ export const HomeTab = ({
   incomingList, activeList,
   onAcceptJob, onUpdateStatus, onRejectJob,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onInspectJob, onCompleteJob, onGoToProfile
+  onInspectJob, onCompleteJob, onReportDiscrepancy, onGoToProfile
 }: HomeTabProps) => (
   <div className="absolute inset-0 pb-32 animate-in fade-in duration-500">
     <MapBackground />
@@ -86,6 +87,7 @@ export const HomeTab = ({
           onReject={onRejectJob}
           onInspect={onInspectJob}
           onCompleteJob={onCompleteJob}
+          onReportDiscrepancy={onReportDiscrepancy}
         />
       ))}
     </div>

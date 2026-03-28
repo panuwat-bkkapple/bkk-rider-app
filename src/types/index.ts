@@ -137,12 +137,33 @@ export interface InspectedDeviceData {
   final_price: number;
 }
 
+export interface DiscrepancyReport {
+  id: string;
+  category: string;
+  detail: string;
+  imageUrl?: string;
+  reported_by: string;
+  reported_at: number;
+  status: 'pending' | 'resolved';
+  resolved_at?: number;
+}
+
+export const DISCREPANCY_CATEGORIES = [
+  { id: 'address', label: 'ที่อยู่ไม่ตรง', description: 'ที่อยู่ในระบบไม่ตรงกับสถานที่จริง' },
+  { id: 'customer', label: 'ข้อมูลลูกค้าไม่ตรง', description: 'ชื่อ หรือเบอร์โทรลูกค้าไม่ถูกต้อง' },
+  { id: 'device', label: 'รุ่นเครื่องไม่ตรง', description: 'รุ่น/สเปคเครื่องจริงไม่ตรงกับในระบบ' },
+  { id: 'price', label: 'ราคาไม่ตรง', description: 'ราคาที่แจ้งลูกค้ากับราคาในระบบต่างกัน' },
+  { id: 'appointment', label: 'วัน/เวลานัดหมายไม่ตรง', description: 'วันเวลาที่ลูกค้าแจ้งไม่ตรงกับในระบบ' },
+  { id: 'other', label: 'อื่นๆ', description: 'ปัญหาอื่นที่ไม่อยู่ในหมวดหมู่ข้างต้น' },
+];
+
 export type TabId = 'home' | 'history' | 'wallet' | 'profile';
 export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
 
 export const REJECT_REASONS = [
   'ลูกค้าไม่รับสาย / ติดต่อไม่ได้',
   'ลูกค้าขอยกเลิก / เปลี่ยนใจ',
+  'ข้อมูลไม่ตรงกับความเป็นจริง (แจ้งแอดมินแล้ว)',
   'รถเสีย / เกิดอุบัติเหตุฉุกเฉิน',
   'สภาพอากาศไม่เอื้ออำนวย (ฝนตกหนัก)',
   'ระยะทางไกลเกินไป / ไม่สะดวกรับงาน',
