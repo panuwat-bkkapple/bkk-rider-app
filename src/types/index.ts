@@ -137,7 +137,7 @@ export interface InspectedDeviceData {
   final_price: number;
 }
 
-export type TabId = 'home' | 'history' | 'wallet' | 'profile';
+export type TabId = 'home' | 'history' | 'wallet' | 'profile' | 'faq';
 export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
 
 export const REJECT_REASONS = [
