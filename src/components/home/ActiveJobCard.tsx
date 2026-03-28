@@ -1,7 +1,7 @@
 // src/components/home/ActiveJobCard.tsx
 import {
   Bike, MapPin, Navigation, Phone, CheckCircle2, X, ShieldCheck,
-  MessageSquare, Landmark, PackageOpen, User, Clock
+  MessageSquare, Landmark, PackageOpen, User, Clock, AlertTriangle
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName } from '../../utils/jobHelpers';
@@ -17,13 +17,19 @@ interface ActiveJobCardProps {
   onReject: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
+  onReportDiscrepancy: (job: any) => void;
 }
 
 export const ActiveJobCard = ({
   job, index, totalJobs,
   onUpdateStatus, onOpenChat, onCallCustomer, onOpenNavigation,
-  onReject, onInspect, onCompleteJob
-}: ActiveJobCardProps) => (
+  onReject, onInspect, onCompleteJob, onReportDiscrepancy
+}: ActiveJobCardProps) => {
+  const hasPendingDiscrepancy = job.has_pending_discrepancy && job.discrepancy_reports
+    ? Object.values(job.discrepancy_reports).some((r: any) => r.status === 'pending')
+    : false;
+
+  return (
   <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 animate-in slide-in-from-bottom flex flex-col gap-4 relative overflow-hidden">
     {totalJobs > 1 && (
       <div className="absolute top-0 right-0 bg-blue-600 text-white px-4 py-1 rounded-bl-xl font-bold text-xs shadow-sm">
@@ -77,6 +83,30 @@ export const ActiveJobCard = ({
         )}
       </div>
     </div>
+
+    {/* Pending discrepancy banner */}
+    {hasPendingDiscrepancy && (
+      <button
+        onClick={() => onReportDiscrepancy(job)}
+        className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center gap-3 animate-pulse"
+      >
+        <div className="animate-spin w-5 h-5 border-[3px] border-amber-400 border-t-transparent rounded-full shrink-0"></div>
+        <div className="text-left flex-1">
+          <p className="text-xs font-bold text-amber-700">รอแอดมินแก้ไขข้อมูล</p>
+          <p className="text-[10px] text-amber-500">แตะเพื่อดูรายละเอียด</p>
+        </div>
+      </button>
+    )}
+
+    {/* Report discrepancy button */}
+    {!hasPendingDiscrepancy && !['In-Transit', 'Pending QC', 'Completed'].includes(job.status) && (
+      <button
+        onClick={() => onReportDiscrepancy(job)}
+        className="w-full text-xs font-bold text-amber-500 hover:text-amber-600 underline py-1 flex items-center justify-center gap-1"
+      >
+        <AlertTriangle size={12} /> แจ้งข้อมูลไม่ตรง
+      </button>
+    )}
 
     {/* Action buttons based on status */}
     {job.status === 'Accepted' && (
@@ -160,4 +190,5 @@ export const ActiveJobCard = ({
       </div>
     )}
   </div>
-);
+  );
+};

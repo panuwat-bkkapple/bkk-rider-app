@@ -1,9 +1,11 @@
 // src/hooks/useJobActions.ts
-import { ref, update, push } from 'firebase/database';
+import { ref, update, push, set } from 'firebase/database';
 import { db } from '../api/firebase';
 import { sendAdminNotification } from '../utils/notifications';
+import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo } from '../types';
+import { DISCREPANCY_CATEGORIES } from '../types';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -156,8 +158,43 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     }
   };
 
+  const reportDiscrepancy = async (
+    jobId: string, category: string, detail: string, imageFile: File | null
+  ) => {
+    const categoryLabel = DISCREPANCY_CATEGORIES.find(c => c.id === category)?.label || category;
+    let imageUrl: string | undefined;
+
+    if (imageFile) {
+      imageUrl = await uploadImageToFirebase(imageFile, `jobs/${jobId}/discrepancy`);
+    }
+
+    const reportRef = push(ref(db, `jobs/${jobId}/discrepancy_reports`));
+    await set(reportRef, {
+      category,
+      detail: detail || '',
+      imageUrl: imageUrl || null,
+      reported_by: `Rider: ${riderInfo.name}`,
+      reported_at: Date.now(),
+      status: 'pending'
+    });
+
+    // Add QC log entry
+    const jobRef = ref(db, `jobs/${jobId}`);
+    await update(jobRef, {
+      updated_at: Date.now(),
+      has_pending_discrepancy: true
+    });
+
+    const shortJobId = jobId.slice(-4).toUpperCase();
+    sendAdminNotification(
+      'ด่วน! ข้อมูลไม่ตรง',
+      `ไรเดอร์ ${riderInfo.name} แจ้งข้อมูลไม่ตรงในงาน #${shortJobId}: ${categoryLabel}${detail ? ` - ${detail}` : ''}`
+    );
+  };
+
   return {
     updateStatus, handleRejectOrCancelJob, handleCompleteJob,
-    handleOpenNavigation, handleCallCustomer, handleRequestWithdraw
+    handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
+    reportDiscrepancy
   };
 };

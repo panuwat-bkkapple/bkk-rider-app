@@ -23,6 +23,7 @@ import { BankModal } from '../components/profile/BankModal';
 import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
+import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
 
 // Types
 import type { TabId, HistoryFilter, InspectedDeviceData } from '../types';
@@ -52,6 +53,7 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectingJob, setRejectingJob] = useState<any>(null);
+  const [discrepancyJob, setDiscrepancyJob] = useState<any>(null);
 
   // Loading state
   if (jobsLoading) return <LoadingSpinner />;
@@ -145,6 +147,7 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
           onOpenNavigation={actions.handleOpenNavigation}
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => actions.handleCompleteJob(job, { activeList: jobData.activeList, incomingList: jobData.incomingList })}
+          onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
           onGoToProfile={() => setActiveTab('profile')}
         />
       )}
@@ -201,6 +204,17 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
           chatJob={currentChatJob}
           riderInfo={riderInfo}
           onClose={() => setChatJobId(null)}
+        />
+      )}
+
+      {discrepancyJob && (
+        <ReportDiscrepancyModal
+          job={discrepancyJob}
+          onClose={() => setDiscrepancyJob(null)}
+          onSubmit={async (jobId, category, detail, imageFile) => {
+            await actions.reportDiscrepancy(jobId, category, detail, imageFile);
+            setDiscrepancyJob(null);
+          }}
         />
       )}
 
