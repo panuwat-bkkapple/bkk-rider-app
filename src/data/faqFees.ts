@@ -1,4 +1,4 @@
-import { FAQCategory } from './faqPurchasing';
+import type { FAQCategory } from './faqPurchasing';
 
 export const faqFees: FAQCategory = {
   id: 'fees',
