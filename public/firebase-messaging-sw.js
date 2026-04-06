@@ -1,19 +1,19 @@
 // Firebase Cloud Messaging Service Worker
 // Handles background push notifications when the app is not in focus
 //
-// IMPORTANT: Replace the Firebase config below with your actual values
-// from Firebase Console > Project Settings > General > Your apps
+// Placeholders below are replaced by Vite build plugin (firebaseSWPlugin)
+// with actual values from VITE_FIREBASE_* environment variables.
 
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT.firebasestorage.app',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID'
+  apiKey: '__FIREBASE_API_KEY__',
+  authDomain: '__FIREBASE_AUTH_DOMAIN__',
+  projectId: '__FIREBASE_PROJECT_ID__',
+  storageBucket: '__FIREBASE_STORAGE_BUCKET__',
+  messagingSenderId: '__FIREBASE_MESSAGING_SENDER_ID__',
+  appId: '__FIREBASE_APP_ID__'
 });
 
 const messaging = firebase.messaging();
