@@ -24,6 +24,7 @@ import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
+import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
 
 // Types
 import type { TabId, HistoryFilter, InspectedDeviceData } from '../types';
@@ -200,78 +201,92 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         <FAQTab onGoHome={() => setActiveTab('home')} />
       )}
 
-      {/* Modals */}
+      {/* Modals - wrapped with ModalErrorBoundary */}
       {isRejectModalOpen && rejectingJob && (
-        <RejectModal
-          rejectingJob={rejectingJob}
-          onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
-          onConfirm={async (reason) => {
-            await actions.handleRejectOrCancelJob(rejectingJob, reason, jobData.incomingList, () => {
-              setIsRejectModalOpen(false);
-              setRejectingJob(null);
-            });
-          }}
-        />
+        <ModalErrorBoundary onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}>
+          <RejectModal
+            rejectingJob={rejectingJob}
+            onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
+            onConfirm={async (reason) => {
+              await actions.handleRejectOrCancelJob(rejectingJob, reason, jobData.incomingList, () => {
+                setIsRejectModalOpen(false);
+                setRejectingJob(null);
+              });
+            }}
+          />
+        </ModalErrorBoundary>
       )}
 
       {chatJobId && currentChatJob && (
-        <ChatModal
-          chatJob={currentChatJob}
-          riderInfo={riderInfo}
-          onClose={() => setChatJobId(null)}
-        />
+        <ModalErrorBoundary onClose={() => setChatJobId(null)}>
+          <ChatModal
+            chatJob={currentChatJob}
+            riderInfo={riderInfo}
+            onClose={() => setChatJobId(null)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {discrepancyJob && (
-        <ReportDiscrepancyModal
-          job={discrepancyJob}
-          onClose={() => setDiscrepancyJob(null)}
-          onSubmit={async (jobId, category, detail, imageFile) => {
-            await actions.reportDiscrepancy(jobId, category, detail, imageFile);
-            setDiscrepancyJob(null);
-          }}
-        />
+        <ModalErrorBoundary onClose={() => setDiscrepancyJob(null)}>
+          <ReportDiscrepancyModal
+            job={discrepancyJob}
+            onClose={() => setDiscrepancyJob(null)}
+            onSubmit={async (jobId, category, detail, imageFile) => {
+              await actions.reportDiscrepancy(jobId, category, detail, imageFile);
+              setDiscrepancyJob(null);
+            }}
+          />
+        </ModalErrorBoundary>
       )}
 
       {inspectingJob && (
-        <InspectionModal
-          job={inspectingJob}
-          modelsData={modelsData}
-          conditionSets={conditionSets}
-          onClose={() => setInspectingJob(null)}
-          onSubmit={handleInspectionSubmit}
-        />
+        <ModalErrorBoundary onClose={() => setInspectingJob(null)}>
+          <InspectionModal
+            job={inspectingJob}
+            modelsData={modelsData}
+            conditionSets={conditionSets}
+            onClose={() => setInspectingJob(null)}
+            onSubmit={handleInspectionSubmit}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isWithdrawModalOpen && (
-        <WithdrawModal
-          withdrawAmount={withdrawAmount}
-          onAmountChange={setWithdrawAmount}
-          onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.balance, riderInfo, () => {
-            setIsWithdrawModalOpen(false);
-            setWithdrawAmount('');
-          })}
-          onClose={() => setIsWithdrawModalOpen(false)}
-        />
+        <ModalErrorBoundary onClose={() => setIsWithdrawModalOpen(false)}>
+          <WithdrawModal
+            withdrawAmount={withdrawAmount}
+            onAmountChange={setWithdrawAmount}
+            onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.balance, riderInfo, () => {
+              setIsWithdrawModalOpen(false);
+              setWithdrawAmount('');
+            })}
+            onClose={() => setIsWithdrawModalOpen(false)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isBankModalOpen && (
-        <BankModal
-          currentRiderId={currentRiderId}
-          bankName={riderInfo.bankName}
-          accountNo={riderInfo.accountNo}
-          onBankNameChange={(v) => setRiderInfo(prev => ({ ...prev, bankName: v }))}
-          onAccountNoChange={(v) => setRiderInfo(prev => ({ ...prev, accountNo: v }))}
-          onClose={() => setIsBankModalOpen(false)}
-        />
+        <ModalErrorBoundary onClose={() => setIsBankModalOpen(false)}>
+          <BankModal
+            currentRiderId={currentRiderId}
+            bankName={riderInfo.bankName}
+            accountNo={riderInfo.accountNo}
+            onBankNameChange={(v) => setRiderInfo(prev => ({ ...prev, bankName: v }))}
+            onAccountNoChange={(v) => setRiderInfo(prev => ({ ...prev, accountNo: v }))}
+            onClose={() => setIsBankModalOpen(false)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isDocModalOpen && (
-        <DocumentModal
-          idCardImg={riderInfo.idCardImg}
-          onDocUpload={handleDocUpload}
-          onClose={() => setIsDocModalOpen(false)}
-        />
+        <ModalErrorBoundary onClose={() => setIsDocModalOpen(false)}>
+          <DocumentModal
+            idCardImg={riderInfo.idCardImg}
+            onDocUpload={handleDocUpload}
+            onClose={() => setIsDocModalOpen(false)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {/* Bottom navigation */}
