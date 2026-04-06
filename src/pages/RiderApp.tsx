@@ -24,6 +24,8 @@ import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
+import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 
 // Types
 import type { TabId, HistoryFilter, InspectedDeviceData } from '../types';
@@ -61,6 +63,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectingJob, setRejectingJob] = useState<any>(null);
   const [discrepancyJob, setDiscrepancyJob] = useState<any>(null);
+  const [completingJob, setCompletingJob] = useState<any>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Open chat from notification deep link
   useEffect(() => {
@@ -134,7 +138,10 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   };
 
   const handleLogout = async () => {
-    if (!window.confirm('คุณต้องการออกจากระบบ (สลับบัญชี) หรือไม่?')) return;
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = async () => {
     setIsOnline(false);
     await signOut(auth);
     localStorage.removeItem('rider_id');
@@ -161,7 +168,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
           onInspectJob={(job) => { setInspectingJob(job); }}
-          onCompleteJob={(job) => actions.handleCompleteJob(job, { activeList: jobData.activeList, incomingList: jobData.incomingList })}
+          onCompleteJob={(job) => setCompletingJob(job)}
           onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
           onGoToProfile={() => setActiveTab('profile')}
         />
@@ -200,77 +207,116 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         <FAQTab onGoHome={() => setActiveTab('home')} />
       )}
 
-      {/* Modals */}
+      {/* Modals - wrapped with ModalErrorBoundary */}
       {isRejectModalOpen && rejectingJob && (
-        <RejectModal
-          rejectingJob={rejectingJob}
-          onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
-          onConfirm={async (reason) => {
-            await actions.handleRejectOrCancelJob(rejectingJob, reason, jobData.incomingList, () => {
-              setIsRejectModalOpen(false);
-              setRejectingJob(null);
-            });
-          }}
-        />
+        <ModalErrorBoundary onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}>
+          <RejectModal
+            rejectingJob={rejectingJob}
+            onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
+            onConfirm={async (reason) => {
+              await actions.handleRejectOrCancelJob(rejectingJob, reason, jobData.incomingList, () => {
+                setIsRejectModalOpen(false);
+                setRejectingJob(null);
+              });
+            }}
+          />
+        </ModalErrorBoundary>
       )}
 
       {chatJobId && currentChatJob && (
-        <ChatModal
-          chatJob={currentChatJob}
-          riderInfo={riderInfo}
-          onClose={() => setChatJobId(null)}
-        />
+        <ModalErrorBoundary onClose={() => setChatJobId(null)}>
+          <ChatModal
+            chatJob={currentChatJob}
+            riderInfo={riderInfo}
+            onClose={() => setChatJobId(null)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {discrepancyJob && (
-        <ReportDiscrepancyModal
-          job={discrepancyJob}
-          onClose={() => setDiscrepancyJob(null)}
-          onSubmit={async (jobId, category, detail, imageFile) => {
-            await actions.reportDiscrepancy(jobId, category, detail, imageFile);
-            setDiscrepancyJob(null);
-          }}
-        />
+        <ModalErrorBoundary onClose={() => setDiscrepancyJob(null)}>
+          <ReportDiscrepancyModal
+            job={discrepancyJob}
+            onClose={() => setDiscrepancyJob(null)}
+            onSubmit={async (jobId, category, detail, imageFile) => {
+              await actions.reportDiscrepancy(jobId, category, detail, imageFile);
+              setDiscrepancyJob(null);
+            }}
+          />
+        </ModalErrorBoundary>
       )}
 
       {inspectingJob && (
-        <InspectionModal
-          job={inspectingJob}
-          modelsData={modelsData}
-          conditionSets={conditionSets}
-          onClose={() => setInspectingJob(null)}
-          onSubmit={handleInspectionSubmit}
-        />
+        <ModalErrorBoundary onClose={() => setInspectingJob(null)}>
+          <InspectionModal
+            job={inspectingJob}
+            modelsData={modelsData}
+            conditionSets={conditionSets}
+            onClose={() => setInspectingJob(null)}
+            onSubmit={handleInspectionSubmit}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isWithdrawModalOpen && (
-        <WithdrawModal
-          withdrawAmount={withdrawAmount}
-          onAmountChange={setWithdrawAmount}
-          onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.balance, riderInfo, () => {
-            setIsWithdrawModalOpen(false);
-            setWithdrawAmount('');
-          })}
-          onClose={() => setIsWithdrawModalOpen(false)}
-        />
+        <ModalErrorBoundary onClose={() => setIsWithdrawModalOpen(false)}>
+          <WithdrawModal
+            withdrawAmount={withdrawAmount}
+            onAmountChange={setWithdrawAmount}
+            onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.balance, riderInfo, () => {
+              setIsWithdrawModalOpen(false);
+              setWithdrawAmount('');
+            })}
+            onClose={() => setIsWithdrawModalOpen(false)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isBankModalOpen && (
-        <BankModal
-          currentRiderId={currentRiderId}
-          bankName={riderInfo.bankName}
-          accountNo={riderInfo.accountNo}
-          onBankNameChange={(v) => setRiderInfo(prev => ({ ...prev, bankName: v }))}
-          onAccountNoChange={(v) => setRiderInfo(prev => ({ ...prev, accountNo: v }))}
-          onClose={() => setIsBankModalOpen(false)}
-        />
+        <ModalErrorBoundary onClose={() => setIsBankModalOpen(false)}>
+          <BankModal
+            currentRiderId={currentRiderId}
+            bankName={riderInfo.bankName}
+            accountNo={riderInfo.accountNo}
+            onBankNameChange={(v) => setRiderInfo(prev => ({ ...prev, bankName: v }))}
+            onAccountNoChange={(v) => setRiderInfo(prev => ({ ...prev, accountNo: v }))}
+            onClose={() => setIsBankModalOpen(false)}
+          />
+        </ModalErrorBoundary>
       )}
 
       {isDocModalOpen && (
-        <DocumentModal
-          idCardImg={riderInfo.idCardImg}
-          onDocUpload={handleDocUpload}
-          onClose={() => setIsDocModalOpen(false)}
+        <ModalErrorBoundary onClose={() => setIsDocModalOpen(false)}>
+          <DocumentModal
+            idCardImg={riderInfo.idCardImg}
+            onDocUpload={handleDocUpload}
+            onClose={() => setIsDocModalOpen(false)}
+          />
+        </ModalErrorBoundary>
+      )}
+
+      {/* Confirm Modals */}
+      {completingJob && (
+        <ConfirmModal
+          title="ยืนยันส่งมอบเครื่อง"
+          message="ยืนยันว่านำเครื่องมาถึงสาขา และส่งมอบให้แผนก QC เรียบร้อยแล้ว?"
+          confirmText="ยืนยัน"
+          onConfirm={async () => {
+            await actions.handleCompleteJob(completingJob, { activeList: jobData.activeList, incomingList: jobData.incomingList });
+            setCompletingJob(null);
+          }}
+          onCancel={() => setCompletingJob(null)}
+        />
+      )}
+
+      {showLogoutConfirm && (
+        <ConfirmModal
+          title="ออกจากระบบ"
+          message="คุณต้องการออกจากระบบ (สลับบัญชี) หรือไม่?"
+          confirmText="ออกจากระบบ"
+          variant="danger"
+          onConfirm={confirmLogout}
+          onCancel={() => setShowLogoutConfirm(false)}
         />
       )}
 

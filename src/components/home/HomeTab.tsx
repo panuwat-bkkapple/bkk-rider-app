@@ -1,5 +1,5 @@
 // src/components/home/HomeTab.tsx
-import { Bike, X } from 'lucide-react';
+import { Bike, X, Coffee, Wifi } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { MapBackground } from '../layout/MapBackground';
 import { IncomingJobCard } from './IncomingJobCard';
@@ -90,6 +90,23 @@ export const HomeTab = ({
           onReportDiscrepancy={onReportDiscrepancy}
         />
       ))}
+
+      {/* Empty states */}
+      {isOnline && incomingList.length === 0 && activeList.length === 0 && (
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl p-8 text-center shadow-lg border border-gray-100">
+          <Coffee size={48} className="text-gray-300 mx-auto mb-4" />
+          <h3 className="font-bold text-gray-700 mb-1">ยังไม่มีงานเข้า</h3>
+          <p className="text-sm text-gray-400">รอรับงานจากระบบ... เปิดรับงานไว้ได้เลยครับ</p>
+        </div>
+      )}
+
+      {!isOnline && (
+        <div className="bg-white/90 backdrop-blur-md rounded-3xl p-8 text-center shadow-lg border border-gray-100">
+          <Wifi size={48} className="text-gray-300 mx-auto mb-4" />
+          <h3 className="font-bold text-gray-700 mb-1">คุณอยู่ในโหมดปิดรับงาน</h3>
+          <p className="text-sm text-gray-400">เปิดสวิตช์ "รับงาน" ด้านบนเพื่อเริ่มรับงาน</p>
+        </div>
+      )}
     </div>
   </div>
 );

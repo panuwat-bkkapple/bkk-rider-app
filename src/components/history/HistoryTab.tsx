@@ -78,8 +78,10 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
       {/* History list */}
       <div className="space-y-3">
         {displayData.list.length === 0 ? (
-          <div className="text-center text-gray-400 py-10 font-medium bg-white rounded-3xl border border-dashed border-gray-200">
-            ไม่มีประวัติการวิ่งงานในช่วงเวลานี้
+          <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+            <div className="text-4xl mb-3">📋</div>
+            <p className="font-bold text-gray-600 mb-1">ยังไม่มีประวัติงาน</p>
+            <p className="text-sm text-gray-400">ไม่มีประวัติการวิ่งงานในช่วงเวลานี้</p>
           </div>
         ) : (
           displayData.list.map(job => (

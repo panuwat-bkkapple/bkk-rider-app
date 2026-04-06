@@ -1,17 +1,23 @@
-// src/utils/notifications.ts (หรือโฟลเดอร์ที่คุณเก็บไว้)
+// src/utils/notifications.ts
 import { ref, push, set } from 'firebase/database';
-import { db } from '../api/firebase'; // 🌟 อย่าลืมเช็ค Path ให้ตรงกับไฟล์ firebase ของคุณนะครับ
+import { db, auth } from '../api/firebase';
 
-// 🌟 เพิ่มคำว่า export ด้านหน้า
 export const sendAdminNotification = async (title: string, message: string) => {
   try {
+    // Only send if user is authenticated
+    if (!auth.currentUser) {
+      console.warn('Cannot send notification: user not authenticated');
+      return;
+    }
+
     const notiRef = ref(db, 'notifications');
-    const newNotiRef = push(notiRef); // สร้าง ID ใหม่สุ่มๆ
+    const newNotiRef = push(notiRef);
     await set(newNotiRef, {
-      title: title,
-      message: message,
+      title,
+      message,
       timestamp: Date.now(),
-      read: false // ค่าเริ่มต้นคือ แอดมินยังไม่ได้อ่าน
+      read: false,
+      sender_uid: auth.currentUser.uid
     });
   } catch (error) {
     console.error("Notification Error:", error);

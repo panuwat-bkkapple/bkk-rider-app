@@ -7,6 +7,7 @@ import {
 import { formatCurrency } from '../../utils/formatters';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { getDevicesList } from '../../utils/jobHelpers';
+import { toast } from '../common/Toast';
 import type { InspectedDeviceData, ConditionGroup } from '../../types';
 
 interface InspectionModalProps {
@@ -113,7 +114,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     try {
       await onSubmit(job, inspectedDevicesData);
     } catch (error) {
-      alert('Upload Failed: ' + error);
+      toast.error('อัปโหลดรูปภาพล้มเหลว กรุณาลองใหม่');
     } finally {
       setIsUploading(false);
     }

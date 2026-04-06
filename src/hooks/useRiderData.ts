@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import type { RiderInfo } from '../types';
+import { toast } from '../components/common/Toast';
 
 export const useRiderData = (currentRiderId: string) => {
   const { data: jobs, loading: jobsLoading } = useDatabase('jobs');
@@ -37,7 +38,7 @@ export const useRiderData = (currentRiderId: string) => {
       const data = snapshot.val();
 
       if (data.approval_status === 'Suspended') {
-        alert(`บัญชีของคุณถูกระงับการใช้งาน!\nเหตุผล: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
+        toast.error(`บัญชีถูกระงับ: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
         setIsOnline(false);
         signOut(auth).then(() => {
           localStorage.removeItem('rider_id');
@@ -79,12 +80,25 @@ export const useRiderData = (currentRiderId: string) => {
       });
     };
 
-    navigator.geolocation.getCurrentPosition(updateLocationAndBattery, console.error, { enableHighAccuracy: true });
+    const handleGeoError = (error: GeolocationPositionError) => {
+      const messages: Record<number, string> = {
+        1: 'กรุณาอนุญาตการเข้าถึงตำแหน่ง (Location) เพื่อใช้งานระบบ',
+        2: 'ไม่สามารถระบุตำแหน่งได้ กรุณาตรวจสอบ GPS',
+        3: 'การระบุตำแหน่งใช้เวลานานเกินไป กรุณาลองใหม่',
+      };
+      console.warn('Geolocation error:', error.message);
+      if (error.code === 1) {
+        toast.error(messages[error.code]);
+        setIsOnline(false);
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(updateLocationAndBattery, handleGeoError, { enableHighAccuracy: true });
     let lastUpdate = 0;
     const watchId = navigator.geolocation.watchPosition((pos) => {
       const now = Date.now();
       if (now - lastUpdate > 10000) { updateLocationAndBattery(pos); lastUpdate = now; }
-    }, console.error, { enableHighAccuracy: true, maximumAge: 10000 });
+    }, handleGeoError, { enableHighAccuracy: true, maximumAge: 10000 });
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, [isOnline, riderInfo.id]);

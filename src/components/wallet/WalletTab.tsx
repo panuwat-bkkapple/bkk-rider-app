@@ -29,7 +29,11 @@ export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOp
     <div className="p-6 space-y-4">
       <h4 className="font-bold text-gray-800 text-sm mb-2">ประวัติธุรกรรมล่าสุด</h4>
       {transactions.length === 0 ? (
-        <div className="text-center text-gray-400 py-10 font-medium">ยังไม่มีประวัติธุรกรรม</div>
+        <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
+          <div className="text-4xl mb-3">💰</div>
+          <p className="font-bold text-gray-600 mb-1">ยังไม่มีธุรกรรม</p>
+          <p className="text-sm text-gray-400">เริ่มวิ่งงานเพื่อรับรายได้เข้ากระเป๋า</p>
+        </div>
       ) : (
         transactions.map((t: any) => (
           <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">

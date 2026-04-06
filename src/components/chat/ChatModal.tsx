@@ -6,6 +6,7 @@ import { db } from '../../api/firebase';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { sendAdminNotification } from '../../utils/notifications';
 import type { RiderInfo } from '../../types';
+import { toast } from '../common/Toast';
 
 interface ChatModalProps {
   chatJob: any;
@@ -56,7 +57,7 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
       sendAdminNotification('แชทใหม่จากไรเดอร์', `ไรเดอร์ ${riderInfo.name} ส่งข้อความในงาน ${orderIdDisplay}`);
       setChatText('');
     } catch {
-      alert('ไม่สามารถส่งข้อความได้ กรุณาลองใหม่');
+      toast.error('ไม่สามารถส่งข้อความได้ กรุณาลองใหม่');
     }
   };
 
@@ -72,7 +73,7 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
       });
       sendAdminNotification('รูปภาพใหม่จากไรเดอร์', `ไรเดอร์ ${riderInfo.name} ส่งรูปภาพในงาน ${orderIdDisplay}`);
     } catch {
-      alert('ไม่สามารถอัปโหลดรูปภาพได้ กรุณาลองใหม่');
+      toast.error('ไม่สามารถอัปโหลดรูปภาพได้ กรุณาลองใหม่');
     } finally {
       setIsChatUploading(false);
       if (chatFileInputRef.current) chatFileInputRef.current.value = '';

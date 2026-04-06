@@ -2,6 +2,7 @@
 import { X } from 'lucide-react';
 import { ref, update } from 'firebase/database';
 import { db } from '../../api/firebase';
+import { toast } from '../common/Toast';
 
 interface BankModalProps {
   currentRiderId: string;
@@ -18,7 +19,7 @@ export const BankModal = ({ currentRiderId, bankName, accountNo, onBankNameChang
       await update(ref(db, `riders/${currentRiderId}/bank`), { name: bankName, account: accountNo });
       onClose();
     } catch (e) {
-      alert('บันทึกไม่สำเร็จ: ' + e);
+      toast.error('บันทึกไม่สำเร็จ กรุณาลองใหม่');
     }
   };
 

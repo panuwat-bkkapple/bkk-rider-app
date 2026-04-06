@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { REJECT_REASONS } from '../../types';
+import { toast } from './Toast';
 
 interface RejectModalProps {
   rejectingJob: any;
@@ -18,7 +19,7 @@ export const RejectModal = ({ rejectingJob, onClose, onConfirm }: RejectModalPro
     try {
       await onConfirm(selectedReason);
     } catch (error) {
-      alert('เกิดข้อผิดพลาดในการยกเลิกงาน: ' + error);
+      toast.error('เกิดข้อผิดพลาดในการยกเลิกงาน');
     } finally {
       setIsRejecting(false);
     }

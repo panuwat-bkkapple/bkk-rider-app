@@ -3,6 +3,8 @@ import { Delete, Mail, Lock, LogOut } from 'lucide-react';
 import { ref, get } from 'firebase/database';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../api/firebase';
+import { hashPin } from '../utils/pinHash';
+import { toast } from '../components/common/Toast';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -21,16 +23,46 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
     const [step, setStep] = useState(1);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [pinAttempts, setPinAttempts] = useState(0);
+    const [lockUntil, setLockUntil] = useState(0);
 
-    // PIN verification
+    // PIN verification (compare hashed values) with rate limiting
     useEffect(() => {
         if (mode === 'enter_pin' && pin.length === 4) {
-            if (pin === savedPin && savedRiderId) {
-                onLoginSuccess(savedRiderId);
-            } else {
-                setError('รหัส PIN ไม่ถูกต้อง');
+            // Check if locked out
+            const now = Date.now();
+            if (lockUntil > now) {
+                const secs = Math.ceil((lockUntil - now) / 1000);
+                setError(`กรุณารอ ${secs} วินาที แล้วลองใหม่`);
                 setPin('');
+                return;
             }
+
+            hashPin(pin).then(hashed => {
+                if (hashed === savedPin && savedRiderId) {
+                    setPinAttempts(0);
+                    onLoginSuccess(savedRiderId);
+                } else {
+                    // Backward compat: check plaintext for old PINs, then migrate
+                    if (pin === savedPin && savedRiderId) {
+                        hashPin(pin).then(h => localStorage.setItem('device_pin', h));
+                        setPinAttempts(0);
+                        onLoginSuccess(savedRiderId);
+                    } else {
+                        const attempts = pinAttempts + 1;
+                        setPinAttempts(attempts);
+                        if (attempts >= 5) {
+                            const lockDuration = 30000; // 30 seconds
+                            setLockUntil(Date.now() + lockDuration);
+                            setError('ใส่ผิดครบ 5 ครั้ง กรุณารอ 30 วินาที');
+                            setPinAttempts(0);
+                        } else {
+                            setError(`รหัส PIN ไม่ถูกต้อง (เหลือ ${5 - attempts} ครั้ง)`);
+                        }
+                        setPin('');
+                    }
+                }
+            });
         } else if (mode === 'create_pin') {
             if (step === 1 && pin.length === 4) {
                 setStep(2);
@@ -39,13 +71,15 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
                 setError('');
             } else if (step === 2 && pin.length === 4) {
                 if (pin === confirmPin) {
-                    localStorage.setItem('device_pin', pin);
-                    const currentId = localStorage.getItem('rider_id');
-                    if (currentId) {
-                        onLoginSuccess(currentId);
-                    } else {
-                        setError('เกิดข้อผิดพลาด กรุณาออกจากระบบแล้วเข้าใหม่');
-                    }
+                    hashPin(pin).then(hashed => {
+                        localStorage.setItem('device_pin', hashed);
+                        const currentId = localStorage.getItem('rider_id');
+                        if (currentId) {
+                            onLoginSuccess(currentId);
+                        } else {
+                            setError('เกิดข้อผิดพลาด กรุณาออกจากระบบแล้วเข้าใหม่');
+                        }
+                    });
                 } else {
                     setError('รหัสไม่ตรงกัน กรุณาตั้งใหม่');
                     setStep(1);
@@ -128,9 +162,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
             await sendPasswordResetEmail(auth, cleanEmail);
             setLoading(false);
             setMode('email');
-            setTimeout(() => {
-                alert('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! \nกรุณาเช็คกล่องข้อความ (หรือโฟลเดอร์ขยะ/Spam) ด้วยนะครับ');
-            }, 100);
+            toast.success('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! กรุณาเช็คกล่องข้อความด้วยนะครับ');
         } catch (err: any) {
             setLoading(false);
             console.error("Reset Password Error:", err.message);

@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { AlertTriangle, X, Camera, Send, CheckCircle2 } from 'lucide-react';
 import { DISCREPANCY_CATEGORIES } from '../../types';
+import { toast } from './Toast';
 
 interface ReportDiscrepancyModalProps {
   job: any;
@@ -32,7 +33,7 @@ export const ReportDiscrepancyModal = ({ job, onClose, onSubmit }: ReportDiscrep
       await onSubmit(job.id, selectedCategory, detail, imageFile);
       onClose();
     } catch (error) {
-      alert('เกิดข้อผิดพลาด กรุณาลองใหม่: ' + error);
+      toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
     } finally {
       setIsSubmitting(false);
     }
