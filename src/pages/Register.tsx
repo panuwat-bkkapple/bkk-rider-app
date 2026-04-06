@@ -3,7 +3,7 @@ import { ChevronLeft, Upload, ShieldCheck, User, Bike, FileText } from 'lucide-r
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
 import { auth, db } from '../api/firebase';
-import { uploadImageToFirebase } from '../utils/uploadImage';
+import { uploadImageToFirebase, validateImageFile } from '../utils/uploadImage';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const validatePhone = (phone: string): boolean => /^0[0-9]{8,9}$/.test(phone.replace(/\s|-/g, ''));
@@ -24,6 +24,13 @@ export const Register = ({ onBack }: { onBack: () => void }) => {
   const handleFileChange = (type: keyof typeof files, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const validationError = validateImageFile(file);
+      if (validationError) {
+        setError(validationError);
+        e.target.value = '';
+        return;
+      }
+      setError('');
       setFiles(prev => ({ ...prev, [type]: file }));
       const reader = new FileReader();
       reader.onloadend = () => setPreviews(prev => ({ ...prev, [type]: reader.result as string }));
