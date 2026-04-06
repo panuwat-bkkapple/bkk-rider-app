@@ -1,7 +1,7 @@
 // src/components/chat/ChatModal.tsx
 import { useState, useRef, useEffect } from 'react';
 import { X, MessageSquare, Send, Image as ImageIcon } from 'lucide-react';
-import { ref, push } from 'firebase/database';
+import { ref, push, update } from 'firebase/database';
 import { db } from '../../api/firebase';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { sendAdminNotification } from '../../utils/notifications';
@@ -31,6 +31,20 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages.length]);
+
+  // Mark unread messages from others as read when chat is opened
+  useEffect(() => {
+    if (!chatJob?.chats) return;
+    const updates: Record<string, boolean> = {};
+    for (const [key, msg] of Object.entries(chatJob.chats) as [string, any][]) {
+      if (msg.sender !== 'rider' && !msg.read) {
+        updates[`jobs/${chatJob.id}/chats/${key}/read`] = true;
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      update(ref(db), updates).catch(() => {});
+    }
+  }, [chatJob?.id, chatMessages.length]);
 
   const handleSendMessage = async () => {
     if (!chatJob || !chatText.trim()) return;

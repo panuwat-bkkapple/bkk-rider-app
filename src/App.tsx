@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { auth } from './api/firebase';
@@ -57,11 +57,29 @@ function App() {
   // Auto-logout after 30 min of inactivity
   useAutoLogout(!!riderId);
 
+  // Pending chat jobId from notification tap
+  const [pendingChatJobId, setPendingChatJobId] = useState<string | null>(null);
+
+  // Check URL params for openChat (from background notification tap when app was closed)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openChat = params.get('openChat');
+    if (openChat) {
+      setPendingChatJobId(openChat);
+      // Clean up URL
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
+  const handleNotificationOpenChat = useCallback((jobId: string) => {
+    setPendingChatJobId(jobId);
+  }, []);
+
   // Wait for auth check before rendering
   if (!authChecked) return <LoadingSpinner />;
 
-  // Setup push notifications
-  usePushNotifications(riderId);
+  // Setup push notifications with chat deep linking
+  usePushNotifications(riderId, handleNotificationOpenChat);
 
   const handleLoginSuccess = (id: string) => {
     setRiderId(id);
@@ -98,7 +116,12 @@ function App() {
             path="/"
             element={
               riderId
-                ? <RiderApp currentRiderId={riderId} onLogout={handleLogout} />
+                ? <RiderApp
+                    currentRiderId={riderId}
+                    onLogout={handleLogout}
+                    pendingChatJobId={pendingChatJobId}
+                    onClearPendingChat={() => setPendingChatJobId(null)}
+                  />
                 : <Navigate to="/login" replace />
             }
           />

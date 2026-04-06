@@ -1,5 +1,5 @@
 // src/pages/RiderApp.tsx - Orchestrator (rebuilt from 1,110 lines monolith)
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
@@ -28,7 +28,14 @@ import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyMo
 // Types
 import type { TabId, HistoryFilter, InspectedDeviceData } from '../types';
 
-export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string; onLogout: () => void }) => {
+interface RiderAppProps {
+  currentRiderId: string;
+  onLogout: () => void;
+  pendingChatJobId?: string | null;
+  onClearPendingChat?: () => void;
+}
+
+export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPendingChat }: RiderAppProps) => {
   // Data & state
   const {
     jobData, riderInfo, setRiderInfo,
@@ -54,6 +61,14 @@ export const RiderApp = ({ currentRiderId, onLogout }: { currentRiderId: string;
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectingJob, setRejectingJob] = useState<any>(null);
   const [discrepancyJob, setDiscrepancyJob] = useState<any>(null);
+
+  // Open chat from notification deep link
+  useEffect(() => {
+    if (pendingChatJobId && !jobsLoading) {
+      setChatJobId(pendingChatJobId);
+      onClearPendingChat?.();
+    }
+  }, [pendingChatJobId, jobsLoading, onClearPendingChat]);
 
   // Loading state
   if (jobsLoading) return <LoadingSpinner />;
