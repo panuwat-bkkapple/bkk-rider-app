@@ -30,15 +30,27 @@ messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// Handle notification click - focus or open the app
+// Handle notification click - open chat if it's a chat notification
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const data = event.notification.data || {};
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Build target URL with chat param if it's a chat notification
+      const targetUrl = data.type === 'chat' && data.jobId
+        ? '/?openChat=' + encodeURIComponent(data.jobId)
+        : '/';
+
       if (clientList.length > 0) {
-        return clientList[0].focus();
+        const client = clientList[0];
+        // Send message to the app to open chat
+        if (data.type === 'chat' && data.jobId) {
+          client.postMessage({ type: 'OPEN_CHAT', jobId: data.jobId });
+        }
+        return client.focus();
       }
-      return clients.openWindow('/');
+      return clients.openWindow(targetUrl);
     })
   );
 });

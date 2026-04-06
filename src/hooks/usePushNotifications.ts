@@ -5,7 +5,7 @@ import { getToken, onMessage } from 'firebase/messaging';
 import { ref, set } from 'firebase/database';
 import { db } from '../api/firebase';
 
-export const usePushNotifications = (riderId: string | null) => {
+export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId: string) => void) => {
   useEffect(() => {
     if (!riderId) return;
 
@@ -59,11 +59,21 @@ export const usePushNotifications = (riderId: string | null) => {
 
         // Handle foreground messages
         onMessage(messaging, (payload) => {
+          const data = payload.data;
           if (payload.notification) {
-            new Notification(payload.notification.title || 'BKK Rider', {
+            const notification = new Notification(payload.notification.title || 'BKK Rider', {
               body: payload.notification.body,
-              icon: '/manifest-icon-192.maskable.png'
+              icon: '/manifest-icon-192.maskable.png',
+              data
             });
+            // Open chat when tapping foreground notification
+            if (data?.type === 'chat' && data?.jobId && onOpenChat) {
+              notification.onclick = () => {
+                window.focus();
+                onOpenChat(data.jobId);
+                notification.close();
+              };
+            }
           }
         });
       } catch (error) {
@@ -72,5 +82,17 @@ export const usePushNotifications = (riderId: string | null) => {
     };
 
     setupPush();
-  }, [riderId]);
+
+    // Listen for postMessage from service worker (background notification tap)
+    const handleSWMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OPEN_CHAT' && event.data?.jobId && onOpenChat) {
+        onOpenChat(event.data.jobId);
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener('message', handleSWMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handleSWMessage);
+    };
+  }, [riderId, onOpenChat]);
 };
