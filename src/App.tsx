@@ -11,6 +11,7 @@ import { OfflineBanner } from './components/common/OfflineBanner';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
 import { useAutoLogout } from './hooks/useAutoLogout';
 import { usePushNotifications } from './hooks/usePushNotifications';
+import { ToastContainer } from './components/common/Toast';
 
 // Wrapper to use navigate hooks inside components
 const LoginPage = ({ onLoginSuccess }: { onLoginSuccess: (id: string) => void }) => {
@@ -91,6 +92,7 @@ function App() {
 
   return (
     <ErrorBoundary>
+      <ToastContainer />
       <OfflineBanner />
       <BrowserRouter>
         <Routes>

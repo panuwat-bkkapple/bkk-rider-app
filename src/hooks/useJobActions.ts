@@ -6,6 +6,7 @@ import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo } from '../types';
 import { DISCREPANCY_CATEGORIES } from '../types';
+import { toast } from '../components/common/Toast';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -80,7 +81,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       const msg = error?.code === 'PERMISSION_DENIED'
         ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
         : `เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ${error?.message || error}`;
-      alert(msg);
+      toast.error(msg);
     }
   };
 
@@ -89,7 +90,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     incomingList: any[], onDone: () => void
   ) => {
     if (!rejectingJob || !selectedRejectReason) {
-      alert('กรุณาเลือกเหตุผลการยกเลิก/ปฏิเสธงานครับ');
+      toast.error('กรุณาเลือกเหตุผลการยกเลิก/ปฏิเสธงานครับ');
       return;
     }
 
@@ -114,26 +115,25 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   const handleCompleteJob = async (job: any, jobLists: { activeList: any[]; incomingList: any[] }) => {
-    if (!confirm('ยืนยันว่านำเครื่องมาถึงสาขา และส่งมอบให้แผนก QC เรียบร้อยแล้ว?')) return;
     try {
       await updateStatus(job.id, 'Pending QC', 'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว', {
         completed_at: Date.now(), rider_fee: 150, rider_fee_status: 'Pending'
       }, jobLists);
-      alert('ปิดจ๊อบสำเร็จ! ส่งมอบเครื่องเรียบร้อย');
+      toast.success('ปิดจ๊อบสำเร็จ! ส่งมอบเครื่องเรียบร้อย');
     } catch (e) {
-      alert('Error: ' + e);
+      toast.error('เกิดข้อผิดพลาด: ' + e);
     }
   };
 
   const handleOpenNavigation = (job: any) => {
     const targetAddress = job.cust_address || job.address;
-    if (!targetAddress) return alert('ไม่พบพิกัดหรือที่อยู่สำหรับนำทาง');
+    if (!targetAddress) return toast.error('ไม่พบพิกัดหรือที่อยู่สำหรับนำทาง');
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(targetAddress)}`, '_blank');
   };
 
   const handleCallCustomer = (job: any) => {
     const phone = job.cust_phone || job.customer_phone || job.phone;
-    if (!phone) return alert('ไม่พบเบอร์โทรศัพท์ของลูกค้า');
+    if (!phone) return toast.error('ไม่พบเบอร์โทรศัพท์ของลูกค้า');
     window.location.href = `tel:${phone}`;
   };
 
@@ -141,8 +141,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     withdrawAmount: string, balance: number, riderInfoData: RiderInfo, onDone: () => void
   ) => {
     const amount = Number(withdrawAmount);
-    if (!amount || amount < 100) return alert('ระบุขั้นต่ำ 100 บาท');
-    if (amount > balance) return alert('ยอดเงินไม่เพียงพอ');
+    if (!amount || amount < 100) return toast.error('ระบุขั้นต่ำ 100 บาท');
+    if (amount > balance) return toast.error('ยอดเงินไม่เพียงพอ');
     try {
       await push(ref(db, 'withdrawals'), {
         rider_id: riderInfoData.id, rider_name: riderInfoData.name,
@@ -151,10 +151,10 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         bank_name: riderInfoData.bankName, bank_account: riderInfoData.accountNo
       });
       sendAdminNotification('คำขอถอนเงิน', `ไรเดอร์ ${riderInfoData.name} ขอเบิกเงิน ${formatCurrency(amount)}`);
-      alert('ส่งคำขอถอนเงินสำเร็จ!');
+      toast.success('ส่งคำขอถอนเงินสำเร็จ!');
       onDone();
     } catch (e) {
-      alert(e);
+      toast.error('เกิดข้อผิดพลาด: ' + e);
     }
   };
 

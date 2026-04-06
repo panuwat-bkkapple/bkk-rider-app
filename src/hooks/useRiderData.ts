@@ -1,11 +1,12 @@
 // src/hooks/useRiderData.ts
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import type { RiderInfo } from '../types';
+import { toast } from '../components/common/Toast';
 
 export const useRiderData = (currentRiderId: string) => {
   const { data: jobs, loading: jobsLoading } = useDatabase('jobs');
@@ -37,7 +38,7 @@ export const useRiderData = (currentRiderId: string) => {
       const data = snapshot.val();
 
       if (data.approval_status === 'Suspended') {
-        alert(`บัญชีของคุณถูกระงับการใช้งาน!\nเหตุผล: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
+        toast.error(`บัญชีถูกระงับ: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
         setIsOnline(false);
         signOut(auth).then(() => {
           localStorage.removeItem('rider_id');
@@ -87,7 +88,7 @@ export const useRiderData = (currentRiderId: string) => {
       };
       console.warn('Geolocation error:', error.message);
       if (error.code === 1) {
-        alert(messages[error.code]);
+        toast.error(messages[error.code]);
         setIsOnline(false);
       }
     };

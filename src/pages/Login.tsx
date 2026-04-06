@@ -4,6 +4,7 @@ import { ref, get } from 'firebase/database';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../api/firebase';
 import { hashPin } from '../utils/pinHash';
+import { toast } from '../components/common/Toast';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -161,9 +162,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
             await sendPasswordResetEmail(auth, cleanEmail);
             setLoading(false);
             setMode('email');
-            setTimeout(() => {
-                alert('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! \nกรุณาเช็คกล่องข้อความ (หรือโฟลเดอร์ขยะ/Spam) ด้วยนะครับ');
-            }, 100);
+            toast.success('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! กรุณาเช็คกล่องข้อความด้วยนะครับ');
         } catch (err: any) {
             setLoading(false);
             console.error("Reset Password Error:", err.message);
