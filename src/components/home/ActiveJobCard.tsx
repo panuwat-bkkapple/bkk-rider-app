@@ -76,12 +76,12 @@ export const ActiveJobCard = ({
         <User size={14} className="text-blue-500" />
         <span className="font-semibold">{getCustomerName(job)}</span>
       </div>
-      {job.appointment_time && (
-        <div className="flex items-center gap-2 text-sm text-amber-600">
-          <Clock size={14} />
-          <span className="font-semibold">{formatDate(job.appointment_time)}</span>
-        </div>
-      )}
+      <div className="flex items-center gap-2 text-sm text-amber-600">
+        <Clock size={14} />
+        <span className="font-semibold">
+          นัดหมาย: {job.appointment_time ? formatDate(job.appointment_time) : 'ยังไม่ระบุ'}
+        </span>
+      </div>
     </div>
 
     <div className="flex items-start gap-3">
