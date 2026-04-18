@@ -26,9 +26,10 @@ import { InspectionModal } from '../components/inspection/InspectionModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
 import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
 import { ConfirmModal } from '../components/common/ConfirmModal';
+import { JobDetailPage } from './JobDetailPage';
 
 // Types
-import type { TabId, HistoryFilter, InspectedDeviceData } from '../types';
+import type { TabId, HistoryFilter, JobDateFilter, InspectedDeviceData } from '../types';
 
 interface RiderAppProps {
   currentRiderId: string;
@@ -52,6 +53,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   // UI state
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('today');
+  const [jobDateFilter, setJobDateFilter] = useState<JobDateFilter>('today');
+  const [detailJobId, setDetailJobId] = useState<string | null>(null);
 
   // Modal state
   const [inspectingJob, setInspectingJob] = useState<any>(null);
@@ -81,6 +84,12 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const currentChatJob = chatJobId
     ? (jobData.activeList.find(j => j.id === chatJobId) || jobData.history.find(j => j.id === chatJobId))
     : null;
+
+  // Resolve job for detail page from incoming or active lists
+  const detailIncoming = detailJobId ? jobData.incomingList.find(j => j.id === detailJobId) : null;
+  const detailActive = detailJobId && !detailIncoming ? jobData.activeList.find(j => j.id === detailJobId) : null;
+  const detailJob = detailIncoming || detailActive;
+  const detailMode: 'incoming' | 'active' = detailIncoming ? 'incoming' : 'active';
 
   // Handlers
   const handleUpdateStatus = async (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => {
@@ -161,6 +170,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           balance={jobData.balance}
           incomingList={jobData.incomingList}
           activeList={jobData.activeList}
+          jobDateFilter={jobDateFilter}
+          onJobDateFilterChange={setJobDateFilter}
           onAcceptJob={handleAcceptJob}
           onUpdateStatus={handleUpdateStatus}
           onRejectJob={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
@@ -170,7 +181,29 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => setCompletingJob(job)}
           onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
+          onOpenJobDetail={setDetailJobId}
           onGoToProfile={() => setActiveTab('profile')}
+        />
+      )}
+
+      {detailJob && (
+        <JobDetailPage
+          job={detailJob}
+          riderInfoId={riderInfo.id}
+          mode={detailMode}
+          onBack={() => setDetailJobId(null)}
+          onAccept={async (jobId, extraData) => {
+            await handleAcceptJob(jobId, extraData);
+            setDetailJobId(null);
+          }}
+          onReject={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
+          onUpdateStatus={handleUpdateStatus}
+          onOpenChat={setChatJobId}
+          onCallCustomer={actions.handleCallCustomer}
+          onOpenNavigation={actions.handleOpenNavigation}
+          onInspect={(job) => setInspectingJob(job)}
+          onCompleteJob={(job) => setCompletingJob(job)}
+          onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
         />
       )}
 

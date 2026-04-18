@@ -1,10 +1,11 @@
 // src/components/home/HomeTab.tsx
-import { Bike, X, Coffee, Wifi } from 'lucide-react';
+import { useMemo } from 'react';
+import { Bike, X, Coffee, Wifi, CalendarDays } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { MapBackground } from '../layout/MapBackground';
 import { IncomingJobCard } from './IncomingJobCard';
 import { ActiveJobCard } from './ActiveJobCard';
-import type { RiderInfo } from '../../types';
+import type { RiderInfo, JobDateFilter } from '../../types';
 
 interface HomeTabProps {
   riderInfo: RiderInfo;
@@ -13,6 +14,8 @@ interface HomeTabProps {
   balance: number;
   incomingList: any[];
   activeList: any[];
+  jobDateFilter: JobDateFilter;
+  onJobDateFilterChange: (filter: JobDateFilter) => void;
   onAcceptJob: (jobId: string, extraData: any) => void;
   onUpdateStatus: (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => void;
   onRejectJob: (job: any) => void;
@@ -22,16 +25,47 @@ interface HomeTabProps {
   onInspectJob: (job: any) => void;
   onCompleteJob: (job: any) => void;
   onReportDiscrepancy: (job: any) => void;
+  onOpenJobDetail: (jobId: string) => void;
   onGoToProfile: () => void;
 }
 
+const filters: { id: JobDateFilter; label: string }[] = [
+  { id: 'today', label: 'วันนี้' },
+  { id: 'tomorrow', label: 'พรุ่งนี้' },
+  { id: 'this_week', label: 'สัปดาห์นี้' },
+  { id: 'all', label: 'ทั้งหมด' },
+];
+
+const filterByDate = (list: any[], filter: JobDateFilter): any[] => {
+  if (filter === 'all') return list;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 86400000;
+  return list.filter(job => {
+    const t = job.appointment_time;
+    if (!t) return false;
+    if (filter === 'today') return t >= todayStart && t < todayStart + dayMs;
+    if (filter === 'tomorrow') return t >= todayStart + dayMs && t < todayStart + 2 * dayMs;
+    if (filter === 'this_week') return t >= todayStart && t < todayStart + 7 * dayMs;
+    return true;
+  });
+};
+
 export const HomeTab = ({
   riderInfo, isOnline, onToggleOnline, balance,
-  incomingList, activeList,
+  incomingList, activeList, jobDateFilter, onJobDateFilterChange,
   onAcceptJob, onUpdateStatus, onRejectJob,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onInspectJob, onCompleteJob, onReportDiscrepancy, onGoToProfile
-}: HomeTabProps) => (
+  onInspectJob, onCompleteJob, onReportDiscrepancy,
+  onOpenJobDetail, onGoToProfile
+}: HomeTabProps) => {
+  const visibleIncoming = useMemo(
+    () => filterByDate(incomingList, jobDateFilter),
+    [incomingList, jobDateFilter]
+  );
+  const hiddenCount = incomingList.length - visibleIncoming.length;
+
+  return (
   <div className="absolute inset-0 pb-32 animate-in fade-in duration-500">
     <MapBackground />
 
@@ -64,13 +98,34 @@ export const HomeTab = ({
 
     {/* Job cards */}
     <div className="absolute top-28 bottom-24 left-4 right-4 z-30 overflow-y-auto hide-scrollbar pb-4 space-y-4">
-      {isOnline && incomingList.map(job => (
+      {/* Date filter bar */}
+      {isOnline && (
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl px-3 py-2 shadow-sm border border-gray-100 flex items-center gap-2 overflow-x-auto hide-scrollbar">
+          <CalendarDays size={16} className="text-gray-400 shrink-0" />
+          {filters.map(f => (
+            <button
+              key={f.id}
+              onClick={() => onJobDateFilterChange(f.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                jobDateFilter === f.id
+                  ? 'bg-emerald-500 text-white shadow'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isOnline && visibleIncoming.map(job => (
         <IncomingJobCard
           key={job.id}
           job={job}
           riderInfoId={riderInfo.id}
           onAccept={onAcceptJob}
           onReject={onRejectJob}
+          onOpenDetail={onOpenJobDetail}
         />
       ))}
 
@@ -88,15 +143,22 @@ export const HomeTab = ({
           onInspect={onInspectJob}
           onCompleteJob={onCompleteJob}
           onReportDiscrepancy={onReportDiscrepancy}
+          onOpenDetail={onOpenJobDetail}
         />
       ))}
 
       {/* Empty states */}
-      {isOnline && incomingList.length === 0 && activeList.length === 0 && (
+      {isOnline && visibleIncoming.length === 0 && activeList.length === 0 && (
         <div className="bg-white/90 backdrop-blur-md rounded-3xl p-8 text-center shadow-lg border border-gray-100">
           <Coffee size={48} className="text-gray-300 mx-auto mb-4" />
-          <h3 className="font-bold text-gray-700 mb-1">ยังไม่มีงานเข้า</h3>
-          <p className="text-sm text-gray-400">รอรับงานจากระบบ... เปิดรับงานไว้ได้เลยครับ</p>
+          <h3 className="font-bold text-gray-700 mb-1">
+            {hiddenCount > 0 ? 'ไม่มีงานในช่วงเวลาที่เลือก' : 'ยังไม่มีงานเข้า'}
+          </h3>
+          <p className="text-sm text-gray-400">
+            {hiddenCount > 0
+              ? `มีงานอีก ${hiddenCount} งานในช่วงอื่น — กด "ทั้งหมด" เพื่อดู`
+              : 'รอรับงานจากระบบ... เปิดรับงานไว้ได้เลยครับ'}
+          </p>
         </div>
       )}
 
@@ -109,4 +171,5 @@ export const HomeTab = ({
       )}
     </div>
   </div>
-);
+  );
+};

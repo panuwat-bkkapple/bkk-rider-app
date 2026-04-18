@@ -8,10 +8,14 @@ interface IncomingJobCardProps {
   riderInfoId: string;
   onAccept: (jobId: string, extraData: any) => void;
   onReject: (job: any) => void;
+  onOpenDetail: (jobId: string) => void;
 }
 
-export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject }: IncomingJobCardProps) => (
-  <div className="bg-white rounded-[2rem] p-6 shadow-xl border-2 border-emerald-400 animate-in slide-in-from-bottom-4">
+export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject, onOpenDetail }: IncomingJobCardProps) => (
+  <div
+    onClick={() => onOpenDetail(job.id)}
+    className="bg-white rounded-[2rem] p-6 shadow-xl border-2 border-emerald-400 animate-in slide-in-from-bottom-4 cursor-pointer hover:shadow-2xl transition-shadow"
+  >
     <div className="flex justify-between items-center mb-4">
       <div className="flex items-center gap-2">
         <span className="relative flex h-3 w-3">
@@ -60,7 +64,7 @@ export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject }: Incomi
       </div>
     </div>
 
-    <div className="flex gap-2">
+    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
       <button
         onClick={() => onReject(job)}
         className="w-1/3 bg-gray-100 text-gray-600 py-4 rounded-2xl font-bold text-sm hover:bg-red-50 hover:text-red-500 transition-colors"
