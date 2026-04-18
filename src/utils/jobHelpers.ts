@@ -10,6 +10,9 @@ export const getCustomerName = (job: any): string => {
   return job.cust_name || job.customerName || job.customer_name || job.customer || 'ไม่ระบุชื่อลูกค้า';
 };
 
+export const getPaymentSlip = (job: any): string | undefined =>
+  job.slip_url || job.payment_slip || job.slipUrl || job.payment_info?.slip_url;
+
 export const getDevicesList = (job: any): Device[] => {
   if (!job) return [];
   if (job.devices && Array.isArray(job.devices) && job.devices.length > 0) return job.devices;

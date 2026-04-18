@@ -5,7 +5,7 @@ import {
   MessageSquare, Landmark, PackageOpen, User, Clock, AlertTriangle, Loader2
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getDisplayPrice, getCustomerName } from '../../utils/jobHelpers';
+import { getDisplayPrice, getCustomerName, getPaymentSlip } from '../../utils/jobHelpers';
 
 interface ActiveJobCardProps {
   job: any;
@@ -19,12 +19,13 @@ interface ActiveJobCardProps {
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
   onReportDiscrepancy: (job: any) => void;
+  onOpenDetail: (jobId: string) => void;
 }
 
 export const ActiveJobCard = ({
   job, index, totalJobs,
   onUpdateStatus, onOpenChat, onCallCustomer, onOpenNavigation,
-  onReject, onInspect, onCompleteJob, onReportDiscrepancy
+  onReject, onInspect, onCompleteJob, onReportDiscrepancy, onOpenDetail
 }: ActiveJobCardProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -41,8 +42,13 @@ export const ActiveJobCard = ({
     ? Object.values(job.discrepancy_reports).some((r: any) => r.status === 'pending')
     : false;
 
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
   return (
-  <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 animate-in slide-in-from-bottom flex flex-col gap-4 relative overflow-hidden">
+  <div
+    onClick={() => onOpenDetail(job.id)}
+    className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 animate-in slide-in-from-bottom flex flex-col gap-4 relative overflow-hidden cursor-pointer hover:shadow-[0_12px_36px_rgb(0,0,0,0.12)] transition-shadow"
+  >
     {totalJobs > 1 && (
       <div className="absolute top-0 right-0 bg-blue-600 text-white px-4 py-1 rounded-bl-xl font-bold text-xs shadow-sm">
         จุดหมายที่ {index + 1}
@@ -51,7 +57,7 @@ export const ActiveJobCard = ({
 
     <div className="flex justify-between items-center mb-1 mt-2">
       <span className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full text-xs font-semibold">{job.status}</span>
-      <div className="flex gap-2">
+      <div className="flex gap-2" onClick={stop}>
         <button onClick={() => onOpenChat(job.id)} className="bg-purple-50 p-3 rounded-full text-purple-600 hover:bg-purple-100 relative">
           <MessageSquare size={20} />
           {job.chats && Object.values(job.chats).some((c: any) => c.sender === 'admin' && !c.read) && (
@@ -99,7 +105,7 @@ export const ActiveJobCard = ({
     {/* Pending discrepancy banner */}
     {hasPendingDiscrepancy && (
       <button
-        onClick={() => onReportDiscrepancy(job)}
+        onClick={(e) => { e.stopPropagation(); onReportDiscrepancy(job); }}
         className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-center gap-3 animate-pulse"
       >
         <div className="animate-spin w-5 h-5 border-[3px] border-amber-400 border-t-transparent rounded-full shrink-0"></div>
@@ -113,7 +119,7 @@ export const ActiveJobCard = ({
     {/* Report discrepancy button */}
     {!hasPendingDiscrepancy && !['In-Transit', 'Pending QC', 'Completed'].includes(job.status) && (
       <button
-        onClick={() => onReportDiscrepancy(job)}
+        onClick={(e) => { e.stopPropagation(); onReportDiscrepancy(job); }}
         className="w-full text-xs font-bold text-amber-500 hover:text-amber-600 underline py-1 flex items-center justify-center gap-1"
       >
         <AlertTriangle size={12} /> แจ้งข้อมูลไม่ตรง
@@ -122,7 +128,7 @@ export const ActiveJobCard = ({
 
     {/* Action buttons based on status */}
     {job.status === 'Accepted' && (
-      <div className="flex gap-2 mt-2">
+      <div className="flex gap-2 mt-2" onClick={stop}>
         <button onClick={() => onReject(job)} disabled={!!loadingAction} className="w-14 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50">
           <X size={20} />
         </button>
@@ -133,13 +139,13 @@ export const ActiveJobCard = ({
     )}
 
     {job.status === 'Heading to Customer' && (
-      <button onClick={() => handleAction('arrived', () => onUpdateStatus(job.id, 'Arrived', 'ถึงจุดหมายแล้ว'))} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
+      <button onClick={(e) => { e.stopPropagation(); handleAction('arrived', () => onUpdateStatus(job.id, 'Arrived', 'ถึงจุดหมายแล้ว')); }} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
         {loadingAction === 'arrived' ? <Loader2 size={20} className="animate-spin" /> : <MapPin size={20} />} ถึงจุดหมายแล้ว (Arrived)
       </button>
     )}
 
     {(job.status === 'Arrived' || job.status === 'Being Inspected') && (
-      <div className="space-y-2 mt-2">
+      <div className="space-y-2 mt-2" onClick={stop}>
         <button
           onClick={() => {
             if (job.status === 'Arrived') onUpdateStatus(job.id, 'Being Inspected', 'เริ่มตรวจสภาพ');
@@ -172,12 +178,12 @@ export const ActiveJobCard = ({
     )}
 
     {['Waiting for Handover', 'Paid', 'PAID'].includes(job.status) && (
-      <div className="space-y-3 mt-2">
+      <div className="space-y-3 mt-2" onClick={stop}>
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-center shadow-sm">
           <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-1" />
           <h3 className="font-bold text-emerald-800 text-sm">โอนเงินสำเร็จ!</h3>
-          {(job.slip_url || job.payment_slip || job.slipUrl || job.payment_info?.slip_url) && (
-            <img src={job.slip_url || job.payment_slip || job.slipUrl || job.payment_info?.slip_url} className="w-full h-auto max-h-48 object-contain mt-2 rounded-xl" />
+          {getPaymentSlip(job) && (
+            <img src={getPaymentSlip(job)} className="w-full h-auto max-h-48 object-contain mt-2 rounded-xl" />
           )}
         </div>
         <button onClick={() => handleAction('transit', () => onUpdateStatus(job.id, 'In-Transit', 'เดินทางกลับ'))} disabled={!!loadingAction} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
@@ -187,13 +193,13 @@ export const ActiveJobCard = ({
     )}
 
     {job.status === 'In-Transit' && (
-      <button onClick={() => onCompleteJob(job)} disabled={!!loadingAction} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 mt-2 disabled:opacity-50">
+      <button onClick={(e) => { e.stopPropagation(); onCompleteJob(job); }} disabled={!!loadingAction} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 mt-2 disabled:opacity-50">
         <PackageOpen size={20} /> ถึงสาขาแล้ว (ส่งมอบเครื่อง)
       </button>
     )}
 
     {job.status === 'Revised Offer' && (
-      <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100 mt-2">
+      <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100 mt-2" onClick={stop}>
         <h3 className="font-bold text-purple-700 mb-2">มีการปรับราคาใหม่: {formatCurrency(getDisplayPrice(job))}</h3>
         <div className="flex gap-2">
           <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, 'Cancelled', 'ลูกค้ายกเลิก', { cancel_reason: 'ลูกค้ายกเลิก' }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">

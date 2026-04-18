@@ -159,6 +159,7 @@ export const DISCREPANCY_CATEGORIES = [
 
 export type TabId = 'home' | 'history' | 'wallet' | 'profile' | 'faq';
 export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
+export type JobDateFilter = 'today' | 'tomorrow' | 'this_week' | 'all';
 
 export const REJECT_REASONS = [
   'ลูกค้าไม่รับสาย / ติดต่อไม่ได้',
