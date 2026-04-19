@@ -76,11 +76,11 @@ function App() {
     setPendingChatJobId(jobId);
   }, []);
 
-  // Wait for auth check before rendering
-  if (!authChecked) return <LoadingSpinner />;
-
   // Setup push notifications with chat deep linking
   usePushNotifications(riderId, handleNotificationOpenChat);
+
+  // Wait for auth check before rendering
+  if (!authChecked) return <LoadingSpinner />;
 
   const handleLoginSuccess = (id: string) => {
     setRiderId(id);
