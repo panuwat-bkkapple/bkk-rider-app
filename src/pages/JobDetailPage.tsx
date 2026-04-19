@@ -3,10 +3,35 @@ import { useState } from 'react';
 import {
   ArrowLeft, MapPin, Navigation, Phone, User, Clock, Wallet as WalletIcon,
   Bike, CheckCircle2, X, ShieldCheck, MessageSquare, Landmark, PackageOpen,
-  AlertTriangle, Loader2, Camera, Tag, Hash
+  AlertTriangle, Loader2, Camera, Tag, Hash,
+  Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck
 } from 'lucide-react';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
+
+const parseCustomerCondition = (raw: string): { category: string; detail: string } => {
+  const m = raw.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
+  if (m) return { category: m[1].trim(), detail: m[2].trim() };
+  return { category: '', detail: raw };
+};
+
+const getConditionIcon = (category: string) => {
+  const c = category.toLowerCase();
+  if (category.includes('จอ') || c.includes('screen') || c.includes('display')) return Monitor;
+  if (category.includes('ตัวเครื่อง') || category.includes('ฝาหลัง') || c.includes('body')) return Smartphone;
+  if (category.includes('แบตเตอรี่') || c.includes('battery')) return BatteryCharging;
+  if (category.includes('อุปกรณ์เสริม') || c.includes('accessor')) return PackageOpen;
+  if (category.includes('โมเดล') || c.includes('model')) return Globe;
+  if (category.includes('ประกัน') || c.includes('warranty')) return ShieldCheck;
+  return Info;
+};
+
+const getCustomerConditions = (device: any, job: any): string[] => {
+  const list = Array.isArray(device?.customer_conditions) && device.customer_conditions.length > 0
+    ? device.customer_conditions
+    : (Array.isArray(job?.customer_conditions) ? job.customer_conditions : []);
+  return list.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+};
 
 interface JobDetailPageProps {
   job: any;
@@ -107,6 +132,12 @@ export const JobDetailPage = ({
               <span className="font-semibold">นัดหมาย: {getAppointmentDisplay(job)}</span>
             </div>
           )}
+          {job.created_at && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <Clock size={14} />
+              <span>สร้างเมื่อ: {formatDate(job.created_at)}</span>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -139,23 +170,57 @@ export const JobDetailPage = ({
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">
               รายการเครื่อง ({devices.length})
             </h3>
-            <div className="space-y-2">
-              {devices.map((d, i) => (
-                <div key={d.device_id || i} className="flex justify-between items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-800 truncate">{d.model}</p>
-                    {d.variant && <p className="text-xs text-gray-500 mt-0.5">{d.variant}</p>}
-                    {d.inspection_status && (
-                      <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-semibold">
-                        {d.inspection_status}
+            <div className="space-y-3">
+              {devices.map((d, i) => {
+                const conditions = getCustomerConditions(d, job);
+                return (
+                  <div key={d.device_id || i} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-800 truncate">{d.model}</p>
+                        {d.variant && <p className="text-xs text-gray-500 mt-0.5">{d.variant}</p>}
+                        {d.inspection_status && (
+                          <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-semibold">
+                            {d.inspection_status}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">
+                        {formatCurrency(Number(d.price || d.estimated_price || d.base_price || 0))}
                       </span>
+                    </div>
+
+                    {conditions.length > 0 && (
+                      <div className="pt-2 border-t border-gray-200 space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                          <ClipboardCheck size={14} />
+                          <span>ลูกค้าแจ้งสภาพ</span>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {conditions.map((raw, idx) => {
+                            const { category, detail } = parseCustomerCondition(raw);
+                            const Icon = getConditionIcon(category);
+                            return (
+                              <li
+                                key={idx}
+                                className="flex items-start gap-2 bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-gray-700 leading-relaxed"
+                              >
+                                <Icon size={14} className="text-gray-500 shrink-0 mt-0.5" />
+                                <span className="flex-1 min-w-0">
+                                  {category && (
+                                    <span className="font-semibold text-gray-800">[{category}] </span>
+                                  )}
+                                  <span>{detail}</span>
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
                     )}
                   </div>
-                  <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">
-                    {formatCurrency(Number(d.price || d.estimated_price || d.base_price || 0))}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
