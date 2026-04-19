@@ -4,8 +4,8 @@ import {
   Bike, MapPin, Navigation, Phone, CheckCircle2, X, ShieldCheck,
   MessageSquare, Landmark, PackageOpen, User, Clock, AlertTriangle, Loader2
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getDisplayPrice, getCustomerName, getPaymentSlip } from '../../utils/jobHelpers';
+import { formatCurrency } from '../../utils/formatters';
+import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
 
 interface ActiveJobCardProps {
   job: any;
@@ -82,12 +82,12 @@ export const ActiveJobCard = ({
         <User size={14} className="text-blue-500" />
         <span className="font-semibold">{getCustomerName(job)}</span>
       </div>
-      <div className="flex items-center gap-2 text-sm text-amber-600">
-        <Clock size={14} />
-        <span className="font-semibold">
-          นัดหมาย: {job.appointment_time ? formatDate(job.appointment_time) : 'ยังไม่ระบุ'}
-        </span>
-      </div>
+      {getAppointmentDisplay(job) && (
+        <div className="flex items-center gap-2 text-sm text-amber-600">
+          <Clock size={14} />
+          <span className="font-semibold">นัดหมาย: {getAppointmentDisplay(job)}</span>
+        </div>
+      )}
     </div>
 
     <div className="flex items-start gap-3">

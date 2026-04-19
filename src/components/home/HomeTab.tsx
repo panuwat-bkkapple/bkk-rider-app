@@ -5,6 +5,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { MapBackground } from '../layout/MapBackground';
 import { IncomingJobCard } from './IncomingJobCard';
 import { ActiveJobCard } from './ActiveJobCard';
+import { getAppointmentDateKey } from '../../utils/jobHelpers';
 import type { RiderInfo, JobDateFilter } from '../../types';
 
 interface HomeTabProps {
@@ -36,17 +37,21 @@ const filters: { id: JobDateFilter; label: string }[] = [
   { id: 'all', label: 'ทั้งหมด' },
 ];
 
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const filterByDate = (list: any[], filter: JobDateFilter): any[] => {
   if (filter === 'all') return list;
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const dayMs = 86400000;
+  const today = ymd(now);
+  const tomorrow = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+  const weekEnd = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
   return list.filter(job => {
-    const t = job.appointment_time;
-    if (!t) return false;
-    if (filter === 'today') return t >= todayStart && t < todayStart + dayMs;
-    if (filter === 'tomorrow') return t >= todayStart + dayMs && t < todayStart + 2 * dayMs;
-    if (filter === 'this_week') return t >= todayStart && t < todayStart + 7 * dayMs;
+    const key = getAppointmentDateKey(job);
+    if (!key) return false;
+    if (filter === 'today') return key === today;
+    if (filter === 'tomorrow') return key === tomorrow;
+    if (filter === 'this_week') return key >= today && key < weekEnd;
     return true;
   });
 };
