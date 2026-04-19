@@ -5,8 +5,8 @@ import {
   Bike, CheckCircle2, X, ShieldCheck, MessageSquare, Landmark, PackageOpen,
   AlertTriangle, Loader2, Camera, Tag, Hash
 } from 'lucide-react';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip } from '../utils/jobHelpers';
+import { formatCurrency } from '../utils/formatters';
+import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
 
 interface JobDetailPageProps {
   job: any;
@@ -101,12 +101,12 @@ export const JobDetailPage = ({
               <span className="text-xs">แตะเพื่อโทร</span>
             </button>
           )}
-          <div className="flex items-center gap-2 text-sm text-amber-600">
-            <Clock size={16} />
-            <span className="font-semibold">
-              นัดหมาย: {job.appointment_time ? formatDate(job.appointment_time) : 'ยังไม่ระบุ'}
-            </span>
-          </div>
+          {getAppointmentDisplay(job) && (
+            <div className="flex items-center gap-2 text-sm text-amber-600">
+              <Clock size={16} />
+              <span className="font-semibold">นัดหมาย: {getAppointmentDisplay(job)}</span>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">

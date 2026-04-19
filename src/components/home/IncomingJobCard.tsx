@@ -1,7 +1,7 @@
 // src/components/home/IncomingJobCard.tsx
 import { MapPin, User, Clock, Wallet as WalletIcon } from 'lucide-react';
-import { formatCurrency, formatDate } from '../../utils/formatters';
-import { getDisplayPrice, getCustomerName } from '../../utils/jobHelpers';
+import { formatCurrency } from '../../utils/formatters';
+import { getDisplayPrice, getCustomerName, getAppointmentDisplay } from '../../utils/jobHelpers';
 
 interface IncomingJobCardProps {
   job: any;
@@ -42,12 +42,12 @@ export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject, onOpenDe
         <User size={14} className="text-blue-500" />
         <span className="font-semibold">{getCustomerName(job)}</span>
       </div>
-      <div className="flex items-center gap-2 text-sm text-amber-600">
-        <Clock size={14} />
-        <span className="font-semibold">
-          นัดหมาย: {job.appointment_time ? formatDate(job.appointment_time) : 'ยังไม่ระบุ'}
-        </span>
-      </div>
+      {getAppointmentDisplay(job) && (
+        <div className="flex items-center gap-2 text-sm text-amber-600">
+          <Clock size={14} />
+          <span className="font-semibold">นัดหมาย: {getAppointmentDisplay(job)}</span>
+        </div>
+      )}
     </div>
 
     <div className="flex items-start gap-3 mb-4">

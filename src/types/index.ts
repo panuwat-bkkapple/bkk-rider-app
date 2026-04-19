@@ -44,6 +44,7 @@ export interface Job {
   chats?: Record<string, ChatMessage>;
   qc_logs?: QCLog[];
   appointment_time?: number;
+  pickup_schedule?: PickupSchedule | null;
   created_at?: number;
   updated_at?: number;
   completed_at?: number;
@@ -58,6 +59,12 @@ export interface Job {
   payment_info?: { slip_url?: string };
   assessment_details?: { isNewDevice?: boolean; rawConditions?: Record<string, any> };
   customer_conditions?: string[];
+}
+
+export interface PickupSchedule {
+  type: 'instant' | 'schedule';
+  date: string;
+  time: string;
 }
 
 export interface Device {
