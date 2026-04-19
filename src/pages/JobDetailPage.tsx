@@ -26,11 +26,57 @@ const getConditionIcon = (category: string) => {
   return Info;
 };
 
-const getCustomerConditions = (device: any, job: any): string[] => {
-  const list = Array.isArray(device?.customer_conditions) && device.customer_conditions.length > 0
-    ? device.customer_conditions
-    : (Array.isArray(job?.customer_conditions) ? job.customer_conditions : []);
-  return list.filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+type ParsedCondition = { category: string; detail: string };
+
+const normalizeConditionEntries = (input: any): ParsedCondition[] => {
+  if (!input) return [];
+  const out: ParsedCondition[] = [];
+
+  if (Array.isArray(input)) {
+    input.forEach((item) => {
+      if (!item) return;
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed) out.push(parseCustomerCondition(trimmed));
+      } else if (typeof item === 'object') {
+        const category = String(item.category || item.label || item.title || item.group || '').trim();
+        const detail = String(item.detail || item.value || item.option || item.text || item.label || '').trim();
+        if (category || detail) out.push({ category, detail });
+      }
+    });
+  } else if (typeof input === 'object') {
+    Object.entries(input).forEach(([key, value]) => {
+      const category = String(key).trim();
+      if (Array.isArray(value)) {
+        value.forEach((v) => {
+          const detail = typeof v === 'string' ? v : String((v as any)?.label ?? (v as any)?.value ?? '');
+          if (detail.trim()) out.push({ category, detail: detail.trim() });
+        });
+      } else if (value && typeof value === 'object') {
+        const detail = String((value as any).label ?? (value as any).value ?? (value as any).detail ?? '').trim();
+        if (detail) out.push({ category, detail });
+      } else if (value !== undefined && value !== null && String(value).trim()) {
+        out.push({ category, detail: String(value).trim() });
+      }
+    });
+  }
+
+  return out;
+};
+
+const getCustomerConditions = (device: any, job: any): ParsedCondition[] => {
+  const sources: any[] = [
+    device?.customer_conditions,
+    device?.rawConditions,
+    device?.assessment_details?.rawConditions,
+    job?.customer_conditions,
+    job?.assessment_details?.rawConditions,
+  ];
+  for (const src of sources) {
+    const entries = normalizeConditionEntries(src);
+    if (entries.length > 0) return entries;
+  }
+  return [];
 };
 
 interface JobDetailPageProps {
@@ -72,7 +118,7 @@ export const JobDetailPage = ({
   const paymentSlip = getPaymentSlip(job);
 
   return (
-    <div className="fixed inset-0 bg-gray-50 z-40 overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 bg-gray-50 z-[60] overflow-y-auto animate-in fade-in duration-200">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
         <button
           onClick={onBack}
@@ -197,8 +243,7 @@ export const JobDetailPage = ({
                           <span>ลูกค้าแจ้งสภาพ</span>
                         </div>
                         <ul className="space-y-1.5">
-                          {conditions.map((raw, idx) => {
-                            const { category, detail } = parseCustomerCondition(raw);
+                          {conditions.map(({ category, detail }, idx) => {
                             const Icon = getConditionIcon(category);
                             return (
                               <li
@@ -308,7 +353,7 @@ export const JobDetailPage = ({
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] z-20">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] z-[61]">
         <div className="max-w-md mx-auto">
           {mode === 'incoming' && (
             <div className="flex gap-2">
