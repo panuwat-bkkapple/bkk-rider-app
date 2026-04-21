@@ -1,23 +1,40 @@
 // src/hooks/usePaginatedDatabase.ts
 import { useState, useEffect, useCallback } from 'react';
-import { ref, query, orderByChild, limitToLast, endBefore, onValue, get } from 'firebase/database';
+import { ref, query, orderByChild, limitToLast, endBefore, equalTo, onValue, get } from 'firebase/database';
 import { db } from '../api/firebase';
 
 const PAGE_SIZE = 50;
 
-export const usePaginatedDatabase = (path: string, orderBy: string = 'timestamp') => {
+interface ScopeFilter {
+  field: string;
+  value: string | number | boolean;
+}
+
+export const usePaginatedDatabase = (
+  path: string,
+  orderBy: string = 'timestamp',
+  scopeBy?: ScopeFilter
+) => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [lastKey, setLastKey] = useState<number | null>(null);
 
-  // Initial load - get latest PAGE_SIZE items via realtime listener
+  const scopeField = scopeBy?.field;
+  const scopeValue = scopeBy?.value;
+  const scoped = scopeField !== undefined && scopeValue !== undefined && scopeValue !== null;
+
   useEffect(() => {
-    const dbQuery = query(
-      ref(db, path),
-      orderByChild(orderBy),
-      limitToLast(PAGE_SIZE)
-    );
+    if (scopeBy && (scopeValue === undefined || scopeValue === null || scopeValue === '')) {
+      setData([]);
+      setHasMore(false);
+      setLoading(false);
+      return;
+    }
+
+    const dbQuery = scoped
+      ? query(ref(db, path), orderByChild(scopeField!), equalTo(scopeValue as any))
+      : query(ref(db, path), orderByChild(orderBy), limitToLast(PAGE_SIZE));
 
     const unsubscribe = onValue(dbQuery, (snapshot) => {
       const val = snapshot.val();
@@ -26,11 +43,10 @@ export const usePaginatedDatabase = (path: string, orderBy: string = 'timestamp'
           id,
           ...(typeof data === 'object' && data !== null ? data : { value: data }),
         }));
-        // Sort descending by orderBy field
         list.sort((a, b) => (b[orderBy] || 0) - (a[orderBy] || 0));
         setData(list);
 
-        if (list.length < PAGE_SIZE) {
+        if (scoped || list.length < PAGE_SIZE) {
           setHasMore(false);
         } else {
           setLastKey(list[list.length - 1]?.[orderBy] || null);
@@ -48,11 +64,10 @@ export const usePaginatedDatabase = (path: string, orderBy: string = 'timestamp'
     });
 
     return () => unsubscribe();
-  }, [path, orderBy]);
+  }, [path, orderBy, scoped, scopeField, scopeValue]);
 
-  // Load more (older data)
   const loadMore = useCallback(async () => {
-    if (!hasMore || lastKey === null) return;
+    if (!hasMore || lastKey === null || scoped) return;
 
     const dbQuery = query(
       ref(db, path),
@@ -80,7 +95,7 @@ export const usePaginatedDatabase = (path: string, orderBy: string = 'timestamp'
     } else {
       setHasMore(false);
     }
-  }, [path, orderBy, lastKey, hasMore]);
+  }, [path, orderBy, lastKey, hasMore, scoped]);
 
   return { data, loading, hasMore, loadMore };
 };
