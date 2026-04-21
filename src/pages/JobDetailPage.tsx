@@ -7,7 +7,7 @@ import {
   Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
+import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getRiderFee } from '../utils/jobHelpers';
 
 const parseCustomerCondition = (raw: string): { category: string; detail: string } => {
   const m = raw.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
@@ -143,9 +143,11 @@ export const JobDetailPage = ({
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <div className="flex justify-between items-start gap-3 mb-3">
             <h2 className="text-xl font-bold text-gray-900 leading-tight flex-1">{job.model}</h2>
-            <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5 shrink-0">
-              <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || 150)}
-            </div>
+            {getRiderFee(job) > 0 && (
+              <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5 shrink-0">
+                <WalletIcon size={16} /> +{formatCurrency(getRiderFee(job))}
+              </div>
+            )}
           </div>
           <div className="flex justify-between items-center text-sm border-t border-gray-100 pt-3">
             <span className="font-mono text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded flex items-center gap-1">

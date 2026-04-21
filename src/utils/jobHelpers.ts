@@ -13,6 +13,9 @@ export const getCustomerName = (job: any): string => {
 export const getPaymentSlip = (job: any): string | undefined =>
   job.slip_url || job.payment_slip || job.slipUrl || job.payment_info?.slip_url;
 
+export const getRiderFee = (job: any): number =>
+  Number(job?.pickup_fee ?? job?.rider_fee ?? 0);
+
 const parseScheduleDate = (dateStr: string): Date | null => {
   if (!dateStr || dateStr === 'Instant') return null;
   const [y, m, d] = dateStr.split('-').map(Number);

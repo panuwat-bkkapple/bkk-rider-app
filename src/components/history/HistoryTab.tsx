@@ -2,6 +2,7 @@
 import { useMemo } from 'react';
 import { Activity, MessageSquare } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { getRiderFee } from '../../utils/jobHelpers';
 import type { HistoryFilter } from '../../types';
 
 interface HistoryTabProps {
@@ -32,7 +33,7 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
     return {
       list: filtered,
       stats: {
-        income: filtered.reduce((acc, j) => acc + (Number(j.rider_fee) || 150), 0),
+        income: filtered.reduce((acc, j) => acc + getRiderFee(j), 0),
         count: filtered.length
       }
     };
@@ -99,7 +100,7 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
                   <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
-                    +{formatCurrency(job.rider_fee || 150)}
+                    +{formatCurrency(getRiderFee(job))}
                   </div>
                   {job.chats && (
                     <button

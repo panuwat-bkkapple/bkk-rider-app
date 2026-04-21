@@ -117,7 +117,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   const handleCompleteJob = async (job: any, jobLists: { activeList: any[]; incomingList: any[] }) => {
     try {
       await updateStatus(job.id, 'Pending QC', 'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว', {
-        completed_at: Date.now(), rider_fee: 150, rider_fee_status: 'Pending'
+        completed_at: Date.now(), rider_fee_status: 'Pending'
       }, jobLists);
       toast.success('ปิดจ๊อบสำเร็จ! ส่งมอบเครื่องเรียบร้อย');
     } catch (e) {
