@@ -10,7 +10,7 @@ import { toast } from '../components/common/Toast';
 
 export const useRiderData = (currentRiderId: string) => {
   const { data: jobs, loading: jobsLoading } = useDatabase('jobs');
-  const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp');
+  const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp', { field: 'rider_id', value: currentRiderId });
   const { data: modelsData, loading: modelsLoading } = useDatabase('models');
   const { data: conditionSets, loading: conditionsLoading } = useDatabase('settings/condition_sets');
 
