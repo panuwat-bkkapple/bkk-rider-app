@@ -25,6 +25,7 @@ interface HomeTabProps {
   onOpenNavigation: (job: any) => void;
   onInspectJob: (job: any) => void;
   onCompleteJob: (job: any) => void;
+  onRevertInspection: (job: any) => void;
   onReportDiscrepancy: (job: any) => void;
   onOpenJobDetail: (jobId: string) => void;
   onGoToProfile: () => void;
@@ -61,7 +62,7 @@ export const HomeTab = ({
   incomingList, activeList, jobDateFilter, onJobDateFilterChange,
   onAcceptJob, onUpdateStatus, onRejectJob,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onInspectJob, onCompleteJob, onReportDiscrepancy,
+  onInspectJob, onCompleteJob, onRevertInspection, onReportDiscrepancy,
   onOpenJobDetail, onGoToProfile
 }: HomeTabProps) => {
   const visibleIncoming = useMemo(
@@ -147,6 +148,7 @@ export const HomeTab = ({
           onReject={onRejectJob}
           onInspect={onInspectJob}
           onCompleteJob={onCompleteJob}
+          onRevertInspection={onRevertInspection}
           onReportDiscrepancy={onReportDiscrepancy}
           onOpenDetail={onOpenJobDetail}
         />
