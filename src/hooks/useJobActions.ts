@@ -114,6 +114,34 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     onDone();
   };
 
+  const handleRevertInspection = async (
+    job: any,
+    jobLists: { activeList: any[]; incomingList: any[] }
+  ) => {
+    if (!job || job.status !== 'QC Review') {
+      toast.error('ไม่สามารถย้อนกลับได้ แอดมินเริ่มดำเนินการกับงานนี้แล้ว');
+      return;
+    }
+    try {
+      const currentDevices = Array.isArray(job.devices) ? job.devices : [];
+      const revertedDevices = currentDevices.map((d: any) => {
+        const { photos, deductions, inspection_status, ...rest } = d;
+        return rest;
+      });
+
+      await updateStatus(
+        job.id,
+        'Being Inspected',
+        'ไรเดอร์ย้อนกลับเพื่อแก้ไขผลตรวจสภาพ',
+        { devices: revertedDevices, inspected_at: null },
+        jobLists
+      );
+      toast.success('ย้อนกลับเรียบร้อย กรุณาตรวจสภาพและส่งใหม่อีกครั้ง');
+    } catch (e: any) {
+      toast.error('เกิดข้อผิดพลาด: ' + (e?.message || e));
+    }
+  };
+
   const handleCompleteJob = async (job: any, jobLists: { activeList: any[]; incomingList: any[] }) => {
     try {
       await updateStatus(job.id, 'Pending QC', 'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว', {
@@ -194,6 +222,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
   return {
     updateStatus, handleRejectOrCancelJob, handleCompleteJob,
+    handleRevertInspection,
     handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
     reportDiscrepancy
   };

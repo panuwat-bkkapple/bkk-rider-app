@@ -67,6 +67,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const [rejectingJob, setRejectingJob] = useState<any>(null);
   const [discrepancyJob, setDiscrepancyJob] = useState<any>(null);
   const [completingJob, setCompletingJob] = useState<any>(null);
+  const [revertingJob, setRevertingJob] = useState<any>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Open chat from notification deep link
@@ -180,6 +181,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenNavigation={actions.handleOpenNavigation}
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => setCompletingJob(job)}
+          onRevertInspection={(job) => setRevertingJob(job)}
           onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
           onOpenJobDetail={setDetailJobId}
           onGoToProfile={() => setActiveTab('profile')}
@@ -203,6 +205,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenNavigation={actions.handleOpenNavigation}
           onInspect={(job) => setInspectingJob(job)}
           onCompleteJob={(job) => setCompletingJob(job)}
+          onRevertInspection={(job) => setRevertingJob(job)}
           onReportDiscrepancy={(job) => setDiscrepancyJob(job)}
         />
       )}
@@ -339,6 +342,20 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
             setCompletingJob(null);
           }}
           onCancel={() => setCompletingJob(null)}
+        />
+      )}
+
+      {revertingJob && (
+        <ConfirmModal
+          title="ย้อนกลับเพื่อแก้ไขข้อมูล"
+          message={'ข้อมูลตรวจสภาพที่ส่งไปจะถูกลบ และต้องตรวจสอบใหม่ทั้งหมด\n(ใช้ได้เฉพาะก่อนแอดมินเริ่มอนุมัติเท่านั้น)'}
+          confirmText="ย้อนกลับ"
+          variant="danger"
+          onConfirm={async () => {
+            await actions.handleRevertInspection(revertingJob, { activeList: jobData.activeList, incomingList: jobData.incomingList });
+            setRevertingJob(null);
+          }}
+          onCancel={() => setRevertingJob(null)}
         />
       )}
 

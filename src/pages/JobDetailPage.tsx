@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   ArrowLeft, MapPin, Navigation, Phone, User, Clock, Wallet as WalletIcon,
   Bike, CheckCircle2, X, ShieldCheck, MessageSquare, Landmark, PackageOpen,
-  AlertTriangle, Loader2, Camera, Tag, Hash,
+  AlertTriangle, Loader2, Camera, Tag, Hash, Undo2,
   Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -92,6 +92,7 @@ interface JobDetailPageProps {
   onOpenNavigation: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
+  onRevertInspection: (job: any) => void;
   onReportDiscrepancy: (job: any) => void;
 }
 
@@ -99,7 +100,7 @@ export const JobDetailPage = ({
   job, riderInfoId, mode, onBack,
   onAccept, onReject, onUpdateStatus,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onInspect, onCompleteJob, onReportDiscrepancy,
+  onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
 }: JobDetailPageProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const handleAction = async (name: string, fn: () => void | Promise<void>) => {
@@ -409,9 +410,17 @@ export const JobDetailPage = ({
           )}
 
           {mode === 'active' && job.status === 'QC Review' && (
-            <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100">
-              <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
-              <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+            <div className="space-y-2">
+              <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100">
+                <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+              </div>
+              <button
+                onClick={() => onRevertInspection(job)}
+                className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.99] flex justify-center items-center gap-2 transition-all"
+              >
+                <Undo2 size={16} /> ย้อนกลับไปแก้ไขข้อมูล
+              </button>
             </div>
           )}
 

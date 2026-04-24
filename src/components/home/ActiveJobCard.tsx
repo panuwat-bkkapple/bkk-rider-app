@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import {
   Bike, MapPin, Navigation, Phone, CheckCircle2, X, ShieldCheck,
-  MessageSquare, Landmark, PackageOpen, User, Clock, AlertTriangle, Loader2
+  MessageSquare, Landmark, PackageOpen, User, Clock, AlertTriangle, Loader2, Undo2
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
@@ -18,6 +18,7 @@ interface ActiveJobCardProps {
   onReject: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
+  onRevertInspection: (job: any) => void;
   onReportDiscrepancy: (job: any) => void;
   onOpenDetail: (jobId: string) => void;
 }
@@ -25,7 +26,7 @@ interface ActiveJobCardProps {
 export const ActiveJobCard = ({
   job, index, totalJobs,
   onUpdateStatus, onOpenChat, onCallCustomer, onOpenNavigation,
-  onReject, onInspect, onCompleteJob, onReportDiscrepancy, onOpenDetail
+  onReject, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy, onOpenDetail
 }: ActiveJobCardProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
@@ -164,9 +165,17 @@ export const ActiveJobCard = ({
     )}
 
     {job.status === 'QC Review' && (
-      <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100 mt-2">
-        <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
-        <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+      <div className="space-y-2 mt-2" onClick={stop}>
+        <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100">
+          <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+          <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+        </div>
+        <button
+          onClick={() => onRevertInspection(job)}
+          className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.99] flex justify-center items-center gap-2 transition-all"
+        >
+          <Undo2 size={16} /> ย้อนกลับไปแก้ไขข้อมูล
+        </button>
       </div>
     )}
 
