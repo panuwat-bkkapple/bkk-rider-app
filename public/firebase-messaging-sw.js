@@ -67,12 +67,16 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const notificationTitle = payload.notification?.title || 'BKK Rider';
+  // Cloud Functions send data-only messages (no top-level `notification`)
+  // so iOS PWA does not auto-display a duplicate alongside this handler.
+  const data = payload.data || {};
+  const notificationTitle = data.title || 'BKK Rider';
   const notificationOptions = {
-    body: payload.notification?.body || '',
+    body: data.body || '',
     icon: '/manifest-icon-192.maskable.png',
     badge: '/manifest-icon-192.maskable.png',
-    data: payload.data
+    tag: data.jobId ? `${data.type || 'rider'}-${data.jobId}` : 'bkk-rider',
+    data,
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
