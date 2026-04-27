@@ -212,6 +212,20 @@ export const JobDetailPage = ({
           )}
         </div>
 
+        {job.cust_notes && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <MessageSquare size={12} /> หมายเหตุจากลูกค้า
+            </h3>
+            <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <Info size={16} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-wrap break-words flex-1 min-w-0">
+                {job.cust_notes}
+              </p>
+            </div>
+          </div>
+        )}
+
         {devices.length > 0 && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">

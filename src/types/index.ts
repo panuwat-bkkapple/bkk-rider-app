@@ -31,6 +31,7 @@ export interface Job {
   address_detail?: string;
   note?: string;
   remark?: string;
+  cust_notes?: string;
   price?: number;
   final_price?: number;
   net_payout?: number;
