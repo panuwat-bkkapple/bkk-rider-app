@@ -2,8 +2,23 @@
 import { useEffect } from 'react';
 import { getFirebaseMessaging } from '../api/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
-import { ref, set } from 'firebase/database';
+import { ref, set, remove } from 'firebase/database';
 import { db } from '../api/firebase';
+
+// Stable per-device identifier so token refreshes overwrite the same DB entry
+// instead of creating new ones. Without this each Service Worker reinstall left
+// the old token entry behind and rider received duplicate push per job.
+const getDeviceId = (): string => {
+  const KEY = 'bkk_rider_fcm_device_id';
+  let id = localStorage.getItem(KEY);
+  if (!id) {
+    id = (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 20);
+    localStorage.setItem(KEY, id);
+  }
+  return id;
+};
 
 export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId: string) => void) => {
   useEffect(() => {
@@ -39,19 +54,19 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
         });
 
         if (token) {
-          // Save token per device using a hash to support multiple devices
-          const tokenKey = btoa(token).slice(0, 20).replace(/[^a-zA-Z0-9]/g, '_');
+          const deviceId = getDeviceId();
           const ua = navigator.userAgent;
           const device = /iPhone|iPad/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : 'desktop';
 
-          await set(ref(db, `riders/${riderId}/fcm_tokens/${tokenKey}`), {
+          await set(ref(db, `riders/${riderId}/fcm_tokens/${deviceId}`), {
             token,
             device,
             updated_at: Date.now()
           });
 
-          // Also keep single token for backward compatibility
-          await set(ref(db, `riders/${riderId}/fcm_token`), token);
+          // Drop legacy single-token field once the multi-device entry is in place;
+          // the Cloud Function only falls back to it when fcm_tokens is empty.
+          await remove(ref(db, `riders/${riderId}/fcm_token`));
           await set(ref(db, `riders/${riderId}/fcm_updated_at`), Date.now());
 
           console.log(`FCM token registered (${device}):`, token.slice(0, 20) + '...');
