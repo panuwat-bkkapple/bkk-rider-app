@@ -43,14 +43,28 @@ async function sendToRider(
 ): Promise<void> {
   if (tokens.length === 0) return;
 
+  // Data-only message: SW builds the notification from `data`. Including a
+  // top-level `notification` field would cause iOS PWA to auto-display ON TOP
+  // of the SW's showNotification call, producing two identical alerts per push.
   const message: admin.messaging.MulticastMessage = {
     tokens,
-    notification: { title, body },
-    data: data || {},
+    data: { ...(data || {}), title, body },
+    apns: {
+      headers: {
+        "apns-priority": "10",
+        "apns-push-type": "alert",
+      },
+      payload: {
+        aps: {
+          "mutable-content": 1,
+          sound: "default",
+        },
+      },
+    },
     webpush: {
-      notification: {
-        icon: "/manifest-icon-192.maskable.png",
-        badge: "/manifest-icon-192.maskable.png",
+      headers: {
+        Urgency: "high",
+        TTL: "86400",
       },
     },
   };
