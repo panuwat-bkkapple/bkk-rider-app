@@ -169,12 +169,28 @@ export type TabId = 'home' | 'history' | 'wallet' | 'profile' | 'faq';
 export type HistoryFilter = 'today' | 'yesterday' | 'this_week' | 'all';
 export type JobDateFilter = 'today' | 'tomorrow' | 'this_week' | 'all';
 
-export const REJECT_REASONS = [
-  'ลูกค้าไม่รับสาย / ติดต่อไม่ได้',
-  'ลูกค้าขอยกเลิก / เปลี่ยนใจ',
-  'ข้อมูลไม่ตรงกับความเป็นจริง (แจ้งแอดมินแล้ว)',
-  'รถเสีย / เกิดอุบัติเหตุฉุกเฉิน',
-  'สภาพอากาศไม่เอื้ออำนวย (ฝนตกหนัก)',
-  'ระยะทางไกลเกินไป / ไม่สะดวกรับงาน',
-  'อื่นๆ (โปรดระบุในแชท)'
+import type { CancelCategory } from './job-statuses';
+
+/**
+ * Cancel options shown in the rider's RejectModal. Each option maps a
+ * Thai label (familiar to riders) onto a canonical CancelCategory so
+ * cancellations are filterable for analytics. `requireDetail` flips
+ * the free-text textarea from optional to required when the category
+ * is too broad to stand alone (rider issue, device mismatch, other).
+ */
+export const RIDER_REJECT_OPTIONS: Array<{
+  label: string;
+  category: CancelCategory;
+  requireDetail?: boolean;
+}> = [
+  { label: 'ลูกค้าไม่รับสาย / ติดต่อไม่ได้', category: 'customer_no_show' },
+  { label: 'ลูกค้าขอยกเลิก / เปลี่ยนใจ', category: 'customer_changed_mind' },
+  { label: 'ข้อมูลไม่ตรงกับความเป็นจริง', category: 'device_mismatch', requireDetail: true },
+  { label: 'รถเสีย / เกิดอุบัติเหตุ', category: 'rider_issue', requireDetail: true },
+  { label: 'สภาพอากาศไม่เอื้ออำนวย', category: 'rider_issue' },
+  { label: 'ระยะทางไกลเกินไป / ไม่สะดวกรับงาน', category: 'rider_issue' },
+  { label: 'อื่น ๆ', category: 'other', requireDetail: true },
 ];
+
+/** @deprecated use RIDER_REJECT_OPTIONS — kept only for legacy imports */
+export const REJECT_REASONS = RIDER_REJECT_OPTIONS.map((o) => o.label);

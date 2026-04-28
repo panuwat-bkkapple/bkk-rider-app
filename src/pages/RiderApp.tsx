@@ -258,11 +258,17 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           <RejectModal
             rejectingJob={rejectingJob}
             onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
-            onConfirm={async (reason) => {
-              await actions.handleRejectOrCancelJob(rejectingJob, reason, jobData.incomingList, () => {
-                setIsRejectModalOpen(false);
-                setRejectingJob(null);
-              });
+            onConfirm={async (category, detail) => {
+              await actions.handleRejectOrCancelJob(
+                rejectingJob,
+                category,
+                detail,
+                jobData.incomingList,
+                () => {
+                  setIsRejectModalOpen(false);
+                  setRejectingJob(null);
+                }
+              );
             }}
           />
         </ModalErrorBoundary>
