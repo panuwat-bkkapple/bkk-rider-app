@@ -6,7 +6,8 @@ import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo } from '../types';
 import { DISCREPANCY_CATEGORIES } from '../types';
-import { JOB_STATUS, normalizeStatus } from '../types/job-statuses';
+import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
+import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
@@ -189,31 +190,53 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   const handleRejectOrCancelJob = async (
-    rejectingJob: any, selectedRejectReason: string,
-    incomingList: any[], onDone: () => void
+    rejectingJob: any,
+    cancelCategory: CancelCategory,
+    cancelDetail: string,
+    incomingList: any[],
+    onDone: () => void
   ) => {
-    if (!rejectingJob || !selectedRejectReason) {
-      toast.error('กรุณาเลือกเหตุผลการยกเลิก/ปฏิเสธงานครับ');
+    if (!rejectingJob || !cancelCategory) {
+      toast.error('กรุณาเลือกหมวดเหตุผลการยกเลิก/ปฏิเสธงานครับ');
       return;
     }
 
     const isIncoming = incomingList.some(j => j.id === rejectingJob.id);
+    const categoryLabel = CANCEL_CATEGORY_LABEL_TH[cancelCategory];
+    // The free text is what the rider actually typed; combine with the
+    // category label only for the human-readable qc_logs entry. Structured
+    // analytics read cancel_category directly.
+    const fullReason = cancelDetail
+      ? `${categoryLabel} — ${cancelDetail}`
+      : categoryLabel;
+
     const updatedLogs = [
       {
         action: isIncoming ? 'Rider Rejected' : 'Rider Cancelled',
         by: `Rider: ${riderInfo.name}`,
         timestamp: Date.now(),
-        details: `ไรเดอร์${isIncoming ? 'ปฏิเสธรับงาน' : 'ยกเลิกงานกลางทาง'} เหตุผล: ${selectedRejectReason}`
+        details: `ไรเดอร์${isIncoming ? 'ปฏิเสธรับงาน' : 'ยกเลิกงานกลางทาง'} เหตุผล: ${fullReason}`
       },
       ...(rejectingJob.qc_logs || [])
     ];
 
     await update(ref(db, `jobs/${rejectingJob.id}`), {
-      status: 'Active Leads', rider_id: null,
-      updated_at: Date.now(), qc_logs: updatedLogs, cancel_reason: selectedRejectReason
+      // Returning the job to broadcast — admin/dispatcher will reassign.
+      status: 'Active Leads',
+      rider_id: null,
+      updated_at: Date.now(),
+      qc_logs: updatedLogs,
+      // Cancel taxonomy (PR-5B schema).
+      cancel_category: cancelCategory,
+      cancel_reason: cancelDetail || null,
+      cancelled_by: `rider:${riderInfo.id}`,
+      cancelled_at: Date.now()
     });
 
-    sendAdminNotification('ไรเดอร์ยกเลิกงาน!', `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${selectedRejectReason})`);
+    sendAdminNotification(
+      'ไรเดอร์ยกเลิกงาน!',
+      `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
+    );
     onDone();
   };
 
