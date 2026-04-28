@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
+import { JOB_STATUS } from '../../types/job-statuses';
 
 interface ActiveJobCardProps {
   job: any;
@@ -128,35 +129,35 @@ export const ActiveJobCard = ({
     )}
 
     {/* Action buttons based on status */}
-    {job.status === 'Accepted' && (
+    {(job.status === 'Accepted' || job.status === JOB_STATUS.RIDER_ACCEPTED) && (
       <div className="flex gap-2 mt-2" onClick={stop}>
         <button onClick={() => onReject(job)} disabled={!!loadingAction} className="w-14 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50">
           <X size={20} />
         </button>
-        <button onClick={() => handleAction('start', () => onUpdateStatus(job.id, 'Heading to Customer', 'ไรเดอร์กำลังเดินทางไปหาลูกค้า'))} disabled={!!loadingAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
+        <button onClick={() => handleAction('start', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_EN_ROUTE, 'ไรเดอร์กำลังเดินทางไปหาลูกค้า'))} disabled={!!loadingAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
           {loadingAction === 'start' ? <Loader2 size={20} className="animate-spin" /> : <Bike size={20} />} เริ่มออกเดินทาง (Start Journey)
         </button>
       </div>
     )}
 
-    {job.status === 'Heading to Customer' && (
-      <button onClick={(e) => { e.stopPropagation(); handleAction('arrived', () => onUpdateStatus(job.id, 'Arrived', 'ถึงจุดหมายแล้ว')); }} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
+    {(job.status === 'Heading to Customer' || job.status === JOB_STATUS.RIDER_EN_ROUTE) && (
+      <button onClick={(e) => { e.stopPropagation(); handleAction('arrived', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_ARRIVED, 'ถึงจุดหมายแล้ว')); }} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
         {loadingAction === 'arrived' ? <Loader2 size={20} className="animate-spin" /> : <MapPin size={20} />} ถึงจุดหมายแล้ว (Arrived)
       </button>
     )}
 
-    {(job.status === 'Arrived' || job.status === 'Being Inspected') && (
+    {((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (
       <div className="space-y-2 mt-2" onClick={stop}>
         <button
           onClick={() => {
-            if (job.status === 'Arrived') onUpdateStatus(job.id, 'Being Inspected', 'เริ่มตรวจสภาพ');
+            if ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED)) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
             onInspect(job);
           }}
           className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
         >
-          <ShieldCheck size={22} />{job.status === 'Arrived' ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
+          <ShieldCheck size={22} />{(job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
         </button>
-        {job.status === 'Arrived' && (
+        {(job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) && (
           <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
             ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
           </button>
@@ -195,13 +196,13 @@ export const ActiveJobCard = ({
             <img src={getPaymentSlip(job)} className="w-full h-auto max-h-48 object-contain mt-2 rounded-xl" />
           )}
         </div>
-        <button onClick={() => handleAction('transit', () => onUpdateStatus(job.id, 'In-Transit', 'เดินทางกลับ'))} disabled={!!loadingAction} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
+        <button onClick={() => handleAction('transit', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_RETURNING, 'เดินทางกลับ'))} disabled={!!loadingAction} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
           {loadingAction === 'transit' ? <Loader2 size={20} className="animate-spin" /> : <Bike size={20} />} เดินทางกลับสาขา
         </button>
       </div>
     )}
 
-    {job.status === 'In-Transit' && (
+    {(job.status === 'In-Transit' || job.status === JOB_STATUS.RIDER_RETURNING) && (
       <button onClick={(e) => { e.stopPropagation(); onCompleteJob(job); }} disabled={!!loadingAction} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 mt-2 disabled:opacity-50">
         <PackageOpen size={20} /> ถึงสาขาแล้ว (ส่งมอบเครื่อง)
       </button>
@@ -211,10 +212,10 @@ export const ActiveJobCard = ({
       <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100 mt-2" onClick={stop}>
         <h3 className="font-bold text-purple-700 mb-2">มีการปรับราคาใหม่: {formatCurrency(getDisplayPrice(job))}</h3>
         <div className="flex gap-2">
-          <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, 'Cancelled', 'ลูกค้ายกเลิก', { cancel_reason: 'ลูกค้ายกเลิก' }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">
+          <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, JOB_STATUS.CANCELLED, 'ลูกค้ายกเลิก', { cancel_reason: 'ลูกค้ายกเลิก' }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">
             {loadingAction === 'cancel' ? 'กำลังดำเนินการ...' : 'ยกเลิก'}
           </button>
-          <button onClick={() => handleAction('accept', () => onUpdateStatus(job.id, 'Payout Processing', 'ลูกค้ายอมรับ', { customer_accepted_at: Date.now() }))} disabled={!!loadingAction} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-bold shadow disabled:opacity-50">
+          <button onClick={() => handleAction('accept', () => onUpdateStatus(job.id, JOB_STATUS.PAYOUT_PROCESSING, 'ลูกค้ายอมรับ', { customer_accepted_at: Date.now() }))} disabled={!!loadingAction} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-bold shadow disabled:opacity-50">
             {loadingAction === 'accept' ? 'กำลังดำเนินการ...' : 'ยอมรับ'}
           </button>
         </div>

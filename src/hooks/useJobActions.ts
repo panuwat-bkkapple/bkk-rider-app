@@ -58,24 +58,29 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
       const shortJobId = jobId.slice(-4).toUpperCase();
 
-      if (nextStatus === 'Accepted') {
+      // Notifications match the canonical status names from
+      // ../types/job-statuses (Rider Accepted, Rider En Route, ...).
+      // Legacy spellings ("Accepted", "Heading to Customer", ...) are
+      // accepted too so a stale call site doesn't drop a notification
+      // during the writer-rename rollout.
+      if (nextStatus === JOB_STATUS.RIDER_ACCEPTED || nextStatus === 'Accepted') {
         sendAdminNotification('ไรเดอร์รับงาน', `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`);
         sendCustomerNotification(job, 'จัดสรรไรเดอร์สำเร็จ!', `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`);
-      } else if (nextStatus === 'Heading to Customer') {
+      } else if (nextStatus === JOB_STATUS.RIDER_EN_ROUTE || nextStatus === 'Heading to Customer') {
         sendAdminNotification('ไรเดอร์ออกเดินทาง', `${riderInfo.name} กำลังมุ่งหน้าไปหาลูกค้า งาน #${shortJobId}`);
         sendCustomerNotification(job, 'ไรเดอร์กำลังเดินทาง!', `ไรเดอร์ ${riderInfo.name} กำลังมุ่งหน้าไปยังจุดนัดรับเครื่องของคุณแล้ว`);
-      } else if (nextStatus === 'Arrived') {
+      } else if (nextStatus === JOB_STATUS.RIDER_ARRIVED || nextStatus === 'Arrived') {
         sendAdminNotification('ถึงจุดหมาย', `${riderInfo.name} เดินทางถึงจุดหมายแล้ว งาน #${shortJobId}`);
         sendCustomerNotification(job, 'ไรเดอร์มาถึงแล้ว!', `ไรเดอร์เดินทางถึงจุดนัดหมายแล้ว กรุณาเตรียมตัวเครื่องให้พร้อมครับ`);
-      } else if (nextStatus === 'Being Inspected') {
+      } else if (nextStatus === JOB_STATUS.BEING_INSPECTED) {
         sendAdminNotification('เริ่มตรวจสภาพ', `${riderInfo.name} เริ่มตรวจสภาพเครื่อง งาน #${shortJobId}`);
         sendCustomerNotification(job, 'กำลังตรวจสภาพเครื่อง', `ไรเดอร์กำลังดำเนินการตรวจสอบสภาพเครื่องของคุณอย่างละเอียด`);
-      } else if (nextStatus === 'QC Review') {
+      } else if (nextStatus === JOB_STATUS.QC_REVIEW) {
         sendAdminNotification('ด่วน! รออนุมัติ QC', `${riderInfo.name} ส่งรูปตรวจเครื่อง #${shortJobId} เข้ามาแล้ว`);
         sendCustomerNotification(job, 'รออนุมัติราคา', `ช่างเทคนิคกำลังประเมินภาพถ่ายตัวเครื่องของคุณ กรุณารอสักครู่ครับ`);
-      } else if (nextStatus === 'In-Transit') {
+      } else if (nextStatus === JOB_STATUS.RIDER_RETURNING || nextStatus === 'In-Transit') {
         sendAdminNotification('กำลังกลับสาขา', `${riderInfo.name} กำลังนำเครื่อง #${shortJobId} กลับมาส่ง`);
-      } else if (nextStatus === 'Pending QC') {
+      } else if (nextStatus === JOB_STATUS.PENDING_QC) {
         sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
       }
     } catch (error: any) {
@@ -138,7 +143,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
         return {
           ...current,
-          status: 'Accepted',
+          status: JOB_STATUS.RIDER_ACCEPTED,
           rider_id: riderInfo.id,
           updated_at: Date.now(),
           qc_logs: updatedLogs
@@ -222,7 +227,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
     await update(ref(db, `jobs/${rejectingJob.id}`), {
       // Returning the job to broadcast — admin/dispatcher will reassign.
-      status: 'Active Leads',
+      status: JOB_STATUS.ACTIVE_LEAD,
       rider_id: null,
       updated_at: Date.now(),
       qc_logs: updatedLogs,
