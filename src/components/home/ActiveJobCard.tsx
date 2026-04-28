@@ -76,7 +76,7 @@ export const ActiveJobCard = ({
     <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2 mb-1">
       <div className="flex justify-between items-center text-sm border-b border-gray-200 pb-2">
         <span className="font-mono text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded">
-          ID: {job.OID || job.ref_no || job.id.slice(-4)}
+          ID: {job.OID || job.ref_no || (typeof job.id === 'string' ? job.id.slice(-4) : '----')}
         </span>
         <span className="font-bold text-emerald-600">{formatCurrency(getDisplayPrice(job))}</span>
       </div>
