@@ -206,14 +206,29 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       return;
     }
 
-    const isIncoming = incomingList.some(j => j.id === rejectingJob.id);
     const categoryLabel = CANCEL_CATEGORY_LABEL_TH[cancelCategory];
-    // The free text is what the rider actually typed; combine with the
-    // category label only for the human-readable qc_logs entry. Structured
-    // analytics read cancel_category directly.
     const fullReason = cancelDetail
       ? `${categoryLabel} — ${cancelDetail}`
       : categoryLabel;
+
+    // The Firebase RTDB rule on /jobs/{jobId} only allows a write when
+    // either the existing rider_id OR the new rider_id matches auth.uid.
+    // For a true broadcast job (rider_id is null and we're not the
+    // assignee yet) BOTH would be null — the rule denies the write.
+    //
+    // Treat that case as a local dismiss: the rider isn't holding the
+    // job, so there's nothing to release back to the pool. Other riders
+    // continue to see it untouched. Only when the rider already owns
+    // the job (broadcast they accepted, or admin direct-assignment) do
+    // we actually write the cancel taxonomy.
+    const isHoldingJob = rejectingJob.rider_id === riderInfo.id;
+    const isIncoming = incomingList.some((j) => j.id === rejectingJob.id);
+
+    if (!isHoldingJob) {
+      toast.success('ข้ามงานนี้แล้ว');
+      onDone();
+      return;
+    }
 
     const updatedLogs = [
       {
@@ -225,24 +240,33 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       ...(rejectingJob.qc_logs || [])
     ];
 
-    await update(ref(db, `jobs/${rejectingJob.id}`), {
-      // Returning the job to broadcast — admin/dispatcher will reassign.
-      status: JOB_STATUS.ACTIVE_LEAD,
-      rider_id: null,
-      updated_at: Date.now(),
-      qc_logs: updatedLogs,
-      // Cancel taxonomy (PR-5B schema).
-      cancel_category: cancelCategory,
-      cancel_reason: cancelDetail || null,
-      cancelled_by: `rider:${riderInfo.id}`,
-      cancelled_at: Date.now()
-    });
+    try {
+      await update(ref(db, `jobs/${rejectingJob.id}`), {
+        // Returning the job to broadcast — admin/dispatcher will reassign.
+        status: JOB_STATUS.ACTIVE_LEAD,
+        rider_id: null,
+        updated_at: Date.now(),
+        qc_logs: updatedLogs,
+        // Cancel taxonomy (PR-5B schema).
+        cancel_category: cancelCategory,
+        cancel_reason: cancelDetail || null,
+        cancelled_by: `rider:${riderInfo.id}`,
+        cancelled_at: Date.now()
+      });
 
-    sendAdminNotification(
-      'ไรเดอร์ยกเลิกงาน!',
-      `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
-    );
-    onDone();
+      sendAdminNotification(
+        'ไรเดอร์ยกเลิกงาน!',
+        `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
+      );
+      onDone();
+    } catch (error: any) {
+      console.error('handleRejectOrCancelJob error:', error);
+      const msg =
+        error?.code === 'PERMISSION_DENIED'
+          ? 'ไม่มีสิทธิ์ยกเลิกงานนี้ กรุณาติดต่อแอดมิน'
+          : `เกิดข้อผิดพลาดในการยกเลิกงาน: ${error?.message || error}`;
+      toast.error(msg);
+    }
   };
 
   const handleRevertInspection = async (
