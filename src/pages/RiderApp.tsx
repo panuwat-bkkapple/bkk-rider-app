@@ -1,5 +1,5 @@
 // src/pages/RiderApp.tsx - Orchestrator (rebuilt from 1,110 lines monolith)
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
@@ -65,6 +65,12 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectingJob, setRejectingJob] = useState<any>(null);
+  // IDs of broadcast jobs the rider locally dismissed via the reject
+  // modal. The DB stays untouched (RTDB rules block non-owner writes),
+  // so we hide the job from this rider's incoming list until they
+  // refresh the app — at which point the broadcast pool is fair game
+  // again.
+  const [dismissedBroadcastIds, setDismissedBroadcastIds] = useState<Set<string>>(new Set());
   const [discrepancyJob, setDiscrepancyJob] = useState<any>(null);
   const [completingJob, setCompletingJob] = useState<any>(null);
   const [revertingJob, setRevertingJob] = useState<any>(null);
@@ -86,8 +92,14 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     ? (jobData.activeList.find(j => j.id === chatJobId) || jobData.history.find(j => j.id === chatJobId))
     : null;
 
+  // Filter out jobs the rider locally dismissed via reject modal.
+  const visibleIncomingList = useMemo(
+    () => jobData.incomingList.filter((j) => !dismissedBroadcastIds.has(j.id)),
+    [jobData.incomingList, dismissedBroadcastIds]
+  );
+
   // Resolve job for detail page from incoming or active lists
-  const detailIncoming = detailJobId ? jobData.incomingList.find(j => j.id === detailJobId) : null;
+  const detailIncoming = detailJobId ? visibleIncomingList.find(j => j.id === detailJobId) : null;
   const detailActive = detailJobId && !detailIncoming ? jobData.activeList.find(j => j.id === detailJobId) : null;
   const detailJob = detailIncoming || detailActive;
   const detailMode: 'incoming' | 'active' = detailIncoming ? 'incoming' : 'active';
@@ -178,7 +190,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           isOnline={isOnline}
           onToggleOnline={() => setIsOnline(!isOnline)}
           balance={jobData.balance}
-          incomingList={jobData.incomingList}
+          incomingList={visibleIncomingList}
           activeList={jobData.activeList}
           jobDateFilter={jobDateFilter}
           onJobDateFilterChange={setJobDateFilter}
@@ -259,6 +271,14 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
             rejectingJob={rejectingJob}
             onClose={() => { setIsRejectModalOpen(false); setRejectingJob(null); }}
             onConfirm={async (category, detail) => {
+              // Snapshot the job + figure out whether this is a true
+              // broadcast (rider doesn't own it) before the handler
+              // closes the modal. Broadcast rejections only update
+              // local state — DB stays untouched (RTDB rule blocks
+              // non-owner writes), so this rider needs the job hidden
+              // here or it would just bounce back into the list.
+              const dismissedJobId = rejectingJob.id;
+              const isBroadcastDismiss = rejectingJob.rider_id !== riderInfo.id;
               await actions.handleRejectOrCancelJob(
                 rejectingJob,
                 category,
@@ -269,6 +289,13 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
                   setRejectingJob(null);
                 }
               );
+              if (isBroadcastDismiss) {
+                setDismissedBroadcastIds((prev) => {
+                  const next = new Set(prev);
+                  next.add(dismissedJobId);
+                  return next;
+                });
+              }
             }}
           />
         </ModalErrorBoundary>
