@@ -82,7 +82,7 @@ export const HomeTab = ({
         className="bg-white/90 backdrop-blur-md p-1.5 pr-4 rounded-full shadow-sm flex items-center gap-3 border border-gray-100"
       >
         <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex justify-center items-center font-bold text-lg shadow-inner">
-          {riderInfo.name.charAt(0)}
+          {(riderInfo.name || '?').charAt(0)}
         </div>
         <div>
           <div className="text-[10px] text-gray-500 font-medium">ยอดเงินสะสม</div>
