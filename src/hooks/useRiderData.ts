@@ -6,6 +6,38 @@ import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import type { RiderInfo } from '../types';
+import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
+import type { JobStatus } from '../types/job-statuses';
+
+// Status sets that the home/active/history filters care about. Defined as
+// canonical values from JOB_STATUS; jobs in the DB still carry legacy
+// strings ("Assigned", "Active Leads" plural, "PAID", "In-Transit", ...)
+// so every comparison runs job.status through normalizeStatus() first,
+// which handles legacy aliases (and the "In-Transit" overload via
+// receive_method).
+const ACTIVE_LIST_STATUSES = new Set<JobStatus>([
+  JOB_STATUS.RIDER_ACCEPTED,
+  JOB_STATUS.RIDER_EN_ROUTE,
+  JOB_STATUS.RIDER_ARRIVED,
+  JOB_STATUS.BEING_INSPECTED,
+  JOB_STATUS.QC_REVIEW,
+  JOB_STATUS.PRICE_ACCEPTED,
+  JOB_STATUS.REVISED_OFFER,
+  JOB_STATUS.PAYOUT_PROCESSING,
+  JOB_STATUS.RIDER_RETURNING, // legacy "In-Transit" on Pickup
+  JOB_STATUS.WAITING_FOR_HANDOVER,
+  JOB_STATUS.PAID,
+]);
+
+const HISTORY_LIST_STATUSES = new Set<JobStatus>([
+  JOB_STATUS.PENDING_QC,
+  JOB_STATUS.IN_STOCK,
+  JOB_STATUS.PAID,
+  JOB_STATUS.COMPLETED,
+  JOB_STATUS.RETURN_CONFIRMED, // legacy "Returned"
+  JOB_STATUS.CLOSED_LOST,
+]);
+
 import { toast } from '../components/common/Toast';
 
 export const useRiderData = (currentRiderId: string) => {
@@ -111,24 +143,28 @@ export const useRiderData = (currentRiderId: string) => {
     const balance = myTx.reduce((acc: number, t: any) => t.type === 'CREDIT' ? acc + Number(t.amount) : acc - Number(t.amount), 0);
 
     const incomingList = list.filter((j: any) => {
-      if (j.receive_method !== 'Pickup') return false;
-      const isDirectlyAssigned = j.status === 'Assigned' && j.rider_id === currentRiderId;
+      if (j.receive_method !== RECEIVE_METHOD.PICKUP) return false;
+      const canonical = normalizeStatus(j.status, j.receive_method);
+      const isDirectlyAssigned =
+        canonical === JOB_STATUS.RIDER_ASSIGNED && j.rider_id === currentRiderId;
       const isBroadcastJob =
         dispatchMode === 'broadcast' &&
-        (j.status === 'Active Leads' || (j.status === 'Assigned' && !j.rider_id));
+        (canonical === JOB_STATUS.ACTIVE_LEAD ||
+          (canonical === JOB_STATUS.RIDER_ASSIGNED && !j.rider_id));
       return isDirectlyAssigned || isBroadcastJob;
     });
 
     return {
-      activeList: myJobs.filter((j: any) =>
-        ['Accepted', 'Heading to Customer', 'Arrived', 'Being Inspected', 'QC Review', 'Price Accepted', 'Revised Offer', 'Payout Processing', 'In-Transit', 'Waiting for Handover', 'Paid', 'PAID'].includes(j.status)
-        && !j.completed_at
-      ),
+      activeList: myJobs.filter((j: any) => {
+        const canonical = normalizeStatus(j.status, j.receive_method);
+        return canonical && ACTIVE_LIST_STATUSES.has(canonical) && !j.completed_at;
+      }),
       incomingList,
-      history: myJobs.filter((j: any) =>
-        (['Pending QC', 'In Stock', 'Paid', 'PAID', 'Completed', 'Returned', 'Closed (Lost)'].includes(j.status) && j.completed_at)
-        || j.status === 'Cancelled'
-      ).sort((a: any, b: any) => (b.completed_at || 0) - (a.completed_at || 0)),
+      history: myJobs.filter((j: any) => {
+        const canonical = normalizeStatus(j.status, j.receive_method);
+        if (canonical === JOB_STATUS.CANCELLED) return true;
+        return canonical && HISTORY_LIST_STATUSES.has(canonical) && j.completed_at;
+      }).sort((a: any, b: any) => (b.completed_at || 0) - (a.completed_at || 0)),
       balance,
       transactions: myTx
     };
