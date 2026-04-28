@@ -100,8 +100,17 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     });
   };
 
-  const handleAcceptJob = async (jobId: string, extraData: any) => {
-    await handleUpdateStatus(jobId, 'Accepted', 'ไรเดอร์กดรับงาน', extraData);
+  // Accept goes through actions.acceptIncomingJob, which uses
+  // runTransaction() to claim the job atomically. With broadcast jobs that
+  // multiple riders see simultaneously, the previous plain update() let the
+  // last write win and the loser thought they had the job. The transaction
+  // returns success=false on race loss; the hook already shows the toast.
+  const handleAcceptJob = async (jobId: string) => {
+    const job =
+      jobData.incomingList.find((j) => j.id === jobId) ||
+      jobData.activeList.find((j) => j.id === jobId);
+    if (!job) return;
+    await actions.acceptIncomingJob(job);
   };
 
   const handleInspectionSubmit = async (job: any, inspectedData: Record<number, InspectedDeviceData>) => {
@@ -194,8 +203,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           riderInfoId={riderInfo.id}
           mode={detailMode}
           onBack={() => setDetailJobId(null)}
-          onAccept={async (jobId, extraData) => {
-            await handleAcceptJob(jobId, extraData);
+          onAccept={async (jobId) => {
+            await handleAcceptJob(jobId);
             setDetailJobId(null);
           }}
           onReject={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}

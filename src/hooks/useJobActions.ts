@@ -1,11 +1,12 @@
 // src/hooks/useJobActions.ts
-import { ref, update, push, set } from 'firebase/database';
+import { ref, update, push, set, runTransaction } from 'firebase/database';
 import { db } from '../api/firebase';
 import { sendAdminNotification } from '../utils/notifications';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo } from '../types';
 import { DISCREPANCY_CATEGORIES } from '../types';
+import { JOB_STATUS, normalizeStatus } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
@@ -82,6 +83,108 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
         : `เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ${error?.message || error}`;
       toast.error(msg);
+    }
+  };
+
+  /**
+   * Atomically claim a broadcast or assigned job. Two riders tapping
+   * "รับงาน" within milliseconds of each other previously raced each other
+   * via plain update() — last write wins, the loser thinks they got the job
+   * but the DB belongs to the other rider.
+   *
+   * runTransaction() reads the live job state inside Firebase's optimistic
+   * lock, decides whether the rider is still allowed to claim it, and only
+   * commits if so. The loser sees `result.committed === false` and gets a
+   * "งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว" toast.
+   */
+  const acceptIncomingJob = async (
+    job: any
+  ): Promise<{ success: boolean; reason?: 'taken' | 'not_found' | 'wrong_status' | 'error' }> => {
+    if (!job?.id) {
+      toast.error('ไม่พบงานนี้');
+      return { success: false, reason: 'not_found' };
+    }
+
+    const updatedLogs = [
+      {
+        action: 'Accepted',
+        by: `Rider: ${riderInfo.name}`,
+        timestamp: Date.now(),
+        details: 'ไรเดอร์กดรับงาน'
+      },
+      ...(job.qc_logs || [])
+    ];
+
+    try {
+      const result = await runTransaction(ref(db, `jobs/${job.id}`), (current) => {
+        if (current === null) {
+          // Job was deleted between fetch and click — abort.
+          return current;
+        }
+
+        const canonical = normalizeStatus(current.status, current.receive_method);
+
+        if (canonical === JOB_STATUS.ACTIVE_LEAD) {
+          // Broadcast: only the first rider without rider_id wins.
+          if (current.rider_id) return undefined;
+        } else if (canonical === JOB_STATUS.RIDER_ASSIGNED) {
+          // Direct assignment: only the assigned rider may claim it.
+          if (current.rider_id !== riderInfo.id) return undefined;
+        } else {
+          // Wrong status (cancelled, accepted by someone else, ...) — abort.
+          return undefined;
+        }
+
+        return {
+          ...current,
+          status: 'Accepted',
+          rider_id: riderInfo.id,
+          updated_at: Date.now(),
+          qc_logs: updatedLogs
+        };
+      });
+
+      if (!result.committed) {
+        toast.error('งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว');
+        return { success: false, reason: 'taken' };
+      }
+
+      const shortJobId = job.id.slice(-4).toUpperCase();
+      sendAdminNotification(
+        'ไรเดอร์รับงาน',
+        `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`
+      );
+      sendCustomerNotification(
+        job,
+        'จัดสรรไรเดอร์สำเร็จ!',
+        `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`
+      );
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            await update(ref(db, `riders/${riderInfo.id}`), {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              last_updated: Date.now()
+            });
+          } catch (e) {
+            console.error('Failed to update rider location after accept:', e);
+          }
+        },
+        (err) => console.error('Geolocation error on accept:', err),
+        { enableHighAccuracy: true }
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('acceptIncomingJob error:', error);
+      const msg =
+        error?.code === 'PERMISSION_DENIED'
+          ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
+          : `เกิดข้อผิดพลาดในการรับงาน: ${error?.message || error}`;
+      toast.error(msg);
+      return { success: false, reason: 'error' };
     }
   };
 
@@ -221,7 +324,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   return {
-    updateStatus, handleRejectOrCancelJob, handleCompleteJob,
+    updateStatus, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
     handleRevertInspection,
     handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
     reportDiscrepancy
