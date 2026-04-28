@@ -141,8 +141,14 @@ export const onJobStatusChanged = onValueWritten(
     let title = "";
     let body = "";
 
+    // Tolerant matching: every case lists both the legacy DB string and
+    // the canonical name from src/types/job-statuses.ts so the trigger
+    // keeps firing while writers still emit legacy values (Phase 2D will
+    // unify them). The functions/ package can't import the TS enum
+    // directly because it has its own rootDir, hence the inline pairs.
     switch (after) {
       case "Assigned":
+      case "Rider Assigned":
         title = "📦 งานใหม่เข้า!";
         body = `${deviceName} - ${job.customer_name || "ลูกค้า"}`;
         break;
@@ -253,8 +259,15 @@ export const onBroadcastJob = onValueWritten(
     const after = event.data.after.val();
     const jobId = event.params.jobId;
 
-    // Only trigger for Active Leads (broadcast)
-    if (after !== "Active Leads" || before === after) return;
+    // Only trigger for the broadcast bucket. Accept both the legacy
+    // plural string and the canonical singular from job-statuses.ts so
+    // this push keeps firing through the Phase 2D writer rename.
+    if (
+      (after !== "Active Leads" && after !== "Active Lead") ||
+      before === after
+    ) {
+      return;
+    }
 
     // Get job data
     const jobSnap = await db.ref(`jobs/${jobId}`).get();
