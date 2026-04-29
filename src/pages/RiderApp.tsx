@@ -102,12 +102,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     ? (jobData.activeList.find(j => j.id === chatJobId) || jobData.history.find(j => j.id === chatJobId))
     : null;
 
-  // Filter out jobs the rider locally dismissed via reject modal.
-  const visibleIncomingList = useMemo(
-    () => jobData.incomingList.filter((j) => !dismissedBroadcastIds.has(j.id)),
-    [jobData.incomingList, dismissedBroadcastIds]
-  );
-
   // Resolve job for detail page from incoming or active lists
   const detailIncoming = detailJobId ? visibleIncomingList.find(j => j.id === detailJobId) : null;
   const detailActive = detailJobId && !detailIncoming ? jobData.activeList.find(j => j.id === detailJobId) : null;
