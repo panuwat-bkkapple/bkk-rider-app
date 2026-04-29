@@ -299,8 +299,15 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
   const handleCompleteJob = async (job: any, jobLists: { activeList: any[]; incomingList: any[] }) => {
     try {
+      // Don't write rider_fee here — the `onJobHandedOverCalcRiderFee`
+      // Cloud Function (triggered by status → Pending QC) calculates the
+      // real fee from Google Routes distance × logistics_rates and
+      // skips if rider_fee is already set. Hardcoding 150 made every
+      // job fall back to that fixed amount and starved the wallet.
+      // Just mark the job ready for settlement and let the function
+      // compute the actual fee.
       await updateStatus(job.id, 'Pending QC', 'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว', {
-        completed_at: Date.now(), rider_fee: 150, rider_fee_status: 'Pending'
+        completed_at: Date.now(), rider_fee_status: 'Pending'
       }, jobLists);
       toast.success('ปิดจ๊อบสำเร็จ! ส่งมอบเครื่องเรียบร้อย');
     } catch (e) {
