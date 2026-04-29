@@ -53,7 +53,20 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
         else trueBasePrice = Number(targetModel.variants[0]?.usedPrice || targetModel.variants[0]?.price || 0);
       }
     }
-    return trueBasePrice > 0 ? trueBasePrice : Number(device?.base_price || device?.estimated_price || 0);
+    if (trueBasePrice > 0) return trueBasePrice;
+    // Prefer the base_price the cloud function froze on the device when the
+    // order was created. Falling back to estimated_price re-deducts the
+    // customer's conditions when the rider ticks the same boxes — same
+    // double-deduction trap PR #113 fixed for admin Internal QC. Log it
+    // so we can spot legacy / mismatched records.
+    const fromDevice = Number(device?.base_price || 0);
+    if (fromDevice > 0) return fromDevice;
+    if (device?.estimated_price) {
+      console.warn(
+        `[InspectionModal] No base_price for ${device?.model} (${device?.variant}); falling back to estimated_price — deductions may double-count.`
+      );
+    }
+    return Number(device?.estimated_price || 0);
   };
 
   const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {

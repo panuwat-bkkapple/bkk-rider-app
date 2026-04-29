@@ -153,9 +153,11 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     const couponValue = Number(job.applied_coupon?.value || job.applied_coupon?.actual_value || 0);
     const newNetPayout = Math.max(0, jobTotalDevicePrice - pickupFee + couponValue);
 
+    // original_price is the customer's quote total at order creation —
+    // never overwrite it from QC, otherwise we lose the audit trail
+    // that lets admin/finance compare quote vs final.
     await actions.updateStatus(job.id, 'QC Review', `ไรเดอร์ส่งผลตรวจสภาพ ${updatedDevices.length} เครื่อง`, {
       devices: updatedDevices,
-      original_price: jobTotalDevicePrice,
       final_price: jobTotalDevicePrice,
       price: jobTotalDevicePrice,
       net_payout: newNetPayout,
