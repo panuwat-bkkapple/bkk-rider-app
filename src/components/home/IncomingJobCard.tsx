@@ -25,7 +25,7 @@ export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject, onOpenDe
         <span className="text-emerald-600 font-bold text-sm">งานใหม่เข้า!</span>
       </div>
       <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5">
-        <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || 150)}
+        <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || job.rider_fee_estimate || 0)}
       </div>
     </div>
 

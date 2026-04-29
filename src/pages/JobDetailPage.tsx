@@ -146,7 +146,7 @@ export const JobDetailPage = ({
           <div className="flex justify-between items-start gap-3 mb-3">
             <h2 className="text-xl font-bold text-gray-900 leading-tight flex-1">{job.model}</h2>
             <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5 shrink-0">
-              <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || 150)}
+              <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || job.rider_fee_estimate || 0)}
             </div>
           </div>
           <div className="flex justify-between items-center text-sm border-t border-gray-100 pt-3">
