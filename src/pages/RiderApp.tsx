@@ -84,6 +84,16 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     }
   }, [pendingChatJobId, jobsLoading, onClearPendingChat]);
 
+  // Filter out jobs the rider locally dismissed via reject modal.
+  // Must run before any early return — moving this below the
+  // `if (jobsLoading)` guard breaks the rules of hooks because the
+  // first render (loading=true) skips it and the second render
+  // (loading=false) calls it, tripping React error #310.
+  const visibleIncomingList = useMemo(
+    () => jobData.incomingList.filter((j) => !dismissedBroadcastIds.has(j.id)),
+    [jobData.incomingList, dismissedBroadcastIds]
+  );
+
   // Loading state
   if (jobsLoading) return <LoadingSpinner />;
 
