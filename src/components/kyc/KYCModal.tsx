@@ -42,18 +42,25 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
   const netPayout = Number(job?.net_payout ?? job?.final_price ?? job?.price ?? 0);
   const fallbackBlocked = netPayout >= KYC_FALLBACK_BLOCK_THRESHOLD;
 
+  // AMLO ≥ 50,000 ฿ requires the strongest verification path —
+  // physical card mandatory (fallback locked) AND an extra "holder" photo
+  // on top of the standard card + card-with-device pair.
+  const amloHighValue = netPayout >= KYC_FALLBACK_BLOCK_THRESHOLD;
+
   const [method, setMethod] = useState<KYCMethod>('photo');
   const [idCardUrl, setIdCardUrl] = useState<string | null>(null);
+  const [idWithDeviceUrl, setIdWithDeviceUrl] = useState<string | null>(null);
   const [holderUrl, setHolderUrl] = useState<string | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [idNumberRaw, setIdNumberRaw] = useState('');
   const [idAddress, setIdAddress] = useState(job?.cust_id_address || '');
   const [fallbackReason, setFallbackReason] = useState<KYCFallbackReason>('forgot_card');
   const [fallbackDetail, setFallbackDetail] = useState('');
-  const [uploadingSlot, setUploadingSlot] = useState<'card' | 'holder' | null>(null);
+  const [uploadingSlot, setUploadingSlot] = useState<'card' | 'device' | 'holder' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const cardInputRef = useRef<HTMLInputElement>(null);
+  const deviceInputRef = useRef<HTMLInputElement>(null);
   const holderInputRef = useRef<HTMLInputElement>(null);
 
   const idNumberDigits = idNumberRaw.replace(/\D/g, '');
@@ -61,13 +68,14 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
 
   const handlePhotoUpload = async (
     file: File | undefined,
-    slot: 'card' | 'holder',
+    slot: 'card' | 'device' | 'holder',
   ) => {
     if (!file) return;
     setUploadingSlot(slot);
     try {
       const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`);
       if (slot === 'card') setIdCardUrl(url);
+      else if (slot === 'device') setIdWithDeviceUrl(url);
       else setHolderUrl(url);
     } catch (e: any) {
       toast.error('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
@@ -77,13 +85,13 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
   };
 
   const standardComplete = useMemo(() => {
+    const photosOk = Boolean(idCardUrl && idWithDeviceUrl && (!amloHighValue || holderUrl));
     return Boolean(
-      idCardUrl &&
-        holderUrl &&
+      photosOk &&
         idNumberValid &&
         idAddress.trim().length >= 10,
     );
-  }, [idCardUrl, holderUrl, idNumberValid, idAddress]);
+  }, [idCardUrl, idWithDeviceUrl, holderUrl, amloHighValue, idNumberValid, idAddress]);
 
   const fallbackComplete = useMemo(() => {
     return Boolean(
@@ -105,7 +113,8 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
         id_number: idNumberDigits,
         id_address: idAddress.trim(),
         id_card_url: method === 'photo' ? idCardUrl : null,
-        holder_url: method === 'photo' ? holderUrl : null,
+        id_with_device_url: method === 'photo' ? idWithDeviceUrl : null,
+        holder_url: method === 'photo' && amloHighValue ? holderUrl : null,
         signature_url: method === 'typed_fallback' ? signatureUrl : null,
         fallback_reason: method === 'typed_fallback' ? fallbackReason : undefined,
         fallback_detail:
@@ -197,14 +206,33 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
                 onClear={() => setIdCardUrl(null)}
               />
               <PhotoSlot
-                title="ภาพลูกค้าถือบัตร"
-                hint="ลูกค้าถือบัตรไว้ใกล้ใบหน้า ให้เห็นทั้งบัตรและหน้าชัด"
-                imageUrl={holderUrl}
-                uploading={uploadingSlot === 'holder'}
-                inputRef={holderInputRef}
-                onUpload={(f) => handlePhotoUpload(f, 'holder')}
-                onClear={() => setHolderUrl(null)}
+                title="ภาพบัตร + เครื่องที่ขาย"
+                hint="วางบัตรประชาชนข้างเครื่อง ให้เห็น IMEI หรือ Serial Number ในเฟรมเดียว"
+                imageUrl={idWithDeviceUrl}
+                uploading={uploadingSlot === 'device'}
+                inputRef={deviceInputRef}
+                onUpload={(f) => handlePhotoUpload(f, 'device')}
+                onClear={() => setIdWithDeviceUrl(null)}
               />
+              {amloHighValue && (
+                <>
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex gap-2 items-start">
+                    <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      ยอด ≥ 50,000 ฿ — ปปง. กำหนดให้ตรวจสอบตัวตนเข้มข้นขึ้น (CDD) ต้องถ่ายภาพลูกค้าคู่บัตรเพิ่มเติม
+                    </p>
+                  </div>
+                  <PhotoSlot
+                    title="ภาพลูกค้าถือบัตร"
+                    hint="ลูกค้าถือบัตรไว้ใกล้ใบหน้า ให้เห็นทั้งบัตรและหน้าชัด"
+                    imageUrl={holderUrl}
+                    uploading={uploadingSlot === 'holder'}
+                    inputRef={holderInputRef}
+                    onUpload={(f) => handlePhotoUpload(f, 'holder')}
+                    onClear={() => setHolderUrl(null)}
+                  />
+                </>
+              )}
             </>
           )}
 
