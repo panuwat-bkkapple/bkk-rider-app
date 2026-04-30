@@ -61,7 +61,11 @@ export interface Job {
   assessment_details?: { isNewDevice?: boolean; rawConditions?: Record<string, any> };
   customer_conditions?: string[];
   cust_id_address?: string;
-  kyc?: KYCRecord | null;
+  // Non-sensitive flag mirroring /jobs_kyc/{jobId}.verified_at — used by
+  // the inspection-button gate to know whether KYC was completed. Full
+  // record lives at /jobs_kyc/{jobId} (admin + assigned rider only).
+  kyc_verified_at?: number;
+  kyc_method?: KYCMethod;
 }
 
 // AMLO threshold above which the typed-only fallback is disallowed.

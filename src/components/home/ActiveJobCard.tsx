@@ -149,7 +149,7 @@ export const ActiveJobCard = ({
 
     {((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
       const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
-      const kycVerified = !!job.kyc?.verified_at;
+      const kycVerified = !!job.kyc_verified_at;
       const requiresKyc = (job.receive_method || '').toLowerCase() === 'pickup';
       const showKycGate = arrived && requiresKyc && !kycVerified;
       return (
