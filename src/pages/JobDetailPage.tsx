@@ -91,6 +91,7 @@ interface JobDetailPageProps {
   onOpenChat: (jobId: string) => void;
   onCallCustomer: (job: any) => void;
   onOpenNavigation: (job: any) => void;
+  onStartKYC: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
   onRevertInspection: (job: any) => void;
@@ -101,7 +102,7 @@ export const JobDetailPage = ({
   job, riderInfoId, mode, onBack,
   onAccept, onReject, onUpdateStatus,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
+  onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
 }: JobDetailPageProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const handleAction = async (name: string, fn: () => void | Promise<void>) => {
@@ -405,24 +406,46 @@ export const JobDetailPage = ({
             </button>
           )}
 
-          {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  if ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED)) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
-                  onInspect(job);
-                }}
-                className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
-              >
-                <ShieldCheck size={22} />{(job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
-              </button>
-              {(job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) && (
-                <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
-                  ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
-                </button>
-              )}
-            </div>
-          )}
+          {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
+            const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
+            const kycVerified = !!job.kyc?.verified_at;
+            // KYC gate is enforced for Pickup only — Mail-in / Store-in capture
+            // happens at the branch and is handled by admin tooling.
+            const requiresKyc = (job.receive_method || '').toLowerCase() === 'pickup';
+            const showKycGate = arrived && requiresKyc && !kycVerified;
+            return (
+              <div className="space-y-2">
+                {showKycGate ? (
+                  <button
+                    onClick={() => onStartKYC(job)}
+                    className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
+                  >
+                    <ShieldCheck size={22} /> ยืนยันตัวตนลูกค้า (KYC)
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
+                      onInspect(job);
+                    }}
+                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
+                  >
+                    <ShieldCheck size={22} />{arrived ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
+                  </button>
+                )}
+                {arrived && kycVerified && (
+                  <p className="text-[11px] text-emerald-600 text-center font-medium">
+                    KYC ยืนยันแล้ว{job.kyc?.method === 'typed_fallback' ? ' (รอแอดมินตรวจสอบ)' : ''}
+                  </p>
+                )}
+                {arrived && (
+                  <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
+                    ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
           {mode === 'active' && job.status === 'QC Review' && (
             <div className="space-y-2">

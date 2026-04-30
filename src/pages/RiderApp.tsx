@@ -23,6 +23,7 @@ import { BankModal } from '../components/profile/BankModal';
 import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
+import { KYCModal } from '../components/kyc/KYCModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
 import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
 import { ConfirmModal } from '../components/common/ConfirmModal';
@@ -58,6 +59,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
 
   // Modal state
   const [inspectingJob, setInspectingJob] = useState<any>(null);
+  const [kycJob, setKycJob] = useState<any>(null);
   const [chatJobId, setChatJobId] = useState<string | null>(null);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -206,6 +208,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
+          onStartKYC={(job) => setKycJob(job)}
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => setCompletingJob(job)}
           onRevertInspection={(job) => setRevertingJob(job)}
@@ -230,6 +233,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
+          onStartKYC={(job) => setKycJob(job)}
           onInspect={(job) => setInspectingJob(job)}
           onCompleteJob={(job) => setCompletingJob(job)}
           onRevertInspection={(job) => setRevertingJob(job)}
@@ -338,6 +342,16 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
             conditionSets={conditionSets}
             onClose={() => setInspectingJob(null)}
             onSubmit={handleInspectionSubmit}
+          />
+        </ModalErrorBoundary>
+      )}
+
+      {kycJob && (
+        <ModalErrorBoundary onClose={() => setKycJob(null)}>
+          <KYCModal
+            job={kycJob}
+            onClose={() => setKycJob(null)}
+            onSubmit={actions.submitKYC}
           />
         </ModalErrorBoundary>
       )}
