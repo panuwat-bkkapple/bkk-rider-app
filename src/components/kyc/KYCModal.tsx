@@ -108,20 +108,32 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
     if (!canSubmit || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await onSubmit(job, {
+      // Build the payload conditionally — Firebase RTDB rejects `undefined`
+      // values in update payloads, so we omit keys that don't apply rather
+      // than passing them as undefined or null.
+      const base = {
         method,
         id_number: idNumberDigits,
         id_address: idAddress.trim(),
-        id_card_url: method === 'photo' ? idCardUrl : null,
-        id_with_device_url: method === 'photo' ? idWithDeviceUrl : null,
-        holder_url: method === 'photo' && amloHighValue ? holderUrl : null,
-        signature_url: method === 'typed_fallback' ? signatureUrl : null,
-        fallback_reason: method === 'typed_fallback' ? fallbackReason : undefined,
-        fallback_detail:
-          method === 'typed_fallback' && fallbackReason === 'other'
-            ? fallbackDetail.trim()
-            : undefined,
-      });
+      };
+      const payload =
+        method === 'photo'
+          ? {
+              ...base,
+              id_card_url: idCardUrl!,
+              id_with_device_url: idWithDeviceUrl!,
+              ...(amloHighValue && holderUrl ? { holder_url: holderUrl } : {}),
+            }
+          : {
+              ...base,
+              signature_url: signatureUrl!,
+              fallback_reason: fallbackReason,
+              ...(fallbackReason === 'other'
+                ? { fallback_detail: fallbackDetail.trim() }
+                : {}),
+            };
+
+      await onSubmit(job, payload);
       toast.success('บันทึก KYC สำเร็จ เริ่มตรวจสภาพเครื่องได้');
       onClose();
     } catch (e: any) {
