@@ -60,6 +60,42 @@ export interface Job {
   payment_info?: { slip_url?: string };
   assessment_details?: { isNewDevice?: boolean; rawConditions?: Record<string, any> };
   customer_conditions?: string[];
+  cust_id_address?: string;
+  kyc?: KYCRecord | null;
+}
+
+// AMLO threshold above which the typed-only fallback is disallowed.
+// (Anti-Money Laundering Act, ปปง. — high-value cash transactions
+// require a verifiable copy of the seller's ID card.)
+export const KYC_FALLBACK_BLOCK_THRESHOLD = 50000;
+
+export type KYCMethod = 'photo' | 'typed_fallback';
+
+export type KYCFallbackReason =
+  | 'forgot_card'
+  | 'lost_card'
+  | 'awaiting_new_card'
+  | 'other';
+
+export const KYC_FALLBACK_REASON_LABEL_TH: Record<KYCFallbackReason, string> = {
+  forgot_card: 'ลืมบัตรประชาชน',
+  lost_card: 'ทำบัตรหาย',
+  awaiting_new_card: 'รอออกบัตรใหม่',
+  other: 'อื่น ๆ',
+};
+
+export interface KYCRecord {
+  method: KYCMethod;
+  id_number: string;             // 13 digits (typed or transcribed from photo)
+  id_address: string;            // address shown on the card
+  id_card_url?: string | null;   // Storage URL for the card photo (Standard)
+  holder_url?: string | null;    // Storage URL for "customer holding card" (Standard)
+  signature_url?: string | null; // Storage URL for signature canvas (Fallback)
+  fallback_reason?: KYCFallbackReason;
+  fallback_detail?: string;      // free text when reason === 'other'
+  verified_at: number;
+  verified_by_rider_uid: string;
+  verified_by_rider_name: string;
 }
 
 export interface PickupSchedule {

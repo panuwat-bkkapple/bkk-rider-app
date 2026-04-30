@@ -4,8 +4,8 @@ import { db } from '../api/firebase';
 import { sendAdminNotification } from '../utils/notifications';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
-import type { RiderInfo } from '../types';
-import { DISCREPANCY_CATEGORIES } from '../types';
+import type { RiderInfo, KYCRecord } from '../types';
+import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
@@ -382,9 +382,59 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     );
   };
 
+  /**
+   * Persist customer KYC capture taken at pickup. Writes to
+   * `jobs/{jobId}/kyc` and appends an audit entry to qc_logs.
+   *
+   * The fallback path (typed-only, no card) attaches a fraud_suspected-style
+   * notification to admin so the case shows up in the review queue.
+   */
+  const submitKYC = async (
+    job: any,
+    payload: Omit<KYCRecord, 'verified_at' | 'verified_by_rider_uid' | 'verified_by_rider_name'>,
+  ) => {
+    if (!job?.id) throw new Error('ไม่พบงาน');
+    const now = Date.now();
+    const record: KYCRecord = {
+      ...payload,
+      verified_at: now,
+      verified_by_rider_uid: riderInfo.id,
+      verified_by_rider_name: riderInfo.name,
+    };
+
+    const detail = payload.method === 'photo'
+      ? `ยืนยันตัวตนด้วยภาพถ่ายบัตรประชาชน`
+      : `ยืนยันตัวตนแบบไม่มีบัตร (${KYC_FALLBACK_REASON_LABEL_TH[payload.fallback_reason!] || 'ไม่ระบุ'})${payload.fallback_detail ? ` — ${payload.fallback_detail}` : ''}`;
+
+    const updatedLogs = [
+      { action: 'KYC Verified', by: `Rider: ${riderInfo.name}`, timestamp: now, details: detail },
+      ...(job.qc_logs || []),
+    ];
+
+    await update(ref(db, `jobs/${job.id}`), {
+      kyc: record,
+      kyc_verified_at: now,
+      qc_logs: updatedLogs,
+      updated_at: now,
+    });
+
+    const shortJobId = job.id.slice(-4).toUpperCase();
+    if (payload.method === 'typed_fallback') {
+      sendAdminNotification(
+        'KYC ผิดปกติ! รอตรวจสอบ',
+        `งาน #${shortJobId} ลูกค้าไม่มีบัตรประชาชน — กรุณาตรวจสอบลายเซ็นและข้อมูลที่ไรเดอร์บันทึก`,
+      );
+    } else {
+      sendAdminNotification(
+        'บันทึก KYC แล้ว',
+        `${riderInfo.name} บันทึก KYC ลูกค้าสำหรับงาน #${shortJobId} เรียบร้อย`,
+      );
+    }
+  };
+
   return {
     updateStatus, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
-    handleRevertInspection,
+    handleRevertInspection, submitKYC,
     handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
     reportDiscrepancy
   };
