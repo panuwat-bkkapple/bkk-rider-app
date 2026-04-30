@@ -123,8 +123,8 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90dvh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-3">
@@ -311,8 +311,8 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-5 border-t border-gray-100 shrink-0">
+        {/* Footer — extra bottom padding so the button clears the iOS home indicator */}
+        <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-gray-100 shrink-0">
           <button
             onClick={handleSubmit}
             disabled={!canSubmit || isSubmitting}
