@@ -86,13 +86,14 @@ export const KYC_FALLBACK_REASON_LABEL_TH: Record<KYCFallbackReason, string> = {
 
 export interface KYCRecord {
   method: KYCMethod;
-  id_number: string;             // 13 digits (typed or transcribed from photo)
-  id_address: string;            // address shown on the card
-  id_card_url?: string | null;   // Storage URL for the card photo (Standard)
-  holder_url?: string | null;    // Storage URL for "customer holding card" (Standard)
-  signature_url?: string | null; // Storage URL for signature canvas (Fallback)
+  id_number: string;                 // 13 digits (typed or transcribed from photo)
+  id_address: string;                // address shown on the card
+  id_card_url?: string | null;       // Storage URL: ID card photo (Standard)
+  id_with_device_url?: string | null; // Storage URL: ID card placed next to the device, IMEI/Serial visible (Standard) — links seller ↔ specific device for forensics
+  holder_url?: string | null;        // Storage URL: customer holding card next to face. Only required when net_payout >= AMLO threshold (defense-in-depth for high-value cash trades)
+  signature_url?: string | null;     // Storage URL: signature canvas (Fallback)
   fallback_reason?: KYCFallbackReason;
-  fallback_detail?: string;      // free text when reason === 'other'
+  fallback_detail?: string;          // free text when reason === 'other'
   verified_at: number;
   verified_by_rider_uid: string;
   verified_by_rider_name: string;
