@@ -73,7 +73,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
     if (!file) return;
     setUploadingSlot(slot);
     try {
-      const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`);
+      const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`, { opaqueFilename: true });
       if (slot === 'card') setIdCardUrl(url);
       else if (slot === 'device') setIdWithDeviceUrl(url);
       else setHolderUrl(url);
@@ -296,7 +296,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
                     return;
                   }
                   try {
-                    const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`);
+                    const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`, { opaqueFilename: true });
                     setSignatureUrl(url);
                   } catch (e: any) {
                     toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + (e?.message || e));

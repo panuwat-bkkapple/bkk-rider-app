@@ -22,7 +22,22 @@ export const validateImageFile = (file: File): string | null => {
   return null;
 };
 
-export const uploadImageToFirebase = async (file: File, path: string): Promise<string> => {
+export interface UploadOptions {
+  /**
+   * When true, the filename uploaded to Storage is a cryptographically
+   * random UUID (with the original extension) instead of the predictable
+   * `${Date.now()}_${file.name}`. Use this for sensitive uploads where
+   * an attacker who happens to know the parent path shouldn't be able
+   * to guess the filename and download directly. KYC photos use this.
+   */
+  opaqueFilename?: boolean;
+}
+
+export const uploadImageToFirebase = async (
+  file: File,
+  path: string,
+  options?: UploadOptions,
+): Promise<string> => {
   try {
     // Validate file before upload
     const validationError = validateImageFile(file);
@@ -31,7 +46,16 @@ export const uploadImageToFirebase = async (file: File, path: string): Promise<s
     // Compress image before upload (reduces file size significantly)
     const compressedFile = await imageCompression(file, compressionOptions);
 
-    const fileName = `${Date.now()}_${file.name}`;
+    let fileName: string;
+    if (options?.opaqueFilename) {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const uuid = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      fileName = `${uuid}.${ext || 'jpg'}`;
+    } else {
+      fileName = `${Date.now()}_${file.name}`;
+    }
     const fullPath = `${path}/${fileName}`;
     const storageRef = ref(storage, fullPath);
     const snapshot = await uploadBytes(storageRef, compressedFile);
