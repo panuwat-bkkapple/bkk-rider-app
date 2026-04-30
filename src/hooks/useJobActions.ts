@@ -383,11 +383,19 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   /**
-   * Persist customer KYC capture taken at pickup. Writes to
-   * `jobs/{jobId}/kyc` and appends an audit entry to qc_logs.
+   * Persist customer KYC capture taken at pickup.
    *
-   * The fallback path (typed-only, no card) attaches a fraud_suspected-style
-   * notification to admin so the case shows up in the review queue.
+   * The full KYC record (sensitive — ID number, photos, signature) is written
+   * to `/jobs_kyc/{jobId}` which has strict RTDB read rules: only admins and
+   * the assigned rider can read it. The job document at `/jobs/{id}` keeps
+   * just two non-sensitive flags (`kyc_verified_at`, `kyc_method`) so the
+   * dashboard can index/filter without exposing PII.
+   *
+   * Both writes are issued via a single multi-path update so they're
+   * atomic — either both land or both reject.
+   *
+   * The fallback path (typed-only, no card) fires a fraud_suspected-style
+   * notification so the case shows up in the admin review queue.
    */
   const submitKYC = async (
     job: any,
@@ -411,11 +419,13 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       ...(job.qc_logs || []),
     ];
 
-    await update(ref(db, `jobs/${job.id}`), {
-      kyc: record,
-      kyc_verified_at: now,
-      qc_logs: updatedLogs,
-      updated_at: now,
+    // Multi-path update — full record to /jobs_kyc, flags + audit to /jobs
+    await update(ref(db), {
+      [`jobs_kyc/${job.id}`]: record,
+      [`jobs/${job.id}/kyc_verified_at`]: now,
+      [`jobs/${job.id}/kyc_method`]: payload.method,
+      [`jobs/${job.id}/qc_logs`]: updatedLogs,
+      [`jobs/${job.id}/updated_at`]: now,
     });
 
     const shortJobId = job.id.slice(-4).toUpperCase();

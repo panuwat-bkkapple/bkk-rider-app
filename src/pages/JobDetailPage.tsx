@@ -408,7 +408,7 @@ export const JobDetailPage = ({
 
           {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
             const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
-            const kycVerified = !!job.kyc?.verified_at;
+            const kycVerified = !!job.kyc_verified_at;
             // KYC gate is enforced for Pickup only — Mail-in / Store-in capture
             // happens at the branch and is handled by admin tooling.
             const requiresKyc = (job.receive_method || '').toLowerCase() === 'pickup';
@@ -435,7 +435,7 @@ export const JobDetailPage = ({
                 )}
                 {arrived && kycVerified && (
                   <p className="text-[11px] text-emerald-600 text-center font-medium">
-                    KYC ยืนยันแล้ว{job.kyc?.method === 'typed_fallback' ? ' (รอแอดมินตรวจสอบ)' : ''}
+                    KYC ยืนยันแล้ว{job.kyc_method === 'typed_fallback' ? ' (รอแอดมินตรวจสอบ)' : ''}
                   </p>
                 )}
                 {arrived && (
