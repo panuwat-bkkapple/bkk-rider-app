@@ -10,6 +10,25 @@ import { getDevicesList } from '../../utils/jobHelpers';
 import { toast } from '../common/Toast';
 import type { InspectedDeviceData, ConditionGroup } from '../../types';
 
+// Required photo slots — rider must take one per angle so admin / Internal QC
+// can verify the device condition without ambiguity. Order matters: photos
+// flow into the submit array in this exact order, then any optional damage
+// photos append after slot 5.
+const PHOTO_SLOTS = [
+  { key: 'front',  label: 'ด้านหน้า (เปิดหน้าจอ)', hint: 'หน้าจอเปิดและสว่างให้เห็นพิกเซลชัด' },
+  { key: 'back',   label: 'ด้านหลัง',              hint: 'เห็นโลโก้และกล้องครบ' },
+  { key: 'top',    label: 'ด้านบน',                hint: 'ปุ่มเปิด/ปิด, ลำโพง' },
+  { key: 'bottom', label: 'ด้านล่าง',              hint: 'ช่องชาร์จ, ลำโพง' },
+  { key: 'left',   label: 'ด้านข้างซ้าย',          hint: 'ปุ่มเสียง, ปุ่ม Action (ถ้ามี)' },
+  { key: 'right',  label: 'ด้านข้างขวา',           hint: 'ปุ่มเปิดปิด/ปุ่ม Power' },
+] as const;
+
+type SlotKey = typeof PHOTO_SLOTS[number]['key'];
+const SLOT_KEYS: SlotKey[] = PHOTO_SLOTS.map((s) => s.key);
+const REQUIRED_SLOTS = PHOTO_SLOTS.length;
+
+interface SlotPhoto { url: string; file: File }
+
 interface InspectionModalProps {
   job: any;
   modelsData: any;
@@ -22,10 +41,15 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const [activeDeviceIndex, setActiveDeviceIndex] = useState<number | null>(null);
   const [inspectedDevicesData, setInspectedDevicesData] = useState<Record<number, InspectedDeviceData>>({});
   const [checks, setChecks] = useState<string[]>([]);
-  const [photos, setPhotos] = useState<string[]>([]);
-  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  // Slot-based photos: 6 named angles + optional damage close-ups.
+  const [slotPhotos, setSlotPhotos] = useState<Record<SlotKey, SlotPhoto | null>>({
+    front: null, back: null, top: null, bottom: null, left: null, right: null,
+  });
+  const [damagePhotos, setDamagePhotos] = useState<SlotPhoto[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const slotInputRef = useRef<HTMLInputElement>(null);
+  const damageInputRef = useRef<HTMLInputElement>(null);
+  const [activeSlot, setActiveSlot] = useState<SlotKey | null>(null);
 
   const devicesList = getDevicesList(job);
 
@@ -69,22 +93,44 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     return Number(device?.estimated_price || 0);
   };
 
-  const handleCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setPhotoFiles(prev => [...prev, file]);
-      setPhotos(prev => [...prev, URL.createObjectURL(file)]);
-    }
+  const handleSlotCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so re-selecting same file fires onChange
+    if (!file || !activeSlot) return;
+    setSlotPhotos((prev) => ({
+      ...prev,
+      [activeSlot]: { url: URL.createObjectURL(file), file },
+    }));
+    setActiveSlot(null);
   };
 
-  const handleRemovePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
-    setPhotoFiles(prev => prev.filter((_, i) => i !== index));
+  const handleClearSlot = (key: SlotKey) => {
+    setSlotPhotos((prev) => ({ ...prev, [key]: null }));
   };
+
+  const handleDamageCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setDamagePhotos((prev) => [...prev, { url: URL.createObjectURL(file), file }]);
+  };
+
+  const handleClearDamage = (index: number) => {
+    setDamagePhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const filledSlotCount = Object.values(slotPhotos).filter(Boolean).length;
+  const allRequiredSlotsFilled = filledSlotCount === REQUIRED_SLOTS;
 
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
     const activeDevice = devicesList[activeDeviceIndex];
+    // New devices skip the photo gate (no condition assessment needed) —
+    // factory-fresh sealed units don't need angle photos
+    if (!activeDevice.isNewDevice && !allRequiredSlotsFilled) {
+      toast.error('กรุณาถ่ายรูปครบทั้ง 6 ด้านก่อนบันทึก');
+      return;
+    }
     const deductionLabels: string[] = [];
     const startingPrice = getBasePrice(activeDevice);
 
@@ -111,11 +157,21 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
     const finalPrice = activeDevice.isNewDevice ? startingPrice : Math.max(0, startingPrice - totalDeduction);
 
+    // Flatten slots → ordered array. Required slots come first (6 in
+    // PHOTO_SLOTS order), then any damage close-ups append after.
+    // saveDeviceInspection guards on allRequiredSlotsFilled so no nulls
+    // sneak in here, but we filter for safety.
+    const slotPairs = SLOT_KEYS
+      .map((k) => slotPhotos[k])
+      .filter((p): p is SlotPhoto => p != null);
+    const orderedPhotos = [...slotPairs, ...damagePhotos];
+
     setInspectedDevicesData(prev => ({
       ...prev,
       [activeDeviceIndex]: {
         checks: activeDevice.isNewDevice ? [] : [...checks],
-        photos: [...photos], photoFiles: [...photoFiles],
+        photos: orderedPhotos.map((p) => p.url),
+        photoFiles: orderedPhotos.map((p) => p.file),
         deductions: deductionLabels, final_price: finalPrice
       }
     }));
@@ -167,8 +223,23 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     <button
                       onClick={() => {
                         setChecks(inspectedDevicesData[index]?.checks || []);
-                        setPhotos(inspectedDevicesData[index]?.photos || []);
-                        setPhotoFiles(inspectedDevicesData[index]?.photoFiles || []);
+                        // Reload slot photos from saved arrays — the first
+                        // PHOTO_SLOTS.length entries map back to slots in
+                        // order, the rest are damage close-ups.
+                        const savedUrls = inspectedDevicesData[index]?.photos || [];
+                        const savedFiles = inspectedDevicesData[index]?.photoFiles || [];
+                        const restored: Record<SlotKey, SlotPhoto | null> = {
+                          front: null, back: null, top: null, bottom: null, left: null, right: null,
+                        };
+                        SLOT_KEYS.forEach((k, i) => {
+                          if (savedUrls[i] && savedFiles[i]) restored[k] = { url: savedUrls[i], file: savedFiles[i] };
+                        });
+                        setSlotPhotos(restored);
+                        const damage: SlotPhoto[] = [];
+                        for (let i = REQUIRED_SLOTS; i < savedUrls.length; i++) {
+                          if (savedUrls[i] && savedFiles[i]) damage.push({ url: savedUrls[i], file: savedFiles[i] });
+                        }
+                        setDamagePhotos(damage);
                         setActiveDeviceIndex(index);
                       }}
                       className={`px-4 py-2 rounded-xl font-semibold text-xs transition-all ${isDone ? 'bg-white text-gray-600 border border-gray-200' : 'bg-blue-600 text-white shadow-md hover:bg-blue-700'}`}
@@ -207,25 +278,90 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
             </div>
 
             <div className="space-y-8">
-              {/* Photos */}
+              {/* Photos — named slots so admin/QC can match angles */}
               <div>
-                <label className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
                   <Camera size={16} className="text-blue-500" /> รูปถ่ายตัวเครื่อง
+                  <span className={`text-[11px] font-normal ml-auto ${allRequiredSlotsFilled ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    {filledSlotCount} / {REQUIRED_SLOTS}
+                  </span>
                 </label>
+                <p className="text-[11px] text-gray-500 mb-3">ถ่ายทั้ง 6 ด้านเพื่อให้แอดมินตรวจสภาพได้ครบ</p>
                 <div className="grid grid-cols-3 gap-3">
-                  {photos.map((p, i) => (
-                    <div key={i} className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-gray-100">
-                      <img src={p} className="w-full h-full object-cover" />
-                      <button onClick={() => handleRemovePhoto(i)} className="absolute top-2 right-2 bg-white/90 text-red-500 rounded-full p-1.5 shadow-sm">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                  <button onClick={() => fileInputRef.current?.click()} className="aspect-square rounded-2xl border-2 border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-blue-50/30">
-                    <Camera size={24} /><span className="text-xs font-medium mt-1">เพิ่มรูป</span>
-                  </button>
+                  {PHOTO_SLOTS.map((slot) => {
+                    const photo = slotPhotos[slot.key];
+                    return (
+                      <div key={slot.key} className="space-y-1">
+                        {photo ? (
+                          <div className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-emerald-200">
+                            <img src={photo.url} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => handleClearSlot(slot.key)}
+                              className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm"
+                            >
+                              <X size={12} />
+                            </button>
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+                              <p className="text-[10px] font-bold text-white truncate">{slot.label}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setActiveSlot(slot.key); slotInputRef.current?.click(); }}
+                            className="w-full aspect-square rounded-2xl border-2 border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-blue-50/30 px-1 text-center"
+                          >
+                            <Camera size={20} />
+                            <span className="text-[11px] font-bold mt-1 leading-tight">{slot.label}</span>
+                            <span className="text-[9px] text-blue-400 mt-0.5 leading-tight line-clamp-2">{slot.hint}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <input type="file" accept="image/jpeg, image/png, image/jpg, image/webp" multiple className="hidden" ref={fileInputRef} onChange={handleCapture} />
+                <input
+                  ref={slotInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleSlotCapture}
+                />
+
+                {/* Optional damage close-ups */}
+                <div className="mt-4">
+                  <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    เพิ่มภาพรอย/จุดเสียหาย (ถ้ามี)
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {damagePhotos.map((p, i) => (
+                      <div key={i} className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-amber-200">
+                        <img src={p.url} className="w-full h-full object-cover" />
+                        <button
+                          onClick={() => handleClearDamage(i)}
+                          className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => damageInputRef.current?.click()}
+                      className="aspect-square rounded-2xl border-2 border-dashed border-amber-200 flex flex-col items-center justify-center text-amber-500 hover:bg-amber-50 transition-colors bg-amber-50/30"
+                    >
+                      <Camera size={20} />
+                      <span className="text-[11px] font-bold mt-1">เพิ่มภาพรอย</span>
+                    </button>
+                  </div>
+                  <input
+                    ref={damageInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleDamageCapture}
+                  />
+                </div>
               </div>
 
               {/* Checklist */}
@@ -293,7 +429,16 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
               </div>
 
               <div className="pt-2">
-                <button onClick={saveDeviceInspection} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2">
+                {!devicesList[activeDeviceIndex].isNewDevice && !allRequiredSlotsFilled && (
+                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                    เหลืออีก {REQUIRED_SLOTS - filledSlotCount} ด้าน — บันทึกไม่ได้จนกว่าจะครบ
+                  </p>
+                )}
+                <button
+                  onClick={saveDeviceInspection}
+                  disabled={!devicesList[activeDeviceIndex].isNewDevice && !allRequiredSlotsFilled}
+                  className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+                >
                   บันทึกเครื่องนี้
                 </button>
               </div>
