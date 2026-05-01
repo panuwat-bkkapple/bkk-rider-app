@@ -98,6 +98,14 @@ export interface KYCRecord {
   signature_url?: string | null;     // Storage URL: signature canvas (Fallback)
   fallback_reason?: KYCFallbackReason;
   fallback_detail?: string;          // free text when reason === 'other'
+  // Optional fields auto-filled from Vision OCR (rider can edit). Stored
+  // alongside the core KYC so admin can verify identity end-to-end without
+  // re-reading the card photo. Schema synced with bkk-system/src/types/domain.ts
+  // and validate rules in bkk-system/database.rules.json — change all 3 together.
+  id_name?: string;                  // ชื่อ-นามสกุลพร้อมคำนำหน้า ("นาย สมชาย ใจดี")
+  id_dob?: string;                   // DD/MM/YYYY ตามที่ปรากฏบนบัตร
+  id_issued_at?: string;             // วันออกบัตร
+  id_expires_at?: string;            // วันบัตรหมดอายุ — display-only, ไม่ block submit
   verified_at: number;
   verified_by_rider_uid: string;
   verified_by_rider_name: string;

@@ -21,7 +21,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   X, Camera, IdCard, MapPin, AlertTriangle, ShieldCheck, Loader2,
-  PencilLine, Trash2, Lock,
+  PencilLine, Trash2, Lock, User, Calendar,
 } from 'lucide-react';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { isValidThaiNid, formatThaiNid } from '../../utils/thaiNid';
@@ -58,6 +58,14 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [idNumberRaw, setIdNumberRaw] = useState('');
   const [idAddress, setIdAddress] = useState(job?.cust_id_address || '');
+  // Optional fields from the ID card itself — auto-filled from Vision OCR
+  // when the photo is uploaded; rider can edit. None of these block submit
+  // (the existing required set — number + address + photos — already does
+  // the AMLO compliance gating).
+  const [idName, setIdName] = useState('');
+  const [idDob, setIdDob] = useState('');
+  const [idIssuedAt, setIdIssuedAt] = useState('');
+  const [idExpiresAt, setIdExpiresAt] = useState('');
   const [fallbackReason, setFallbackReason] = useState<KYCFallbackReason>('forgot_card');
   const [fallbackDetail, setFallbackDetail] = useState('');
   const [uploadingSlot, setUploadingSlot] = useState<'card' | 'device' | 'holder' | null>(null);
@@ -104,13 +112,21 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
     try {
       const result = await ocrIdCard(url);
       const f = result.fields;
-      if (!f || (!f.idNumber && !f.address)) {
+      if (!f || (!f.idNumber && !f.address && !f.name)) {
         toast.info('อ่านบัตรอัตโนมัติไม่ได้ — กรุณากรอกเลขบัตรและที่อยู่');
         return;
       }
-      // Only fill if the field is currently empty (don't overwrite manual edits)
+      // Fill only when the field is empty OR still equals the customer's
+      // pre-filled value from checkout (i.e. rider hasn't manually edited).
+      // OCR reads the actual card so it should win over a typed pre-fill.
+      const prefilledAddr = (job?.cust_id_address || '').trim();
+      const addrUntouched = !idAddress.trim() || idAddress.trim() === prefilledAddr;
       if (f.idNumber && !idNumberRaw) setIdNumberRaw(f.idNumber);
-      if (f.address && !idAddress.trim()) setIdAddress(f.address);
+      if (f.address && addrUntouched) setIdAddress(f.address);
+      if (f.name && !idName) setIdName(f.name);
+      if (f.dateOfBirth && !idDob) setIdDob(f.dateOfBirth);
+      if (f.issuedAt && !idIssuedAt) setIdIssuedAt(f.issuedAt);
+      if (f.expiresAt && !idExpiresAt) setIdExpiresAt(f.expiresAt);
       const conf = result.confidence >= OCR_VERIFY_THRESHOLD ? 'high' : 'low';
       setOcrConfidence(conf);
       toast.success(
@@ -157,6 +173,13 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
         method,
         id_number: idNumberDigits,
         id_address: idAddress.trim(),
+        // Spread optional OCR fields only when populated. RTDB validate
+        // rules reject empty strings on these (length > 0 / <= 30) so we
+        // omit the key entirely rather than send "".
+        ...(idName.trim() ? { id_name: idName.trim() } : {}),
+        ...(idDob.trim() ? { id_dob: idDob.trim() } : {}),
+        ...(idIssuedAt.trim() ? { id_issued_at: idIssuedAt.trim() } : {}),
+        ...(idExpiresAt.trim() ? { id_expires_at: idExpiresAt.trim() } : {}),
       };
       const payload =
         method === 'photo'
@@ -389,6 +412,68 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
                 เลขบัตรไม่ถูกต้อง (checksum ไม่ผ่าน) กรุณาตรวจสอบอีกครั้ง
               </p>
             )}
+          </div>
+
+          {/* Optional OCR-filled fields. Auto-populated when rider uploads
+              the card photo; rider can edit. None block submit — the strict
+              required set is still id_number + id_address + photos. */}
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
+              <User size={13} /> ชื่อ-นามสกุลตามบัตร
+              {ocrConfidence === 'high' && idName && (
+                <span className="text-[10px] font-medium text-emerald-600 normal-case">(อ่านอัตโนมัติ)</span>
+              )}
+            </label>
+            <input
+              type="text"
+              value={idName}
+              onChange={(e) => setIdName(e.target.value)}
+              maxLength={200}
+              placeholder="นาย / นาง / นางสาว ..."
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
+                <Calendar size={13} /> วันเกิด
+              </label>
+              <input
+                type="text"
+                value={idDob}
+                onChange={(e) => setIdDob(e.target.value)}
+                maxLength={30}
+                placeholder="DD/MM/YYYY"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">
+                วันออกบัตร
+              </label>
+              <input
+                type="text"
+                value={idIssuedAt}
+                onChange={(e) => setIdIssuedAt(e.target.value)}
+                maxLength={30}
+                placeholder="DD/MM/YYYY"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">
+                วันหมดอายุ
+              </label>
+              <input
+                type="text"
+                value={idExpiresAt}
+                onChange={(e) => setIdExpiresAt(e.target.value)}
+                maxLength={30}
+                placeholder="DD/MM/YYYY"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              />
+            </div>
           </div>
 
           {/* ID address — both modes; pre-filled if customer entered at checkout */}
