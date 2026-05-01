@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { isValidThaiNid, formatThaiNid } from '../../utils/thaiNid';
+import { ocrIdCard, OCR_VERIFY_THRESHOLD } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
 import {
   KYC_FALLBACK_BLOCK_THRESHOLD,
@@ -61,6 +62,10 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
   const [fallbackDetail, setFallbackDetail] = useState('');
   const [uploadingSlot, setUploadingSlot] = useState<'card' | 'device' | 'holder' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOcring, setIsOcring] = useState(false);
+  // 'high' = OCR confidence >= threshold, fields trusted; 'low' = OCR ran
+  // but rider must verify; null = no OCR yet (manual entry).
+  const [ocrConfidence, setOcrConfidence] = useState<'high' | 'low' | null>(null);
 
   const cardInputRef = useRef<HTMLInputElement>(null);
   const deviceInputRef = useRef<HTMLInputElement>(null);
@@ -77,13 +82,47 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
     setUploadingSlot(slot);
     try {
       const url = await uploadImageToFirebase(file, `jobs/${job.id}/kyc`, { opaqueFilename: true });
-      if (slot === 'card') setIdCardUrl(url);
-      else if (slot === 'device') setIdWithDeviceUrl(url);
-      else setHolderUrl(url);
+      if (slot === 'card') {
+        setIdCardUrl(url);
+        // Auto-fill ID + address from the card photo. Don't block on OCR
+        // failure — rider can always type manually.
+        runIdCardOcr(url);
+      } else if (slot === 'device') {
+        setIdWithDeviceUrl(url);
+      } else {
+        setHolderUrl(url);
+      }
     } catch (e: any) {
       toast.error('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
     } finally {
       setUploadingSlot(null);
+    }
+  };
+
+  const runIdCardOcr = async (url: string) => {
+    setIsOcring(true);
+    try {
+      const result = await ocrIdCard(url);
+      const f = result.fields;
+      if (!f || (!f.idNumber && !f.address)) {
+        toast.info('อ่านบัตรอัตโนมัติไม่ได้ — กรุณากรอกเลขบัตรและที่อยู่');
+        return;
+      }
+      // Only fill if the field is currently empty (don't overwrite manual edits)
+      if (f.idNumber && !idNumberRaw) setIdNumberRaw(f.idNumber);
+      if (f.address && !idAddress.trim()) setIdAddress(f.address);
+      const conf = result.confidence >= OCR_VERIFY_THRESHOLD ? 'high' : 'low';
+      setOcrConfidence(conf);
+      toast.success(
+        conf === 'high'
+          ? 'อ่านบัตรอัตโนมัติแล้ว — ตรวจความถูกต้องอีกครั้ง'
+          : 'อ่านบัตรได้ความมั่นใจต่ำ — กรุณาตรวจทุกฟิลด์',
+      );
+    } catch (e: any) {
+      console.error('[KYCModal] OCR failed', e);
+      toast.info('อ่านบัตรอัตโนมัติไม่ได้ — กรุณากรอกเลขบัตรและที่อยู่');
+    } finally {
+      setIsOcring(false);
     }
   };
 
@@ -309,10 +348,29 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
             </div>
           )}
 
+          {/* OCR status banner */}
+          {isOcring && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex gap-2 items-center">
+              <Loader2 size={14} className="text-blue-600 animate-spin" />
+              <p className="text-xs text-blue-800 font-medium">กำลังอ่านบัตรอัตโนมัติ...</p>
+            </div>
+          )}
+          {!isOcring && ocrConfidence === 'low' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2 items-start">
+              <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800 leading-relaxed">
+                อ่านบัตรอัตโนมัติได้ความมั่นใจต่ำ — กรุณาตรวจเลขบัตรและที่อยู่ให้ตรงกับบัตรจริง
+              </p>
+            </div>
+          )}
+
           {/* ID number — both modes */}
           <div>
             <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
               <IdCard size={13} /> เลขบัตรประชาชน 13 หลัก <span className="text-red-500">*</span>
+              {ocrConfidence === 'high' && (
+                <span className="text-[10px] font-medium text-emerald-600 normal-case">(อ่านอัตโนมัติ)</span>
+              )}
             </label>
             <input
               type="tel"
