@@ -23,9 +23,20 @@ const PHOTO_SLOTS = [
   { key: 'right',  label: 'ด้านข้างขวา',           hint: 'ปุ่มเปิดปิด/ปุ่ม Power' },
 ] as const;
 
+// Brand-new sealed devices skip the 6-angle device shots (we can't see
+// the device — it's still in the box). Replace with box + seal + IMEI
+// proof so admin can verify authenticity and that the seal is intact.
+const NEW_DEVICE_PHOTO_SLOTS = [
+  { key: 'front',  label: 'หน้ากล่อง',           hint: 'เห็นรุ่น / สี / ความจุชัด' },
+  { key: 'back',   label: 'ใต้กล่อง (IMEI)',     hint: 'ป้าย IMEI / Serial บนกล่อง' },
+  { key: 'top',    label: 'ซีลพลาสติก',          hint: 'close-up ให้เห็นว่าซีลยังครบ ไม่แกะ' },
+  { key: 'bottom', label: 'ซีลฝั่งตรงข้าม',      hint: 'ซีลอีกด้านของกล่อง' },
+] as const;
+
 type SlotKey = typeof PHOTO_SLOTS[number]['key'];
 const SLOT_KEYS: SlotKey[] = PHOTO_SLOTS.map((s) => s.key);
 const REQUIRED_SLOTS = PHOTO_SLOTS.length;
+const NEW_DEVICE_REQUIRED_SLOTS = NEW_DEVICE_PHOTO_SLOTS.length;
 
 interface SlotPhoto { url: string; file: File }
 
@@ -120,15 +131,23 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   };
 
   const filledSlotCount = Object.values(slotPhotos).filter(Boolean).length;
-  const allRequiredSlotsFilled = filledSlotCount === REQUIRED_SLOTS;
+  // Brand-new sealed devices need fewer photos (4 box+seal shots vs 6
+  // device-angle shots). Pick the threshold based on the active device.
+  const activeDeviceIsNew = activeDeviceIndex !== null && !!devicesList[activeDeviceIndex]?.isNewDevice;
+  const requiredCountForActive = activeDeviceIsNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
+  const allRequiredSlotsFilled = filledSlotCount >= requiredCountForActive;
 
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
     const activeDevice = devicesList[activeDeviceIndex];
-    // New devices skip the photo gate (no condition assessment needed) —
-    // factory-fresh sealed units don't need angle photos
-    if (!activeDevice.isNewDevice && !allRequiredSlotsFilled) {
-      toast.error('กรุณาถ่ายรูปครบทั้ง 6 ด้านก่อนบันทึก');
+    // Photo requirement differs by device type: 6 angle shots for used
+    // devices, 4 box+seal+IMEI shots for brand-new sealed units.
+    if (!allRequiredSlotsFilled) {
+      toast.error(
+        activeDevice.isNewDevice
+          ? 'กรุณาถ่ายภาพกล่อง ซีล และ IMEI ครบทั้ง 4 รูปก่อนบันทึก'
+          : 'กรุณาถ่ายรูปครบทั้ง 6 ด้านก่อนบันทึก'
+      );
       return;
     }
     const deductionLabels: string[] = [];
@@ -279,16 +298,30 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
             <div className="space-y-8">
               {/* Photos — named slots so admin/QC can match angles */}
+              {(() => {
+                const isNew = devicesList[activeDeviceIndex]?.isNewDevice;
+                // Brand-new sealed devices: replace the 6-angle device
+                // shots (we can't see the device, it's in the box) with
+                // box + seal + IMEI proof. Same SlotKey storage so the
+                // submit array stays consistent.
+                const slotsToShow = isNew ? NEW_DEVICE_PHOTO_SLOTS : PHOTO_SLOTS;
+                const totalRequired = isNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
+                return (
               <div>
                 <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                  <Camera size={16} className="text-blue-500" /> รูปถ่ายตัวเครื่อง
+                  <Camera size={16} className="text-blue-500" />
+                  {isNew ? 'รูปถ่ายกล่อง + ซีล' : 'รูปถ่ายตัวเครื่อง'}
                   <span className={`text-[11px] font-normal ml-auto ${allRequiredSlotsFilled ? 'text-emerald-600' : 'text-gray-500'}`}>
-                    {filledSlotCount} / {REQUIRED_SLOTS}
+                    {filledSlotCount} / {totalRequired}
                   </span>
                 </label>
-                <p className="text-[11px] text-gray-500 mb-3">ถ่ายทั้ง 6 ด้านเพื่อให้แอดมินตรวจสภาพได้ครบ</p>
+                <p className="text-[11px] text-gray-500 mb-3">
+                  {isNew
+                    ? 'เครื่องใหม่ยังไม่แกะซีล — ถ่ายกล่อง ซีลพลาสติก และเลข IMEI ให้ครบ'
+                    : 'ถ่ายทั้ง 6 ด้านเพื่อให้แอดมินตรวจสภาพได้ครบ'}
+                </p>
                 <div className="grid grid-cols-3 gap-3">
-                  {PHOTO_SLOTS.map((slot) => {
+                  {slotsToShow.map((slot) => {
                     const photo = slotPhotos[slot.key];
                     return (
                       <div key={slot.key} className="space-y-1">
@@ -363,6 +396,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                   />
                 </div>
               </div>
+                );
+              })()}
 
               {/* Checklist */}
               <div>
@@ -429,14 +464,14 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
               </div>
 
               <div className="pt-2">
-                {!devicesList[activeDeviceIndex].isNewDevice && !allRequiredSlotsFilled && (
+                {!allRequiredSlotsFilled && (
                   <p className="text-center text-xs text-amber-600 font-medium mb-2">
-                    เหลืออีก {REQUIRED_SLOTS - filledSlotCount} ด้าน — บันทึกไม่ได้จนกว่าจะครบ
+                    เหลืออีก {requiredCountForActive - filledSlotCount} {activeDeviceIsNew ? 'รูปกล่อง' : 'ด้าน'} — บันทึกไม่ได้จนกว่าจะครบ
                   </p>
                 )}
                 <button
                   onClick={saveDeviceInspection}
-                  disabled={!devicesList[activeDeviceIndex].isNewDevice && !allRequiredSlotsFilled}
+                  disabled={!allRequiredSlotsFilled}
                   className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   บันทึกเครื่องนี้
