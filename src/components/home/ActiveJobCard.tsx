@@ -228,7 +228,7 @@ export const ActiveJobCard = ({
       </div>
     )}
 
-    {['Waiting for Handover', 'Paid', 'PAID'].includes(job.status) && (
+    {['Waiting For Handover', 'Waiting for Handover', 'Paid', 'PAID'].includes(job.status) && (
       <div className="space-y-3 mt-2" onClick={stop}>
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-center shadow-sm">
           <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-1" />
