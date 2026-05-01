@@ -242,8 +242,18 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
     try {
       await update(ref(db, `jobs/${rejectingJob.id}`), {
-        // Returning the job to broadcast — admin/dispatcher will reassign.
-        status: JOB_STATUS.ACTIVE_LEAD,
+        // Park at Following Up (sales phase) so admin can decide what to
+        // do next — re-broadcast, call the customer, or confirm cancel.
+        // Do NOT route back to Active Leads here, even though that would
+        // re-broadcast immediately, because:
+        //   - the rider who just bailed would see the same job bounce
+        //     back into their incoming list
+        //   - other riders get a fresh notification for a job that
+        //     might still be cancelled by admin
+        //   - customer state is unclear and admin should call first
+        // Admin's "Re-broadcast" action explicitly moves it to
+        // Active Leads when they're ready (see bkk-system PR #123).
+        status: JOB_STATUS.FOLLOWING_UP,
         rider_id: null,
         updated_at: Date.now(),
         qc_logs: updatedLogs,
