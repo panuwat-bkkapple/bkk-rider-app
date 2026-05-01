@@ -1,6 +1,9 @@
 // src/components/kyc/KYCModal.tsx
 //
-// Captures customer KYC at pickup, before inspection starts.
+// Captures customer KYC at pickup, AFTER device inspection but BEFORE the
+// rider hands over the inspection result for admin approval. Order matters
+// for AMLO — the threshold check uses the post-inspection final price, so
+// it has to be evaluated after rider QC, not at arrival.
 //
 // Two paths:
 //  - Standard:  rider takes a photo of the customer's ID card +
@@ -134,7 +137,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
             };
 
       await onSubmit(job, payload);
-      toast.success('บันทึก KYC สำเร็จ เริ่มตรวจสภาพเครื่องได้');
+      toast.success('บันทึก KYC สำเร็จ ส่งให้แอดมินอนุมัติได้แล้ว');
       onClose();
     } catch (e: any) {
       toast.error('บันทึก KYC ไม่สำเร็จ: ' + (e?.message || e));
@@ -154,7 +157,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
             </div>
             <div>
               <h2 className="font-bold text-gray-900">ยืนยันตัวตนลูกค้า</h2>
-              <p className="text-xs text-gray-500">บันทึกบัตรประชาชนก่อนเริ่มตรวจสภาพ</p>
+              <p className="text-xs text-gray-500">ตรวจสภาพเสร็จแล้ว — บันทึก KYC ก่อนส่งแอดมินอนุมัติ</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" aria-label="ปิด">
@@ -361,7 +364,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
             {isSubmitting ? (
               <><Loader2 size={20} className="animate-spin" /> กำลังบันทึก...</>
             ) : (
-              <><ShieldCheck size={20} /> บันทึก KYC และเริ่มตรวจสภาพ</>
+              <><ShieldCheck size={20} /> บันทึก KYC และส่งแอดมินอนุมัติ</>
             )}
           </button>
         </div>
