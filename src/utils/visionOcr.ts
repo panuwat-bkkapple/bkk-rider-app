@@ -6,7 +6,7 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../api/firebase';
 
-type Mode = 'idCard' | 'imei' | 'battery' | 'findMy';
+type Mode = 'idCard' | 'imei' | 'battery' | 'findMy' | 'warranty';
 
 interface ExtractResponse<F> {
   mode: Mode;
@@ -44,6 +44,13 @@ export interface FindMyFields {
   appleIdHint: string | null;
 }
 
+export interface WarrantyFields {
+  status: 'active' | 'expired' | 'unknown';
+  expiresAt: string | null;
+  coverageType: 'applecare_plus' | 'limited_warranty' | null;
+  expiresAtRaw: string | null;
+}
+
 async function call<F>(mode: Mode, storageUri: string): Promise<ExtractResponse<F>> {
   const functions = getFunctions(app, 'asia-southeast1');
   const fn = httpsCallable<{ mode: Mode; storageUri: string }, ExtractResponse<F>>(functions, 'extractFromImage');
@@ -65,6 +72,10 @@ export async function ocrBattery(storageUri: string): Promise<ExtractResponse<Ba
 
 export async function ocrFindMy(storageUri: string): Promise<ExtractResponse<FindMyFields>> {
   return call<FindMyFields>('findMy', storageUri);
+}
+
+export async function ocrWarranty(storageUri: string): Promise<ExtractResponse<WarrantyFields>> {
+  return call<WarrantyFields>('warranty', storageUri);
 }
 
 /** Confidence threshold below which the rider should manually verify */

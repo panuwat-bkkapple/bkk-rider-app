@@ -1,11 +1,13 @@
-// Device Verification — captures three iOS Settings screens before the
+// Device Verification — captures four iOS Settings screens before the
 // rider starts the condition checklist:
 //
-//   1. About screen   → IMEI + Serial (auto-filled, rider verifies)
-//   2. Battery Health → Maximum Capacity %, Cycle Count
-//   3. Find My        → must be OFF before the rider can continue
-//                        (HARD GATE — Find My ON makes the device
-//                         unusable on resale, customer must sign out)
+//   1. About screen      → IMEI + Serial (auto-filled, rider verifies)
+//   2. Battery Health    → Maximum Capacity %, Cycle Count
+//   3. Find My           → must be OFF before the rider can continue
+//                           (HARD GATE — Find My ON makes the device
+//                            unusable on resale, customer must sign out)
+//   4. Warranty / AppleCare → AppleCare+ status, expiry date
+//                              (used by admin to set buy price tier)
 //
 // Each photo is uploaded to Storage with an opaque UUID filename, then
 // passed to extractFromImage Cloud Function for OCR. Results are saved
@@ -19,15 +21,15 @@
 import { useState } from 'react';
 import {
   X, Smartphone, BatteryFull, Search, ShieldCheck, AlertTriangle,
-  Loader2, Trash2, Camera,
+  Loader2, Trash2, Camera, Award,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ref, update } from 'firebase/database';
 import { db } from '../../api/firebase';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import {
-  ocrImei, ocrBattery, ocrFindMy, OCR_VERIFY_THRESHOLD,
-  type ImeiFields, type BatteryFields, type FindMyFields,
+  ocrImei, ocrBattery, ocrFindMy, ocrWarranty, OCR_VERIFY_THRESHOLD,
+  type ImeiFields, type BatteryFields, type FindMyFields, type WarrantyFields,
 } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
 
@@ -37,7 +39,7 @@ interface Props {
   onComplete: () => void;
 }
 
-type Slot = 'imei' | 'battery' | 'findMy';
+type Slot = 'imei' | 'battery' | 'findMy' | 'warranty';
 
 interface SlotState<F> {
   url: string | null;
@@ -55,14 +57,19 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
   const [imei, setImei] = useState<SlotState<ImeiFields>>(emptySlot());
   const [battery, setBattery] = useState<SlotState<BatteryFields>>(emptySlot());
   const [findMy, setFindMy] = useState<SlotState<FindMyFields>>(emptySlot());
+  const [warranty, setWarranty] = useState<SlotState<WarrantyFields>>(emptySlot());
   const [isSaving, setIsSaving] = useState(false);
   // Editable values — let rider correct if OCR misread
   const [imeiText, setImeiText] = useState('');
   const [batteryPct, setBatteryPct] = useState('');
+  const [warrantyExpires, setWarrantyExpires] = useState(''); // YYYY-MM-DD
 
   const handleUpload = async (file: File | undefined, slot: Slot) => {
     if (!file) return;
-    const setter = slot === 'imei' ? setImei : slot === 'battery' ? setBattery : setFindMy;
+    const setter = slot === 'imei' ? setImei
+      : slot === 'battery' ? setBattery
+      : slot === 'findMy' ? setFindMy
+      : setWarranty;
     setter((s: any) => ({ ...s, uploading: true }));
     try {
       const url = await uploadImageToFirebase(file, `jobs/${job.id}/verification`, { opaqueFilename: true });
@@ -80,9 +87,13 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
           if (r.fields?.maximumCapacityPct != null && !batteryPct) {
             setBatteryPct(String(r.fields.maximumCapacityPct));
           }
-        } else {
+        } else if (slot === 'findMy') {
           const r = await ocrFindMy(url);
           setFindMy({ url, fields: r.fields, confidence: r.confidence, uploading: false, ocring: false });
+        } else {
+          const r = await ocrWarranty(url);
+          setWarranty({ url, fields: r.fields, confidence: r.confidence, uploading: false, ocring: false });
+          if (r.fields?.expiresAt && !warrantyExpires) setWarrantyExpires(r.fields.expiresAt);
         }
       } catch (e: any) {
         console.error('[DeviceVerification] OCR failed', { slot, error: e?.message });
@@ -120,6 +131,10 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
       if (battery.url) updates.verification_battery_photo = battery.url;
       if (findMy.fields?.findMyStatus) updates.find_my_status = findMy.fields.findMyStatus;
       if (findMy.url) updates.verification_findmy_photo = findMy.url;
+      if (warranty.fields?.status) updates.warranty_status = warranty.fields.status;
+      if (warrantyExpires.trim()) updates.warranty_expires_at = warrantyExpires.trim();
+      if (warranty.fields?.coverageType) updates.warranty_coverage_type = warranty.fields.coverageType;
+      if (warranty.url) updates.verification_warranty_photo = warranty.url;
 
       await update(ref(db, `jobs/${job.id}`), updates);
       toast.success('บันทึกข้อมูลเครื่องเรียบร้อย');
@@ -254,6 +269,53 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
                   <p className="text-[11px] text-gray-500">Peak performance: {battery.fields.peakPerformanceCapability}</p>
                 )}
                 {battery.confidence < OCR_VERIFY_THRESHOLD && (
+                  <p className="text-[11px] text-amber-600">อ่านได้ความมั่นใจต่ำ — กรุณาตรวจ</p>
+                )}
+              </div>
+            )}
+          />
+
+          {/* Warranty / AppleCare */}
+          <Slot
+            title="Warranty / AppleCare"
+            instruction="ที่เครื่อง: Settings → General → AppleCare & Warranty"
+            icon={Award}
+            state={warranty}
+            onUpload={(f) => handleUpload(f, 'warranty')}
+            onClear={() => { setWarranty(emptySlot()); setWarrantyExpires(''); }}
+            renderResult={() => warranty.fields && (
+              <div className="space-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                    warranty.fields.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                    warranty.fields.status === 'expired' ? 'bg-red-50 text-red-700 border border-red-200' :
+                    'bg-gray-100 text-gray-600 border border-gray-200'
+                  }`}>
+                    {warranty.fields.status === 'active' ? 'อยู่ในประกัน' :
+                     warranty.fields.status === 'expired' ? 'หมดประกันแล้ว' :
+                     'ไม่ทราบสถานะ'}
+                  </span>
+                  {warranty.fields.coverageType && (
+                    <span className="text-[11px] text-gray-500">
+                      {warranty.fields.coverageType === 'applecare_plus' ? 'AppleCare+' : 'Limited Warranty'}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">วันหมดประกัน (YYYY-MM-DD)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={warrantyExpires}
+                    onChange={(e) => setWarrantyExpires(e.target.value)}
+                    placeholder="2026-10-31"
+                    className="w-full mt-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-mono"
+                  />
+                </div>
+                {warranty.fields.expiresAtRaw && warranty.fields.expiresAtRaw !== warrantyExpires && (
+                  <p className="text-[11px] text-gray-500">อ่านได้: <span className="font-medium">{warranty.fields.expiresAtRaw}</span></p>
+                )}
+                {warranty.confidence < OCR_VERIFY_THRESHOLD && (
                   <p className="text-[11px] text-amber-600">อ่านได้ความมั่นใจต่ำ — กรุณาตรวจ</p>
                 )}
               </div>
