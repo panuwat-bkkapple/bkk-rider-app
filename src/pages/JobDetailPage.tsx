@@ -408,36 +408,17 @@ export const JobDetailPage = ({
 
           {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
             const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
-            const kycVerified = !!job.kyc_verified_at;
-            // KYC gate is enforced for Pickup only — Mail-in / Store-in capture
-            // happens at the branch and is handled by admin tooling.
-            const requiresKyc = (job.receive_method || '').toLowerCase() === 'pickup';
-            const showKycGate = arrived && requiresKyc && !kycVerified;
             return (
               <div className="space-y-2">
-                {showKycGate ? (
-                  <button
-                    onClick={() => onStartKYC(job)}
-                    className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
-                  >
-                    <ShieldCheck size={22} /> ยืนยันตัวตนลูกค้า (KYC)
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
-                      onInspect(job);
-                    }}
-                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
-                  >
-                    <ShieldCheck size={22} />{arrived ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
-                  </button>
-                )}
-                {arrived && kycVerified && (
-                  <p className="text-[11px] text-emerald-600 text-center font-medium">
-                    KYC ยืนยันแล้ว{job.kyc_method === 'typed_fallback' ? ' (รอแอดมินตรวจสอบ)' : ''}
-                  </p>
-                )}
+                <button
+                  onClick={() => {
+                    if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
+                    onInspect(job);
+                  }}
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
+                >
+                  <ShieldCheck size={22} />{arrived ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
+                </button>
                 {arrived && (
                   <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
                     ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
@@ -447,20 +428,57 @@ export const JobDetailPage = ({
             );
           })()}
 
-          {mode === 'active' && job.status === 'QC Review' && (
-            <div className="space-y-2">
-              <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100">
-                <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
-                <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+          {mode === 'active' && job.status === 'QC Review' && (() => {
+            // KYC gate is now AFTER inspection (better UX — final price is
+            // known so AMLO threshold check is correct, customer is committed).
+            // Pickup only — Mail-in / Store-in capture at branch by admin.
+            const kycVerified = !!job.kyc_verified_at;
+            const requiresKyc = (job.receive_method || '').toLowerCase() === 'pickup';
+            const showKycGate = requiresKyc && !kycVerified;
+            return (
+              <div className="space-y-2">
+                {showKycGate ? (
+                  <>
+                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                      <ShieldCheck size={20} className="text-emerald-600 mb-1" />
+                      <p className="font-bold text-emerald-800 text-sm">ตรวจสภาพเรียบร้อย</p>
+                      <p className="text-xs text-emerald-700 mt-1">ขั้นต่อไป: ยืนยันตัวตนลูกค้าก่อนส่งให้แอดมินอนุมัติ</p>
+                    </div>
+                    <button
+                      onClick={() => onStartKYC(job)}
+                      className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
+                    >
+                      <ShieldCheck size={22} /> ยืนยันตัวตนลูกค้า (KYC)
+                    </button>
+                    <button
+                      onClick={() => onRevertInspection(job)}
+                      className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.99] flex justify-center items-center gap-2 transition-all"
+                    >
+                      <Undo2 size={16} /> ย้อนกลับไปแก้ไขข้อมูล
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-amber-50 p-4 rounded-2xl text-center border border-amber-100">
+                      <div className="animate-spin w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+                      <p className="font-bold text-amber-700 text-sm">รอแอดมินอนุมัติรูปภาพ</p>
+                      {kycVerified && (
+                        <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                          KYC ยืนยันแล้ว{job.kyc_method === 'typed_fallback' ? ' (รอแอดมินตรวจสอบ)' : ''}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => onRevertInspection(job)}
+                      className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.99] flex justify-center items-center gap-2 transition-all"
+                    >
+                      <Undo2 size={16} /> ย้อนกลับไปแก้ไขข้อมูล
+                    </button>
+                  </>
+                )}
               </div>
-              <button
-                onClick={() => onRevertInspection(job)}
-                className="w-full bg-white border border-gray-200 text-gray-700 py-3 rounded-2xl font-bold text-sm hover:bg-gray-50 active:scale-[0.99] flex justify-center items-center gap-2 transition-all"
-              >
-                <Undo2 size={16} /> ย้อนกลับไปแก้ไขข้อมูล
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           {mode === 'active' && (job.status === 'Payout Processing' || job.status === 'Price Accepted') && (
             <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
