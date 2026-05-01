@@ -91,6 +91,7 @@ interface JobDetailPageProps {
   onOpenChat: (jobId: string) => void;
   onCallCustomer: (job: any) => void;
   onOpenNavigation: (job: any) => void;
+  onStartVerification: (job: any) => void;
   onStartKYC: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
@@ -102,7 +103,7 @@ export const JobDetailPage = ({
   job, riderInfoId, mode, onBack,
   onAccept, onReject, onUpdateStatus,
   onOpenChat, onCallCustomer, onOpenNavigation,
-  onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
+  onStartVerification, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
 }: JobDetailPageProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const handleAction = async (name: string, fn: () => void | Promise<void>) => {
@@ -408,17 +409,45 @@ export const JobDetailPage = ({
 
           {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
             const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
+            const isPickup = (job.receive_method || '').toLowerCase() === 'pickup';
+            const verificationDone = !!job.verification_completed_at;
+            const findMyOn = job.find_my_status === 'on';
             return (
               <div className="space-y-2">
+                {arrived && isPickup && !verificationDone && (
+                  <button
+                    onClick={() => onStartVerification(job)}
+                    className="w-full bg-blue-50 border-2 border-blue-200 text-blue-700 py-3 rounded-2xl font-bold flex justify-center gap-2 active:scale-95"
+                  >
+                    <ShieldCheck size={20} /> ตรวจสอบเครื่องเบื้องต้น (IMEI / Battery / Find My)
+                  </button>
+                )}
+                {arrived && verificationDone && findMyOn && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2 items-start">
+                    <ShieldCheck size={14} className="text-red-600 mt-0.5 shrink-0" />
+                    <div className="text-xs text-red-900">
+                      <p className="font-bold">Find My ยังเปิดอยู่ — ห้ามรับเครื่อง</p>
+                      <p>ขอให้ลูกค้า sign out จาก Apple ID ก่อน แล้วถ่ายภาพ Find My ใหม่</p>
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
                     onInspect(job);
                   }}
-                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
+                  disabled={findMyOn}
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95 disabled:opacity-40 disabled:active:scale-100"
                 >
                   <ShieldCheck size={22} />{arrived ? 'เริ่มตรวจสภาพเครื่อง' : 'ดำเนินการตรวจต่อ'}
                 </button>
+                {arrived && verificationDone && !findMyOn && (
+                  <p className="text-[11px] text-emerald-600 text-center font-medium">
+                    ✓ ตรวจเครื่องแล้ว — Find My ปิด
+                    {job.device_imei && ` · IMEI: ${String(job.device_imei).slice(-4).padStart(15, '·')}`}
+                    {job.battery_health_pct != null && ` · แบต ${job.battery_health_pct}%`}
+                  </p>
+                )}
                 {arrived && (
                   <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
                     ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน

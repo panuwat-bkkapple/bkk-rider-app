@@ -23,6 +23,7 @@ import { BankModal } from '../components/profile/BankModal';
 import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
+import { DeviceVerificationModal } from '../components/inspection/DeviceVerificationModal';
 import { KYCModal } from '../components/kyc/KYCModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
 import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
@@ -59,6 +60,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
 
   // Modal state
   const [inspectingJob, setInspectingJob] = useState<any>(null);
+  const [verifyingJob, setVerifyingJob] = useState<any>(null);
   const [kycJob, setKycJob] = useState<any>(null);
   const [chatJobId, setChatJobId] = useState<string | null>(null);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
@@ -208,6 +210,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
+          onStartVerification={(job) => setVerifyingJob(job)}
           onStartKYC={(job) => setKycJob(job)}
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => setCompletingJob(job)}
@@ -233,6 +236,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
+          onStartVerification={(job) => setVerifyingJob(job)}
           onStartKYC={(job) => setKycJob(job)}
           onInspect={(job) => setInspectingJob(job)}
           onCompleteJob={(job) => setCompletingJob(job)}
@@ -330,6 +334,16 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
               await actions.reportDiscrepancy(jobId, category, detail, imageFile);
               setDiscrepancyJob(null);
             }}
+          />
+        </ModalErrorBoundary>
+      )}
+
+      {verifyingJob && (
+        <ModalErrorBoundary onClose={() => setVerifyingJob(null)}>
+          <DeviceVerificationModal
+            job={verifyingJob}
+            onClose={() => setVerifyingJob(null)}
+            onComplete={() => setVerifyingJob(null)}
           />
         </ModalErrorBoundary>
       )}
