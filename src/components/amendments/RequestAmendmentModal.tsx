@@ -176,14 +176,10 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
   const [pickVariantId, setPickVariantId] = useState<string>('');
   const flatVariants = useFlatVariants();
 
-  // Reset cascading state when parent changes
-  useEffect(() => {
-    setPickModelId('');
-    setPickVariantId('');
-  }, [pickBrand]);
-  useEffect(() => {
-    setPickVariantId('');
-  }, [pickModelId]);
+  // Cascading reset is wired into the dropdown onChange handlers below
+  // (not via useEffect on pickBrand/pickModelId). Mirror of the same
+  // pattern in admin's AmendmentReviewModal to avoid the race where a
+  // brand change wipes a freshly-set modelId in the same tick.
 
   const naturalCompare = (a: string, b: string) =>
     (a || '').localeCompare(b || '', 'en', { numeric: true, sensitivity: 'base' });
@@ -378,7 +374,11 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
           <div className="space-y-2">
             <select
               value={pickBrand}
-              onChange={(e) => setPickBrand(e.target.value)}
+              onChange={(e) => {
+                setPickBrand(e.target.value);
+                setPickModelId('');
+                setPickVariantId('');
+              }}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none"
             >
               <option value="">— ยี่ห้อ —</option>
@@ -388,7 +388,10 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
             </select>
             <select
               value={pickModelId}
-              onChange={(e) => setPickModelId(e.target.value)}
+              onChange={(e) => {
+                setPickModelId(e.target.value);
+                setPickVariantId('');
+              }}
               disabled={!pickBrand}
               className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
             >
