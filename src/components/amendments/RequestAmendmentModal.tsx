@@ -78,12 +78,23 @@ function useFlatVariants(): FlatVariant[] {
         continue;
       }
       for (const v of variants) {
+        // Modifier-mode variants (PriceEditor's default since the
+        // modifier rewrite) carry `usedPrice` + `newPrice` instead of a
+        // single `price` field. For trade-in we want the used price —
+        // that's what we actually pay the customer for their device.
+        // Legacy variants might still have `price`; fall back through
+        // the chain so both shapes work.
+        const variantPrice =
+          typeof v.usedPrice === 'number' ? v.usedPrice :
+          typeof v.price === 'number' ? v.price :
+          typeof v.newPrice === 'number' ? v.newPrice :
+          basePrice;
         out.push({
           modelId,
           modelName,
           variantId: v.id || v.name || '',
           variantName: v.name || '',
-          price: typeof v.price === 'number' ? v.price : basePrice,
+          price: variantPrice,
           brand,
         });
       }
