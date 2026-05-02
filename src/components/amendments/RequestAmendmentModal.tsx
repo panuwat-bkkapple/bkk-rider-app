@@ -157,13 +157,54 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
   // Rider has the device in hand and can read it directly off the back/box,
   // so we let them seed the catalog binding here instead of forcing admin
   // to identify from the photo.
-  const [deviceModelKey, setDeviceModelKey] = useState<string>('');
+  // 3-level cascading picker: brand → model → variant. Flat dropdown
+  // didn't scale (>50 items, no grouping); split + natural-sort makes
+  // browsing humane on mobile.
+  const [pickBrand, setPickBrand] = useState<string>('');
+  const [pickModelId, setPickModelId] = useState<string>('');
+  const [pickVariantId, setPickVariantId] = useState<string>('');
   const flatVariants = useFlatVariants();
+
+  // Reset cascading state when parent changes
+  useEffect(() => {
+    setPickModelId('');
+    setPickVariantId('');
+  }, [pickBrand]);
+  useEffect(() => {
+    setPickVariantId('');
+  }, [pickModelId]);
+
+  const naturalCompare = (a: string, b: string) =>
+    (a || '').localeCompare(b || '', 'en', { numeric: true, sensitivity: 'base' });
+
+  const brandOptions = useMemo(() => {
+    return Array.from(new Set(flatVariants.map((v) => v.brand).filter(Boolean))).sort(naturalCompare);
+  }, [flatVariants]);
+
+  const modelOptions = useMemo(() => {
+    if (!pickBrand) return [];
+    const seen = new Map<string, { id: string; name: string }>();
+    for (const v of flatVariants) {
+      if (v.brand !== pickBrand) continue;
+      if (!v.modelId || seen.has(v.modelId)) continue;
+      seen.set(v.modelId, { id: v.modelId, name: v.modelName });
+    }
+    return Array.from(seen.values()).sort((a, b) => naturalCompare(a.name, b.name));
+  }, [flatVariants, pickBrand]);
+
+  const variantOptions = useMemo(() => {
+    if (!pickModelId) return [];
+    return flatVariants
+      .filter((v) => v.modelId === pickModelId)
+      .sort((a, b) => naturalCompare(a.variantName, b.variantName));
+  }, [flatVariants, pickModelId]);
+
   const selectedDevice = useMemo(() => {
-    if (!deviceModelKey) return null;
-    const [modelId, variantId] = deviceModelKey.split('|');
-    return flatVariants.find((v) => v.modelId === modelId && v.variantId === variantId) || null;
-  }, [deviceModelKey, flatVariants]);
+    if (!pickModelId) return null;
+    return flatVariants.find((v) => v.modelId === pickModelId && v.variantId === pickVariantId)
+      // Allow models with no variants — match the empty-variant entry
+      || (variantOptions.length === 1 && !variantOptions[0].variantId ? variantOptions[0] : null);
+  }, [pickModelId, pickVariantId, flatVariants, variantOptions]);
 
   const cls = type ? AMENDMENT_TYPE_CLASS[type] : null;
   const photosRequired = type === 'device_mismatch' || type === 'add_device';
@@ -323,18 +364,42 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
       {/* Type-specific fields */}
       {needsDevicePick && (
         <Field title={`รุ่นเครื่องที่${type === 'add_device' ? 'ลูกค้าจะเพิ่ม' : 'จริง'}`}>
-          <select
-            value={deviceModelKey}
-            onChange={(e) => setDeviceModelKey(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none"
-          >
-            <option value="">-- เลือกรุ่น --</option>
-            {flatVariants.map((v) => (
-              <option key={`${v.modelId}|${v.variantId}`} value={`${v.modelId}|${v.variantId}`}>
-                {v.modelName}{v.variantName ? ` — ${v.variantName}` : ''} (฿{v.price.toLocaleString()})
-              </option>
-            ))}
-          </select>
+          <div className="space-y-2">
+            <select
+              value={pickBrand}
+              onChange={(e) => setPickBrand(e.target.value)}
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none"
+            >
+              <option value="">— ยี่ห้อ —</option>
+              {brandOptions.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+            <select
+              value={pickModelId}
+              onChange={(e) => setPickModelId(e.target.value)}
+              disabled={!pickBrand}
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="">— รุ่น —</option>
+              {modelOptions.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <select
+              value={pickVariantId}
+              onChange={(e) => setPickVariantId(e.target.value)}
+              disabled={!pickModelId || variantOptions.length === 0}
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="">— ความจุ / variant —</option>
+              {variantOptions.map((v) => (
+                <option key={v.variantId || '_'} value={v.variantId}>
+                  {v.variantName || '(ไม่มี variant)'} {' — ฿'}{v.price.toLocaleString()}
+                </option>
+              ))}
+            </select>
+          </div>
           {selectedDevice && (
             <p className="text-[11px] text-emerald-700 mt-1.5">
               ราคา catalog: ฿{selectedDevice.price.toLocaleString()} · admin จะตรวจ + ปรับราคาก่อน approve
