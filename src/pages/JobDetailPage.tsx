@@ -9,6 +9,8 @@ import {
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
 import { JOB_STATUS } from '../types/job-statuses';
+import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
+import { RequestAmendmentModal } from '../components/amendments/RequestAmendmentModal';
 
 const parseCustomerCondition = (raw: string): { category: string; detail: string } => {
   const m = raw.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
@@ -106,6 +108,7 @@ export const JobDetailPage = ({
   onStartVerification, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
 }: JobDetailPageProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [requestingAmendment, setRequestingAmendment] = useState(false);
   const handleAction = async (name: string, fn: () => void | Promise<void>) => {
     setLoadingAction(name);
     try { await fn(); } finally { setLoadingAction(null); }
@@ -373,6 +376,12 @@ export const JobDetailPage = ({
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] z-[61]">
         <div className="max-w-md mx-auto">
+          {mode === 'active' && (
+            <div className="mb-3">
+              <AmendmentStatusBanner jobId={job.id} />
+            </div>
+          )}
+
           {mode === 'incoming' && (
             <div className="flex gap-2">
               <button
@@ -449,9 +458,17 @@ export const JobDetailPage = ({
                   </p>
                 )}
                 {arrived && (
-                  <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
-                    ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setRequestingAmendment(true)}
+                      className="w-full bg-amber-50 border-2 border-amber-200 text-amber-800 py-3 rounded-2xl font-bold flex justify-center gap-2 active:scale-95"
+                    >
+                      <AlertTriangle size={18} /> แจ้งปัญหาหน้างาน — admin ดูแล
+                    </button>
+                    <button onClick={() => onReject(job)} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 underline py-2">
+                      ติดต่อลูกค้าไม่ได้ / ขอยกเลิกงาน
+                    </button>
+                  </>
                 )}
               </div>
             );
@@ -549,6 +566,14 @@ export const JobDetailPage = ({
           )}
         </div>
       </div>
+
+      {requestingAmendment && (
+        <RequestAmendmentModal
+          job={job}
+          onClose={() => setRequestingAmendment(false)}
+          onSubmitted={() => setRequestingAmendment(false)}
+        />
+      )}
     </div>
   );
 };
