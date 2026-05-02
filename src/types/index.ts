@@ -187,7 +187,16 @@ export type AmendmentTarget =
   | { kind: 'address'; new_address: string; new_lat?: number; new_lng?: number }
   | { kind: 'customer_info'; field: 'cust_name' | 'cust_phone' | 'cust_email'; new_value: string }
   | { kind: 'cancel'; reason_category: AmendmentCancelCategory; reason_detail?: string }
-  | { kind: 'other'; admin_freeform?: string };
+  | { kind: 'other'; admin_freeform?: string }
+  | {
+      kind: 'device_pick';
+      model_id: string;
+      variant_id?: string;
+      model_name: string;
+      variant_name?: string;
+      brand?: string;
+      suggested_price?: number;
+    };
 
 export interface AmendmentDevice {
   model: string;

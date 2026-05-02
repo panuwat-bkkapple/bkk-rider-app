@@ -14,10 +14,12 @@
 // for /jobs_amendments/{id} writes.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ref, onValue } from 'firebase/database';
 import {
   X, AlertTriangle, Camera, Loader2, Trash2, Send, ArrowLeft,
   Smartphone, Plus, Calendar, MapPin, User, Ban, MessageSquare, Check,
 } from 'lucide-react';
+import { db } from '../../api/firebase';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { requestAmendment, generateRequestId } from '../../utils/amendments';
 import { toast } from '../common/Toast';
@@ -25,6 +27,58 @@ import {
   AMENDMENT_TYPE_CLASS, AMENDMENT_TYPE_LABEL_TH,
   type JobAmendmentType, type AmendmentTarget, type AmendmentEvidence, type AmendmentCancelCategory,
 } from '../../types';
+
+// ─── Model catalog binding for device_mismatch + add_device ──────────
+
+interface FlatVariant {
+  modelId: string;
+  modelName: string;
+  variantId: string;
+  variantName: string;
+  price: number;
+  brand: string;
+}
+
+/** Subscribes to /models and flattens into pickable variants. Mirror of
+ *  the same shape admin's AmendmentReviewModal builds — keeps rider's
+ *  pick byte-compatible with what admin pre-populates from. */
+function useFlatVariants(): FlatVariant[] {
+  const [models, setModels] = useState<any[]>([]);
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'models'), (snap) => {
+      const v = snap.val();
+      if (!v) { setModels([]); return; }
+      const list = Array.isArray(v) ? v : Object.entries(v).map(([id, m]) => ({ id, ...(m as any) }));
+      setModels(list);
+    });
+    return () => unsub();
+  }, []);
+  return useMemo(() => {
+    const out: FlatVariant[] = [];
+    for (const m of models) {
+      if (!m || typeof m !== 'object') continue;
+      const rv = (m as any).variants;
+      const variants: any[] = !rv ? [] : Array.isArray(rv) ? rv : Object.values(rv);
+      const modelId = m.id || m.model;
+      const brand = m.brand || 'Apple';
+      if (variants.length === 0) {
+        out.push({ modelId, modelName: m.model || '', variantId: '', variantName: '', price: m.base_price || 0, brand });
+        continue;
+      }
+      for (const v of variants) {
+        out.push({
+          modelId,
+          modelName: m.model || '',
+          variantId: v.id || v.name || '',
+          variantName: v.name || '',
+          price: typeof v.price === 'number' ? v.price : (m.base_price || 0),
+          brand,
+        });
+      }
+    }
+    return out;
+  }, [models]);
+}
 
 interface Props {
   job: any;
@@ -87,9 +141,21 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
   const [custInfoValue, setCustInfoValue] = useState<string>('');
   const [cancelCategory, setCancelCategory] = useState<AmendmentCancelCategory>('customer_changed_mind');
   const [removeIdx, setRemoveIdx] = useState<number>(0);
+  // Device pick (model_id|variant_id) — used by device_mismatch + add_device.
+  // Rider has the device in hand and can read it directly off the back/box,
+  // so we let them seed the catalog binding here instead of forcing admin
+  // to identify from the photo.
+  const [deviceModelKey, setDeviceModelKey] = useState<string>('');
+  const flatVariants = useFlatVariants();
+  const selectedDevice = useMemo(() => {
+    if (!deviceModelKey) return null;
+    const [modelId, variantId] = deviceModelKey.split('|');
+    return flatVariants.find((v) => v.modelId === modelId && v.variantId === variantId) || null;
+  }, [deviceModelKey, flatVariants]);
 
   const cls = type ? AMENDMENT_TYPE_CLASS[type] : null;
   const photosRequired = type === 'device_mismatch' || type === 'add_device';
+  const needsDevicePick = type === 'device_mismatch' || type === 'add_device';
 
   const handleAddPhotos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -132,12 +198,25 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
     if (type === 'customer_request_cancel') {
       return { kind: 'cancel', reason_category: cancelCategory };
     }
+    if ((type === 'device_mismatch' || type === 'add_device') && selectedDevice) {
+      const t: AmendmentTarget = {
+        kind: 'device_pick',
+        model_id: selectedDevice.modelId,
+        model_name: selectedDevice.modelName,
+        brand: selectedDevice.brand,
+        suggested_price: selectedDevice.price,
+      };
+      if (selectedDevice.variantId) t.variant_id = selectedDevice.variantId;
+      if (selectedDevice.variantName) t.variant_name = selectedDevice.variantName;
+      return t;
+    }
     return null;
   };
 
   const canSubmit = (() => {
     if (!type || submitting || anyUploading) return false;
     if (photosRequired && readyEvidence.length < 1) return false;
+    if (needsDevicePick && !selectedDevice) return false;
     if (type === 'other' && riderNote.trim().length < 5) return false;
     if (type === 'remove_device' && (!job.devices || removeIdx >= (job.devices?.length || 0))) return false;
     if (type === 'address_wrong' && newAddress.trim().length < 5) return false;
@@ -230,6 +309,28 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
       <FlowHint cls={cls!} />
 
       {/* Type-specific fields */}
+      {needsDevicePick && (
+        <Field title={`รุ่นเครื่องที่${type === 'add_device' ? 'ลูกค้าจะเพิ่ม' : 'จริง'}`}>
+          <select
+            value={deviceModelKey}
+            onChange={(e) => setDeviceModelKey(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-emerald-500 outline-none"
+          >
+            <option value="">-- เลือกรุ่น --</option>
+            {flatVariants.map((v) => (
+              <option key={`${v.modelId}|${v.variantId}`} value={`${v.modelId}|${v.variantId}`}>
+                {v.modelName}{v.variantName ? ` — ${v.variantName}` : ''} (฿{v.price.toLocaleString()})
+              </option>
+            ))}
+          </select>
+          {selectedDevice && (
+            <p className="text-[11px] text-emerald-700 mt-1.5">
+              ราคา catalog: ฿{selectedDevice.price.toLocaleString()} · admin จะตรวจ + ปรับราคาก่อน approve
+            </p>
+          )}
+        </Field>
+      )}
+
       {type === 'remove_device' && (
         <Field title="เลือกเครื่องที่จะลด/ยกเลิก">
           <select
