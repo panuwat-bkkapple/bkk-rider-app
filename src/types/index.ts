@@ -111,6 +111,72 @@ export interface KYCRecord {
   verified_by_rider_name: string;
 }
 
+// =====================================================================
+// Job Amendment (PR-AMEND) — on-site workflow when rider finds job data
+// doesn't match reality. Mirror of bkk-system/src/types/domain.ts
+// (validate rules in bkk-system/database.rules.json) — change together.
+// =====================================================================
+
+export type JobAmendmentType = 'device_mismatch';
+
+export type JobAmendmentStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'consented'
+  | 'applied'
+  | 'cancelled';
+
+export type JobAmendmentRejectAction =
+  | 'continue_original'
+  | 'cancel_job'
+  | 'wait_admin_call';
+
+export type AmendmentConsentMethod = 'signature' | 'otp' | 'verbal';
+
+export interface JobAmendmentDevice {
+  model: string;
+  brand?: string;
+  serial?: string;
+  /** ราคา snapshot ของอุปกรณ์ตัวนี้ (ก่อน deductions อื่น) */
+  price?: number;
+}
+
+export interface JobAmendmentSnapshot {
+  devices: JobAmendmentDevice[];
+  final_price: number;
+}
+
+export interface JobAmendment {
+  id: string;
+  job_id: string;
+  type: JobAmendmentType;
+
+  requested_at: number;
+  requested_by_rider_uid: string;
+  requested_by_rider_name: string;
+  rider_note?: string;
+  evidence_urls: string[];
+
+  before: JobAmendmentSnapshot;
+  after?: JobAmendmentSnapshot;
+
+  status: JobAmendmentStatus;
+
+  reviewed_at?: number;
+  reviewed_by_admin_uid?: string;
+  reviewed_by_admin_name?: string;
+  admin_note?: string;
+  reject_action?: JobAmendmentRejectAction;
+
+  consented_at?: number;
+  consent_method?: AmendmentConsentMethod;
+  consent_signature_url?: string;
+
+  applied_at?: number;
+  escalated_at?: number;
+}
+
 export interface PickupSchedule {
   type: 'instant' | 'schedule';
   date: string;
