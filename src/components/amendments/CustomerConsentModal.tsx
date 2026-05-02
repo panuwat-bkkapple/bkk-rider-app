@@ -26,7 +26,7 @@ export const CustomerConsentModal = ({ amendment, onClose, onConsented }: Props)
 
   const before = amendment.before;
   const after = amendment.after;
-  if (!after) {
+  if (!after || !before) {
     return (
       <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl p-6 max-w-sm">
@@ -38,6 +38,20 @@ export const CustomerConsentModal = ({ amendment, onClose, onConsented }: Props)
   }
 
   const priceDiff = after.final_price - before.final_price;
+
+  // Disclosure text snapshot — what customer is shown when they sign.
+  // Server stores this verbatim for legal replay if a dispute arises.
+  // disclosure_version helps track which legal copy was active.
+  const disclosureLines = [
+    `ลูกค้ายืนยันการแก้ไขรายละเอียดของออเดอร์ตามที่ admin อนุมัติ:`,
+    ...before.devices.map((d, i) => `  ก่อน #${i + 1}: ${d.model || '-'}`),
+    ...after.devices.map((d, i) => `  หลัง #${i + 1}: ${d.model || '-'}`),
+    `ราคารวมเดิม: ฿${before.final_price.toLocaleString()}`,
+    `ราคารวมใหม่: ฿${after.final_price.toLocaleString()} (${priceDiff >= 0 ? '+' : ''}${priceDiff.toLocaleString()})`,
+    `การลงลายเซ็นนี้ถือเป็นการยอมรับเงื่อนไขใหม่ตามสัญญารับซื้อ`,
+  ];
+  const disclosureText = disclosureLines.join('\n');
+  const disclosureVersion = 'amendment-2026.09';
 
   const handleSubmit = async () => {
     if (!signatureCommitted) {
@@ -51,7 +65,12 @@ export const CustomerConsentModal = ({ amendment, onClose, onConsented }: Props)
         `jobs/${amendment.job_id}/amendments`,
         { opaqueFilename: true },
       );
-      await consentAmendment({ amendmentId: amendment.id, signatureUrl: url });
+      await consentAmendment({
+        amendmentId: amendment.id,
+        signatureUrl: url,
+        disclosureText,
+        disclosureVersion,
+      });
       toast.success('อัพเดตเรียบร้อย — ทำงานต่อได้');
       onConsented();
     } catch (e: any) {

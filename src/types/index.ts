@@ -112,12 +112,46 @@ export interface KYCRecord {
 }
 
 // =====================================================================
-// Job Amendment (PR-AMEND) — on-site workflow when rider finds job data
-// doesn't match reality. Mirror of bkk-system/src/types/domain.ts
-// (validate rules in bkk-system/database.rules.json) — change together.
+// Job Amendment v2 — unified change-request workflow.
+// Mirror of bkk-system/src/types/domain.ts (validate rules in
+// bkk-system/database.rules.json) — change all 3 together.
 // =====================================================================
 
-export type JobAmendmentType = 'device_mismatch';
+export type AmendmentClass = 'contractual' | 'operational';
+
+export type JobAmendmentType =
+  // Contractual — require customer consent
+  | 'device_mismatch'
+  | 'add_device'
+  | 'remove_device'
+  // Operational — admin approve = apply
+  | 'appointment_reschedule'
+  | 'address_wrong'
+  | 'customer_info_wrong'
+  | 'customer_request_cancel'
+  | 'other';
+
+export const AMENDMENT_TYPE_CLASS: Record<JobAmendmentType, AmendmentClass> = {
+  device_mismatch: 'contractual',
+  add_device: 'contractual',
+  remove_device: 'contractual',
+  appointment_reschedule: 'operational',
+  address_wrong: 'operational',
+  customer_info_wrong: 'operational',
+  customer_request_cancel: 'operational',
+  other: 'operational',
+};
+
+export const AMENDMENT_TYPE_LABEL_TH: Record<JobAmendmentType, string> = {
+  device_mismatch: 'เครื่องไม่ตรงตามที่ลงทะเบียน',
+  add_device: 'ลูกค้าขอเพิ่มเครื่อง',
+  remove_device: 'ลูกค้าขอลด/ยกเลิกบางเครื่อง',
+  appointment_reschedule: 'ลูกค้าขอเลื่อนนัดหมาย',
+  address_wrong: 'ที่อยู่ไม่ตรง',
+  customer_info_wrong: 'ข้อมูลลูกค้าไม่ตรง (ชื่อ/เบอร์/อีเมล)',
+  customer_request_cancel: 'ลูกค้าขอยกเลิกทั้งงาน',
+  other: 'อื่นๆ — admin โทรคุยลูกค้า',
+};
 
 export type JobAmendmentStatus =
   | 'pending'
@@ -125,7 +159,8 @@ export type JobAmendmentStatus =
   | 'rejected'
   | 'consented'
   | 'applied'
-  | 'cancelled';
+  | 'cancelled'
+  | 'expired';
 
 export type JobAmendmentRejectAction =
   | 'continue_original'
@@ -134,32 +169,91 @@ export type JobAmendmentRejectAction =
 
 export type AmendmentConsentMethod = 'signature' | 'otp' | 'verbal';
 
-export interface JobAmendmentDevice {
+/** CancelCategory enum mirror (synced with bkk-system/job-statuses.ts) */
+export type AmendmentCancelCategory =
+  | 'customer_changed_mind'
+  | 'customer_no_show'
+  | 'rider_issue'
+  | 'device_mismatch'
+  | 'hidden_damage'
+  | 'price_disagreement'
+  | 'fraud_suspected'
+  | 'parcel_lost'
+  | 'sla_timeout'
+  | 'other';
+
+export type AmendmentTarget =
+  | { kind: 'appointment'; new_appointment_time: number }
+  | { kind: 'address'; new_address: string; new_lat?: number; new_lng?: number }
+  | { kind: 'customer_info'; field: 'cust_name' | 'cust_phone' | 'cust_email'; new_value: string }
+  | { kind: 'cancel'; reason_category: AmendmentCancelCategory; reason_detail?: string }
+  | { kind: 'other'; admin_freeform?: string };
+
+export interface AmendmentDevice {
   model: string;
   brand?: string;
   serial?: string;
-  /** ราคา snapshot ของอุปกรณ์ตัวนี้ (ก่อน deductions อื่น) */
-  price?: number;
+  imei?: string;
+  // V2 catalog binding
+  model_id?: string;
+  variant_id?: string;
+  model_name?: string;
+  variant_name?: string;
+  unit_price?: number;
 }
 
-export interface JobAmendmentSnapshot {
-  devices: JobAmendmentDevice[];
-  final_price: number;
+export interface AmendmentSnapshot {
+  devices: AmendmentDevice[];
+  final_price: number;        // v1 compat
+  pricing?: {                  // v2 explicit breakdown
+    devices_subtotal: number;
+    pickup_fee: number;
+    coupon_discount: number;
+    final_price: number;
+    currency: 'THB';
+  };
+}
+
+export interface AmendmentEvidence {
+  url: string;
+  purpose: 'device_back' | 'settings_about' | 'imei_label' | 'box' | 'customer_with_device' | 'address_pin' | 'other';
+  uploaded_at: number;
+}
+
+export interface AmendmentConsent {
+  method: AmendmentConsentMethod;
+  consented_at: number;
+  signature_url?: string;
+  otp_phone_masked?: string;
+  otp_verified_at?: number;
+  verbal_transcript?: string;
+  disclosure_text_snapshot: string;
+  disclosure_version: string;
+  captured_on: 'rider_app' | 'admin_app';
+  captured_by_uid: string;
 }
 
 export interface JobAmendment {
   id: string;
   job_id: string;
+  schema_version?: 2;
+  client_request_id?: string;
+
+  amendment_class: AmendmentClass;
   type: JobAmendmentType;
+
+  target?: AmendmentTarget;
+  target_device_index?: number;
 
   requested_at: number;
   requested_by_rider_uid: string;
   requested_by_rider_name: string;
   rider_note?: string;
-  evidence_urls: string[];
+  evidence_urls?: string[];      // v1 compat
+  evidence?: AmendmentEvidence[];
 
-  before: JobAmendmentSnapshot;
-  after?: JobAmendmentSnapshot;
+  before?: AmendmentSnapshot;
+  after?: AmendmentSnapshot;
 
   status: JobAmendmentStatus;
 
@@ -169,13 +263,20 @@ export interface JobAmendment {
   admin_note?: string;
   reject_action?: JobAmendmentRejectAction;
 
+  consent?: AmendmentConsent;
   consented_at?: number;
   consent_method?: AmendmentConsentMethod;
   consent_signature_url?: string;
 
+  approved_expires_at?: number;
   applied_at?: number;
+  cancelled_at?: number;
   escalated_at?: number;
 }
+
+/** Back-compat alias */
+export type JobAmendmentDevice = AmendmentDevice;
+export type JobAmendmentSnapshot = AmendmentSnapshot;
 
 export interface PickupSchedule {
   type: 'instant' | 'schedule';
