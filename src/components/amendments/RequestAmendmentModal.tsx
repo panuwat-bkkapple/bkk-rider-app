@@ -59,19 +59,31 @@ function useFlatVariants(): FlatVariant[] {
       if (!m || typeof m !== 'object') continue;
       const rv = (m as any).variants;
       const variants: any[] = !rv ? [] : Array.isArray(rv) ? rv : Object.values(rv);
-      const modelId = m.id || m.model;
+      // Schema field on /models/{id} is `name` (display name, e.g.
+      // "iPhone 16"). Older code referenced `m.model` — that key
+      // doesn't exist in the live data so picker showed empty labels.
+      // Fallback chain handles legacy records that might have stored
+      // the name in a different key.
+      const modelId = m.id || m.name || m.model;
+      const modelName = m.name || m.model || '';
       const brand = m.brand || 'Apple';
+      // Base price fields written by PriceEditor are baseUsedPrice +
+      // baseNewPrice (we use Used as the trade-in price). Fall back
+      // to either if one is missing, then to legacy base_price.
+      const basePrice = (typeof m.baseUsedPrice === 'number' ? m.baseUsedPrice :
+                         typeof m.baseNewPrice === 'number' ? m.baseNewPrice :
+                         typeof m.base_price === 'number' ? m.base_price : 0);
       if (variants.length === 0) {
-        out.push({ modelId, modelName: m.model || '', variantId: '', variantName: '', price: m.base_price || 0, brand });
+        out.push({ modelId, modelName, variantId: '', variantName: '', price: basePrice, brand });
         continue;
       }
       for (const v of variants) {
         out.push({
           modelId,
-          modelName: m.model || '',
+          modelName,
           variantId: v.id || v.name || '',
           variantName: v.name || '',
-          price: typeof v.price === 'number' ? v.price : (m.base_price || 0),
+          price: typeof v.price === 'number' ? v.price : basePrice,
           brand,
         });
       }
