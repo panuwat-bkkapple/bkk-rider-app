@@ -326,6 +326,21 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   const handleOpenNavigation = (job: any) => {
+    // Prefer the customer's pinned coordinates over the address text.
+    // Reverse-geocoded addresses (especially upcountry / Tambon-level
+    // ones like "1, Tambon Bang Nang, Amphoe Phan Thong, ...") are
+    // ambiguous — Google Maps text search returns multiple unrelated
+    // matches and rider ends up at the wrong door. The lat/lng was
+    // captured at checkout (validateAndCreateOrder writes cust_lat +
+    // cust_lng on the job) so use it directly when available.
+    const lat = typeof job.cust_lat === 'number' ? job.cust_lat : null;
+    const lng = typeof job.cust_lng === 'number' ? job.cust_lng : null;
+    if (lat !== null && lng !== null) {
+      // Directions URL = one-tap nav (Google Maps opens in directions
+      // mode with the destination already set; rider taps "Start").
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
+      return;
+    }
     const targetAddress = job.cust_address || job.address;
     if (!targetAddress) return toast.error('ไม่พบพิกัดหรือที่อยู่สำหรับนำทาง');
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(targetAddress)}`, '_blank');
