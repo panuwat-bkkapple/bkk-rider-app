@@ -78,6 +78,14 @@ export const AmendmentStatusBanner = ({ jobId }: Props) => {
   if (open.status === 'approved' && cls === 'contractual') {
     const expiresIn = open.approved_expires_at ? Math.max(0, open.approved_expires_at - Date.now()) : 0;
     const hoursLeft = Math.floor(expiresIn / (60 * 60 * 1000));
+    // Surface the new total + delta the moment admin approves so rider
+    // doesn't have to open the consent modal just to see what changed.
+    // Job's main card still shows the OLD final_price (atomic apply runs
+    // after consent), so this banner is the only place rider sees the
+    // pending value before signing.
+    const beforeTotal = open.before?.final_price ?? 0;
+    const afterTotal = open.after?.final_price ?? beforeTotal;
+    const diff = afterTotal - beforeTotal;
     return (
       <>
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
@@ -91,6 +99,25 @@ export const AmendmentStatusBanner = ({ jobId }: Props) => {
               </p>
             </div>
           </div>
+
+          {/* Pending price summary — preview before consent */}
+          {open.after && (
+            <div className="bg-white border border-emerald-200 rounded-xl p-3 mb-3 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>ราคาเดิม</span>
+                <span className="font-mono">฿{beforeTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between font-bold text-emerald-900 mt-0.5">
+                <span>ราคาใหม่ (รอลูกค้าเซ็น)</span>
+                <span className="font-mono">฿{afterTotal.toLocaleString()}</span>
+              </div>
+              <div className={`flex justify-between text-[11px] font-bold pt-1.5 mt-1.5 border-t border-slate-100 ${diff >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                <span>ส่วนต่าง</span>
+                <span className="font-mono">{diff >= 0 ? '+' : ''}฿{diff.toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={() => setShowConsent(true)}
             className="w-full bg-emerald-500 text-white py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95"
