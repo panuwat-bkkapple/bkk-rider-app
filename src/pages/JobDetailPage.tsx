@@ -4,7 +4,8 @@ import {
   ArrowLeft, MapPin, Navigation, Phone, User, Clock, Wallet as WalletIcon,
   Bike, CheckCircle2, X, ShieldCheck, MessageSquare, Landmark, PackageOpen,
   AlertTriangle, Loader2, Camera, Tag, Hash, Undo2,
-  Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck
+  Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck,
+  Maximize2, ExternalLink
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
@@ -123,6 +124,7 @@ export const JobDetailPage = ({
     : false;
   const unreadChat = job.chats && Object.values(job.chats).some((c: any) => c.sender === 'admin' && !c.read);
   const paymentSlip = getPaymentSlip(job);
+  const [slipLightbox, setSlipLightbox] = useState(false);
 
   return (
     <div className="fixed inset-0 bg-gray-50 z-[60] overflow-y-auto animate-in fade-in duration-200">
@@ -330,8 +332,22 @@ export const JobDetailPage = ({
 
         {paymentSlip && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">หลักฐานโอนเงิน</h3>
-            <img src={paymentSlip} alt="payment-slip" className="w-full rounded-xl" />
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide">หลักฐานโอนเงิน</h3>
+              <button
+                onClick={() => setSlipLightbox(true)}
+                className="text-[11px] font-bold text-blue-600 flex items-center gap-1 hover:underline"
+              >
+                <Maximize2 size={12} /> ดูเต็มจอ
+              </button>
+            </div>
+            <button
+              onClick={() => setSlipLightbox(true)}
+              className="block w-full overflow-hidden rounded-xl active:scale-[0.99] transition"
+            >
+              <img src={paymentSlip} alt="payment-slip" className="w-full rounded-xl" />
+            </button>
+            <p className="mt-2 text-[11px] text-gray-400 text-center">แตะภาพเพื่อขยายเต็มจอ — ใช้แสดงให้ลูกค้าตรวจสอบได้</p>
           </div>
         )}
 
@@ -573,6 +589,36 @@ export const JobDetailPage = ({
           onClose={() => setRequestingAmendment(false)}
           onSubmitted={() => setRequestingAmendment(false)}
         />
+      )}
+
+      {slipLightbox && paymentSlip && (
+        <div
+          onClick={() => setSlipLightbox(false)}
+          className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <img
+            src={paymentSlip}
+            alt="payment-slip-fullscreen"
+            className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setSlipLightbox(false)}
+            className="absolute top-4 right-4 bg-white/95 text-slate-900 p-3 rounded-full shadow-lg active:scale-95"
+            aria-label="ปิด"
+          >
+            <X size={20} />
+          </button>
+          <a
+            href={paymentSlip}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 left-4 bg-white/95 text-slate-900 px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-lg"
+          >
+            <ExternalLink size={12} /> เปิดในแท็บใหม่
+          </a>
+        </div>
       )}
     </div>
   );
