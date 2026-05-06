@@ -517,8 +517,10 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────
-// Photo slot — file input with capture=environment so it opens the
-// rear camera directly on mobile.
+// Photo slot — file input without `capture` so the OS picker offers
+// both camera and gallery. Riders sometimes scan the customer's ID
+// elsewhere (e.g. retake from a clearer photo on the customer's
+// phone) and pick from the gallery instead of re-shooting.
 // ─────────────────────────────────────────────────────────────────────
 
 interface PhotoSlotProps {
@@ -557,7 +559,7 @@ const PhotoSlot = ({ title, hint, imageUrl, uploading, inputRef, onUpload, onCle
         ) : (
           <>
             <Camera size={28} />
-            <span className="text-sm font-medium">เปิดกล้องเพื่อถ่ายภาพ</span>
+            <span className="text-sm font-medium">ถ่ายภาพหรือเลือกจากอัลบั้ม</span>
           </>
         )}
       </button>
@@ -566,7 +568,6 @@ const PhotoSlot = ({ title, hint, imageUrl, uploading, inputRef, onUpload, onCle
       ref={inputRef}
       type="file"
       accept="image/*"
-      capture="environment"
       className="hidden"
       onChange={(e) => onUpload(e.target.files?.[0])}
     />
