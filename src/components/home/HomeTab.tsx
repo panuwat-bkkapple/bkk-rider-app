@@ -1,11 +1,12 @@
 // src/components/home/HomeTab.tsx
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Bike, X, Coffee, Wifi, CalendarDays } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { MapBackground } from '../layout/MapBackground';
 import { IncomingJobCard } from './IncomingJobCard';
 import { ActiveJobCard } from './ActiveJobCard';
 import { getAppointmentDateKey } from '../../utils/jobHelpers';
+import { logOffer } from '../../utils/offerLog';
 import type { RiderInfo, JobDateFilter } from '../../types';
 
 interface HomeTabProps {
@@ -72,6 +73,22 @@ export const HomeTab = ({
     [incomingList, jobDateFilter]
   );
   const hiddenCount = incomingList.length - visibleIncoming.length;
+
+  // Log each broadcast offer the rider sees so the dashboard can
+  // compute true acceptance rate (accepted / offered). logOffer is
+  // idempotent — re-renders don't duplicate offered_at timestamps.
+  // We log every job in incomingList (not just visible after date
+  // filter) so the offer count reflects what was actually pushed,
+  // not what the rider chose to look at.
+  const loggedOffers = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!riderInfo?.id) return;
+    for (const job of incomingList) {
+      if (!job?.id || loggedOffers.current.has(job.id)) continue;
+      loggedOffers.current.add(job.id);
+      logOffer(job.id, riderInfo.id);
+    }
+  }, [incomingList, riderInfo?.id]);
 
   return (
   <div className="absolute inset-0 pb-32 animate-in fade-in duration-500">

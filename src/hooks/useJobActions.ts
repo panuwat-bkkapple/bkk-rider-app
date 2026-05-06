@@ -10,6 +10,7 @@ import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 import { recordCheckpoint, STAGE_LABEL_TH } from '../utils/checkpoints';
+import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -193,6 +194,10 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`
       );
 
+      // Stamp accepted_at on the offer log so dashboard acceptance rate
+      // is correct. Fire-and-forget — non-fatal if it errors.
+      markOfferAccepted(job.id, riderInfo.id);
+
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
@@ -295,6 +300,16 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         'ไรเดอร์ยกเลิกงาน!',
         `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
       );
+
+      // Stamp rejected_at on the offer log only when this was an
+      // incoming-list rejection (rider hadn't started the job yet).
+      // Mid-route cancels are a different signal — they belong to
+      // the rider_cancelled bucket on the dashboard, not the
+      // offer-decline bucket.
+      if (isIncoming) {
+        markOfferRejected(rejectingJob.id, riderInfo.id);
+      }
+
       onDone();
     } catch (error: any) {
       console.error('handleRejectOrCancelJob error:', error);
