@@ -9,6 +9,7 @@ import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
+import { recordCheckpoint, STAGE_LABEL_TH } from '../utils/checkpoints';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -43,6 +44,9 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // Push พิกัดไรเดอร์ไปที่ riders/{id} ทุกครั้งที่เปลี่ยนสถานะ
       // - แอดมินจะเห็นพิกัดตลอดตั้งแต่รับงานจนจบงาน
       // - ลูกค้าจะเห็นเฉพาะตอน Heading to Customer (ควบคุมฝั่ง frontend)
+      // นอกจากนั้นยังบันทึก check-in snapshot ลง jobs/{id}/checkpoints/{stage}
+      // สำหรับ analytics + dispute audit (recordCheckpoint จะ no-op ถ้า
+      // status นี้ไม่ใช่จุดที่ต้อง check-in)
       navigator.geolocation.getCurrentPosition(async (pos) => {
         try {
           await update(ref(db, `riders/${riderInfo.id}`), {
@@ -52,6 +56,29 @@ export const useJobActions = (riderInfo: RiderInfo) => {
           });
         } catch (e) {
           console.error('Failed to update rider location:', e);
+        }
+        try {
+          const result = await recordCheckpoint({
+            jobId,
+            riderId: riderInfo.id,
+            status: nextStatus,
+            gps: {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            },
+            job: job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
+          });
+          if (result && result.withinZone === false && result.distanceM != null && result.targetLabel) {
+            // Non-blocking — admin sees this in the dashboard, rider gets a
+            // heads-up so they can correct course (or call the customer if
+            // the pin is wrong).
+            toast.info(
+              `เช็คอิน "${STAGE_LABEL_TH[result.stage]}" อยู่ห่างจาก${result.targetLabel} ${result.distanceM} ม. (เกิน ${result.thresholdM} ม.)`,
+            );
+          }
+        } catch (e) {
+          console.error('Failed to record checkpoint:', e);
         }
       }, (err) => console.error('Geolocation error on status change:', err),
       { enableHighAccuracy: true });
