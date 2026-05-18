@@ -174,9 +174,31 @@ export const onJobStatusChanged = onValueWritten(
         body = `${deviceName} - ขอบคุณครับ!`;
         break;
 
-      case "Cancelled":
-        title = "❌ งานถูกยกเลิก";
-        body = `${deviceName} - ${job.cancel_reason || ""}`;
+      case "Cancelled": {
+        // Differentiate cancel source — rider needs to know whether to expect
+        // a call from the customer, a refund flow from admin, or just move on.
+        const cancelledBy: string = job.cancelled_by || "";
+
+        // The rider himself cancelled — silent (he's the one who did it).
+        if (cancelledBy === `rider:${riderId}`) return;
+
+        if (cancelledBy.startsWith("customer") || cancelledBy === "customer") {
+          title = "❌ ลูกค้ายกเลิกงาน";
+        } else if (cancelledBy.startsWith("admin") || cancelledBy === "admin") {
+          title = "❌ Admin ยกเลิกงาน";
+        } else if (cancelledBy === "system") {
+          title = "⏱ ระบบยกเลิกอัตโนมัติ";
+        } else {
+          title = "❌ งานถูกยกเลิก";
+        }
+        body = `${deviceName}${job.cancel_reason ? ` - ${job.cancel_reason}` : ""}`;
+        break;
+      }
+
+      case "Returning To Customer":
+      case "Return Confirmed":
+        title = "🔙 ตีเครื่องกลับ";
+        body = `${deviceName} - เตรียมตีเครื่องคืนลูกค้า`;
         break;
 
       default:
