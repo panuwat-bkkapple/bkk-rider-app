@@ -5,11 +5,15 @@
 // with actual values from VITE_FIREBASE_* environment variables.
 
 // --- Offline Caching ---
-const CACHE_NAME = 'bkk-rider-v1';
+// Bump CACHE_NAME whenever STATIC_ASSETS or critical SW logic changes — the
+// previous v1 listed /manifest-icon-192.maskable.png which never existed in
+// public/, so cache.addAll() rejected (atomic) and the install event failed,
+// leaving no active SW to receive background push.
+const CACHE_NAME = 'bkk-rider-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/manifest-icon-192.maskable.png',
+  '/android-chrome-192x192.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -73,8 +77,8 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = data.title || 'BKK Rider';
   const notificationOptions = {
     body: data.body || '',
-    icon: '/manifest-icon-192.maskable.png',
-    badge: '/manifest-icon-192.maskable.png',
+    icon: '/android-chrome-192x192.png',
+    badge: '/android-chrome-192x192.png',
     tag: data.jobId ? `${data.type || 'rider'}-${data.jobId}` : 'bkk-rider',
     data,
   };

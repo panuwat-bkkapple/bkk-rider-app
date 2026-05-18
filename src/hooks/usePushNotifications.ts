@@ -70,11 +70,11 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
         if (token && !cancelled) {
           await saveToken(token);
         } else if (!token) {
-          // Permission revoked or SW issue — drop the stored token so Cloud
-          // Functions stop trying to push to a device that can't receive.
-          const deviceId = getDeviceId();
-          await remove(ref(db, `riders/${riderId}/fcm_tokens/${deviceId}`));
-          console.warn('[Push] getToken returned empty; removed stored token');
+          // getToken() can return null for transient reasons (SW not yet
+          // activated, FCM endpoint hiccup). Don't delete the stored token —
+          // the Cloud Function (pushToRider) already prunes tokens that FCM
+          // rejects with token-not-registered. Just log and retry next cycle.
+          console.warn('[Push] getToken returned empty; keeping stored token, will retry');
         }
       } catch (err) {
         console.warn('[Push] Failed to fetch FCM token:', err);
@@ -117,7 +117,7 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
           if (payload.notification) {
             const notification = new Notification(payload.notification.title || 'BKK Rider', {
               body: payload.notification.body,
-              icon: '/manifest-icon-192.maskable.png',
+              icon: '/android-chrome-192x192.png',
               data,
             });
             if (data?.type === 'chat' && data?.jobId && onOpenChat) {
