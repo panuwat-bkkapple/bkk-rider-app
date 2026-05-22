@@ -8,6 +8,8 @@ import { formatCurrency } from '../../utils/formatters';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { getDevicesList } from '../../utils/jobHelpers';
 import { toast } from '../common/Toast';
+import { SickwDeviceCheck } from './SickwDeviceCheck';
+import { getSickwReasons } from '../../utils/sickwApi';
 import type { InspectedDeviceData, ConditionGroup } from '../../types';
 
 // Required photo slots — rider must take one per angle so admin / Internal QC
@@ -297,6 +299,40 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
             </div>
 
             <div className="space-y-8">
+              {/* Sickw IMEI Check — ตรวจสอบสถานะเครื่องกับฐานข้อมูล Apple
+                  วางก่อน Photos เพื่อให้ไรเดอร์ verify รุ่น/ความจุ/FMI
+                  ก่อนเริ่มถ่ายรูป — ถ้าเครื่องติด iCloud/MDM/Blacklist จะรู้
+                  ตั้งแต่ต้น ไม่ต้องเสียเวลาตรวจสภาพ */}
+              <SickwDeviceCheck
+                jobId={job.id}
+                initialImei={
+                  // Device type ใน rider app ยังไม่ติด imei field (legacy รับมาจาก job)
+                  (devicesList[activeDeviceIndex] as any)?.imei ||
+                  job.device_imei || job.imei || ''
+                }
+                initialSerial={
+                  (devicesList[activeDeviceIndex] as any)?.serial ||
+                  job.device_serial || job.serial || ''
+                }
+              />
+              {(() => {
+                const sickwIssues = getSickwReasons(job?.sickw_check);
+                if (sickwIssues.length === 0) return null;
+                return (
+                  <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 -mt-4">
+                    <p className="text-xs font-black text-red-900 uppercase tracking-tight mb-1">
+                      ⚠ เครื่องนี้ติด Sickw — แอดมินจะ block ที่ขั้น QC
+                    </p>
+                    <ul className="text-xs text-red-800 list-disc pl-5">
+                      {sickwIssues.map((r) => <li key={r}>{r}</li>)}
+                    </ul>
+                    <p className="text-[11px] text-red-700 mt-2">
+                      แจ้งลูกค้าให้ sign out / เคลียร์ MDM ก่อน แล้วกดตรวจซ้ำ
+                    </p>
+                  </div>
+                );
+              })()}
+
               {/* Photos — named slots so admin/QC can match angles */}
               {(() => {
                 const isNew = devicesList[activeDeviceIndex]?.isNewDevice;
