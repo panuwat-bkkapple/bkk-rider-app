@@ -32,6 +32,7 @@ import {
   type ImeiFields, type BatteryFields, type FindMyFields, type WarrantyFields,
 } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
+import { SickwDeviceCheck } from './SickwDeviceCheck';
 
 interface Props {
   job: any;
@@ -273,6 +274,12 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
                 )}
               </div>
             )}
+          />
+
+          {/* Sickw IMEI Check — ตรวจสอบกับฐานข้อมูล Apple */}
+          <SickwDeviceCheck
+            initialImei={imeiText || imei.fields?.imei || ''}
+            initialSerial={imei.fields?.serial || ''}
           />
 
           {/* Warranty / AppleCare */}
