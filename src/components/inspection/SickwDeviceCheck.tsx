@@ -23,33 +23,41 @@ interface Props {
   initialImei?: string;
   initialSerial?: string;
   defaultServiceId?: string;
+  /** ส่ง jobId เพื่อให้ Cloud Function เก็บ snapshot ลงใบงาน */
+  jobId?: string;
+  /** ผลตรวจที่เก็บไว้ก่อนหน้า — ใช้ pre-populate ตอนเปิดใบงานซ้ำ */
+  existingResult?: SickwCheckResult | null;
+  /** trigger หลังตรวจสำเร็จ ให้ parent re-evaluate */
+  onChecked?: (result: SickwCheckResult) => void;
 }
 
-export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId }: Props) {
-  const [imei, setImei] = useState(initialImei || initialSerial || '');
+export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId, jobId, existingResult, onChecked }: Props) {
+  const [imei, setImei] = useState(initialImei || initialSerial || existingResult?.imei || '');
   const [serviceId, setServiceId] = useState(() =>
-    defaultServiceId || localStorage.getItem(SVC_ID_STORAGE_KEY) || ''
+    defaultServiceId || existingResult?.serviceId || localStorage.getItem(SVC_ID_STORAGE_KEY) || ''
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SickwCheckResult | null>(null);
+  const [result, setResult] = useState<SickwCheckResult | null>(existingResult || null);
   const [showAll, setShowAll] = useState(false);
 
-  // Sync เมื่อ parent ส่ง IMEI/Serial ใหม่มา (เช่น OCR เสร็จ) — เฉพาะตอน input
+  // Sync เมื่อ parent ส่ง IMEI/Serial หรือ existingResult ใหม่มา — เฉพาะตอน input
   // ยังว่างอยู่ ห้ามทับสิ่งที่ไรเดอร์เพิ่งพิมพ์
   useEffect(() => {
     const incoming = initialImei || initialSerial;
     if (incoming && !imei) setImei(incoming);
+    if (existingResult && !result) setResult(existingResult);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialImei, initialSerial]);
+  }, [initialImei, initialSerial, existingResult]);
 
   const runCheck = async (forceRefresh = false) => {
     setError(null);
     setLoading(true);
     try {
-      const res = await checkDeviceWithSickw({ imei: imei.trim(), serviceId: serviceId.trim(), forceRefresh });
+      const res = await checkDeviceWithSickw({ imei: imei.trim(), serviceId: serviceId.trim(), forceRefresh, jobId });
       setResult(res);
       localStorage.setItem(SVC_ID_STORAGE_KEY, String(serviceId));
+      onChecked?.(res);
     } catch (e: any) {
       setError(e?.message || 'ตรวจสอบไม่สำเร็จ');
       setResult(null);

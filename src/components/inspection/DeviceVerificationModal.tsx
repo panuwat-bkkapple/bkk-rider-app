@@ -33,6 +33,7 @@ import {
 } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
 import { SickwDeviceCheck } from './SickwDeviceCheck';
+import { getSickwReasons } from '../../utils/sickwApi';
 
 interface Props {
   job: any;
@@ -276,8 +277,12 @@ export const DeviceVerificationModal = ({ job, onClose, onComplete }: Props) => 
             )}
           />
 
-          {/* Sickw IMEI Check — ตรวจสอบกับฐานข้อมูล Apple */}
+          {/* Sickw IMEI Check — ตรวจสอบกับฐานข้อมูล Apple
+              ส่ง jobId เพื่อให้ snapshot เก็บใน jobs/{id}/sickw_check
+              ถ้าผลขึ้น flag (FMI/MDM/Blacklist) → โชว์เตือนสีแดงด้านล่างปุ่มบันทึก
+              ไรเดอร์ไม่มีสิทธิ์ override → ต้องให้แอดมินจัดการขั้น QC */}
           <SickwDeviceCheck
+            jobId={job.id}
             initialImei={imeiText || imei.fields?.imei || ''}
             initialSerial={imei.fields?.serial || ''}
           />
