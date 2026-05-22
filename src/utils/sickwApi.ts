@@ -98,6 +98,60 @@ export async function checkDeviceWithSickw(input: SickwCheckInput): Promise<Sick
   return result.data;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Service catalog + bundle (เรียก Cloud Function ของ bkk-system โปรเจ็ค
+// Firebase เดียวกัน) — admin จะตั้ง default bundle ที่ฝั่งของตัวเอง,
+// ไรเดอร์ดึงมาใช้ผ่าน catalog API
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SickwService {
+  service: string;
+  name: string;
+  price: number;
+}
+
+export interface SickwBundleResult {
+  ok: boolean;
+  bundle: true;
+  checkedAt: number;
+  imei: string;
+  serviceIds: string[];
+  parsed: SickwParsedFields;
+  fields: Record<string, string>;
+  flags: SickwFlags;
+  perService: Record<string, {
+    serviceId: string;
+    cached?: boolean;
+    checkedAt?: number;
+    status?: string;
+    parsed?: SickwParsedFields;
+    fields?: Record<string, string>;
+    raw?: string;
+    error?: string;
+  }>;
+}
+
+export async function listSickwServices(forceRefresh = false): Promise<{ cached: boolean; services: SickwService[]; cachedAt: number }> {
+  const fn = httpsCallable<{ forceRefresh?: boolean }, { cached: boolean; services: SickwService[]; cachedAt: number }>(
+    getFunctions(app, 'asia-southeast1'),
+    'listSickwServices'
+  );
+  return (await fn({ forceRefresh })).data;
+}
+
+export async function checkDeviceWithSickwBundle(input: {
+  imei: string;
+  serviceIds: string[];
+  forceRefresh?: boolean;
+  jobId?: string;
+}): Promise<SickwBundleResult> {
+  const fn = httpsCallable<typeof input, SickwBundleResult>(
+    getFunctions(app, 'asia-southeast1'),
+    'checkDeviceWithSickwBundle'
+  );
+  return (await fn(input)).data;
+}
+
 export function interpretFmi(value: string | undefined): SickwFlagState {
   if (!value) return 'unknown';
   const v = value.toLowerCase();
