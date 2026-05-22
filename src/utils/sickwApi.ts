@@ -179,10 +179,11 @@ export function interpretBlacklist(value: string | undefined): SickwFlagState {
 export function getSickwReasons(sickwCheck: JobSickwCheck | undefined | null): string[] {
   const lc = sickwCheck?.last_check;
   if (!lc || lc.status !== 'success') return [];
+  // fmi ห้ามดู iCloudStatus — "icloud status: CLEAN" บอกแค่ ไม่ stolen
   const flags = lc.flags || {
-    fmi: interpretFmi(lc.parsed?.fmiStatus || lc.parsed?.iCloudStatus || lc.parsed?.activationLock),
+    fmi: interpretFmi(lc.parsed?.fmiStatus || lc.parsed?.activationLock),
     mdm: interpretMdm(lc.parsed?.mdmStatus),
-    blacklist: interpretBlacklist(lc.parsed?.blacklistStatus),
+    blacklist: interpretBlacklist(lc.parsed?.blacklistStatus || lc.parsed?.iCloudStatus),
   };
   const reasons: string[] = [];
   if (flags.fmi === 'flagged') reasons.push('Find My / iCloud ติดล็อค');
