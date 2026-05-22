@@ -59,6 +59,7 @@ export interface SickwCheckInput {
   serviceId: string | number;
   forceRefresh?: boolean;
   jobId?: string;
+  source?: string;
 }
 
 export interface JobSickwCheck {
@@ -94,6 +95,7 @@ export async function checkDeviceWithSickw(input: SickwCheckInput): Promise<Sick
     serviceId: String(input.serviceId),
     forceRefresh: input.forceRefresh,
     jobId: input.jobId,
+    source: input.source,
   });
   return result.data;
 }
@@ -144,6 +146,7 @@ export async function checkDeviceWithSickwBundle(input: {
   serviceIds: string[];
   forceRefresh?: boolean;
   jobId?: string;
+  source?: string;
 }): Promise<SickwBundleResult> {
   const fn = httpsCallable<typeof input, SickwBundleResult>(
     getFunctions(app, 'asia-southeast1'),

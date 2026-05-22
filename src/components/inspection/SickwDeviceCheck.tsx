@@ -128,12 +128,12 @@ export function SickwDeviceCheck({ initialImei, initialSerial, jobId }: Props) {
     try {
       if (selectedServices.length === 1) {
         const res = await checkDeviceWithSickw({
-          imei: imei.trim(), serviceId: selectedServices[0], forceRefresh, jobId,
+          imei: imei.trim(), serviceId: selectedServices[0], forceRefresh, jobId, source: 'rider',
         });
         setResult(toUnifiedFromSingle(res));
       } else {
         const res = await checkDeviceWithSickwBundle({
-          imei: imei.trim(), serviceIds: selectedServices, forceRefresh, jobId,
+          imei: imei.trim(), serviceIds: selectedServices, forceRefresh, jobId, source: 'rider',
         });
         setResult(toUnifiedFromBundle(res));
       }
