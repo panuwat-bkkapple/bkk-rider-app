@@ -6,16 +6,18 @@
 // - จำ default Service ID ใน localStorage
 // - cache 24 ชั่วโมง (จัดการในฝั่ง Cloud Function)
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Search, Loader2, CheckCircle2, AlertTriangle, HelpCircle, RefreshCw,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Camera,
 } from 'lucide-react';
 import {
   checkDeviceWithSickw,
   interpretFmi, interpretMdm, interpretBlacklist,
   type SickwCheckResult, type SickwFlagState,
 } from '../../utils/sickwApi';
+import { ocrImei } from '../../utils/visionOcr';
+import { uploadImageToFirebase } from '../../utils/uploadImage';
 
 const SVC_ID_STORAGE_KEY = 'sickw:lastServiceId';
 
@@ -40,6 +42,30 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SickwCheckResult | null>(existingResult || null);
   const [showAll, setShowAll] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrSerial, setOcrSerial] = useState<string | null>(null);
+  const ocrInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOcrCapture = async (file: File | undefined) => {
+    if (!file || !jobId) return;
+    setOcrLoading(true);
+    setError(null);
+    try {
+      // ต้อง upload เข้า storage ก่อนเพราะ Cloud Function OCR รับ storageUri ไม่ใช่ raw file
+      const url = await uploadImageToFirebase(file, `jobs/${jobId}/verification`, { opaqueFilename: true });
+      const res = await ocrImei(url);
+      if (res.fields?.imei) setImei(res.fields.imei);
+      else if (res.fields?.serial) setImei(res.fields.serial);
+      if (res.fields?.serial) setOcrSerial(res.fields.serial);
+      if (!res.fields?.imei && !res.fields?.serial) {
+        setError('OCR อ่านค่าไม่ได้ — กรุณาพิมพ์เอง');
+      }
+    } catch (e: any) {
+      setError('OCR ผิดพลาด: ' + (e?.message || e));
+    } finally {
+      setOcrLoading(false);
+    }
+  };
 
   // Sync เมื่อ parent ส่ง IMEI/Serial หรือ existingResult ใหม่มา — เฉพาะตอน input
   // ยังว่างอยู่ ห้ามทับสิ่งที่ไรเดอร์เพิ่งพิมพ์
@@ -79,14 +105,45 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
       </p>
 
       <div>
-        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">IMEI / Serial</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">IMEI / Serial</label>
+          {jobId && (
+            <>
+              <input
+                ref={ocrInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handleOcrCapture(e.target.files?.[0])}
+              />
+              <button
+                onClick={() => ocrInputRef.current?.click()}
+                disabled={ocrLoading}
+                className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 disabled:opacity-40"
+              >
+                {ocrLoading
+                  ? <><Loader2 size={11} className="animate-spin" /> OCR...</>
+                  : <><Camera size={11} /> สแกนจาก Settings → About</>}
+              </button>
+            </>
+          )}
+        </div>
         <input
           type="text"
           value={imei}
           onChange={(e) => setImei(e.target.value.replace(/\s/g, ''))}
           placeholder="358xxxxxxxxxxx"
-          className="w-full mt-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-mono"
+          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-mono"
         />
+        {ocrSerial && ocrSerial !== imei && (
+          <p className="text-[10px] text-gray-500 mt-1">
+            OCR เจอ Serial ด้วย: <button
+              onClick={() => setImei(ocrSerial!)}
+              className="text-blue-600 underline font-mono"
+            >{ocrSerial}</button> (กดเพื่อใช้แทน IMEI)
+          </p>
+        )}
       </div>
 
       <div>
