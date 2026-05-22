@@ -1,65 +1,120 @@
-// ปุ่ม + พาเนลผลตรวจ Sickw สำหรับแอป Rider (PWA)
-// ใช้ที่: DeviceVerificationModal — รัน OCR ดึง IMEI ได้แล้ว ไรเดอร์กดตรวจ
-// Sickw ก่อนรับเครื่อง เพื่อยืนยันว่า iCloud/FMI ปิดจริง, ไม่ติด blacklist
-//
-// - ถ้า OCR ได้ IMEI มาแล้ว → autofill
-// - จำ default Service ID ใน localStorage
-// - cache 24 ชั่วโมง (จัดการในฝั่ง Cloud Function)
+// Sickw check panel ฝั่ง rider — รองรับ OCR scan + multi-service bundle
+// (ใช้ catalog API ของ bkk-system → ไรเดอร์ดูชื่อ service ภาษาคน + ราคาได้)
 
 import { useEffect, useRef, useState } from 'react';
+import { ref, onValue } from 'firebase/database';
 import {
   Search, Loader2, CheckCircle2, AlertTriangle, HelpCircle, RefreshCw,
   ChevronDown, ChevronUp, Camera,
 } from 'lucide-react';
+import { db } from '../../api/firebase';
 import {
-  checkDeviceWithSickw,
+  checkDeviceWithSickw, checkDeviceWithSickwBundle,
   interpretFmi, interpretMdm, interpretBlacklist,
-  type SickwCheckResult, type SickwFlagState,
+  type SickwCheckResult, type SickwBundleResult, type SickwFlagState,
+  type SickwParsedFields,
 } from '../../utils/sickwApi';
 import { ocrImei } from '../../utils/visionOcr';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
+import { SickwServicePicker } from './SickwServicePicker';
 
-const SVC_ID_STORAGE_KEY = 'sickw:lastServiceId';
+const BUNDLE_STORAGE_KEY = 'sickw:lastSelectedServices';
 
 interface Props {
   initialImei?: string;
   initialSerial?: string;
-  defaultServiceId?: string;
-  /** ส่ง jobId เพื่อให้ Cloud Function เก็บ snapshot ลงใบงาน */
   jobId?: string;
-  /** ผลตรวจที่เก็บไว้ก่อนหน้า — ใช้ pre-populate ตอนเปิดใบงานซ้ำ */
-  existingResult?: SickwCheckResult | null;
-  /** trigger หลังตรวจสำเร็จ ให้ parent re-evaluate */
-  onChecked?: (result: SickwCheckResult) => void;
 }
 
-export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId, jobId, existingResult, onChecked }: Props) {
-  const [imei, setImei] = useState(initialImei || initialSerial || existingResult?.imei || '');
-  const [serviceId, setServiceId] = useState(() =>
-    defaultServiceId || existingResult?.serviceId || localStorage.getItem(SVC_ID_STORAGE_KEY) || ''
-  );
+interface UnifiedResult {
+  ok: boolean;
+  cached: boolean;
+  checkedAt: number;
+  bundle: boolean;
+  serviceLabel: string;
+  status: string;
+  parsed: SickwParsedFields;
+  fields: Record<string, string>;
+  raw: string;
+  imei: string;
+  errors?: string[];
+}
+
+function toUnifiedFromSingle(r: SickwCheckResult): UnifiedResult {
+  return {
+    ok: r.ok, cached: r.cached, checkedAt: r.checkedAt, bundle: false,
+    serviceLabel: `service ${r.serviceId}`, status: r.status,
+    parsed: r.parsed, fields: r.fields, raw: r.raw, imei: r.imei,
+  };
+}
+
+function toUnifiedFromBundle(r: SickwBundleResult): UnifiedResult {
+  const errors: string[] = [];
+  for (const [id, p] of Object.entries(r.perService)) {
+    if (p.error) errors.push(`svc ${id}: ${p.error}`);
+  }
+  const allCached = Object.values(r.perService).every((p) => p.cached);
+  return {
+    ok: r.ok, cached: allCached, checkedAt: r.checkedAt, bundle: true,
+    serviceLabel: `bundle [${r.serviceIds.join(', ')}]`,
+    status: r.ok ? 'success' : 'error',
+    parsed: r.parsed, fields: r.fields,
+    raw: Object.values(r.perService).map((p) => `--- svc_${p.serviceId} ---\n${p.raw || p.error || ''}`).join('\n\n'),
+    imei: r.imei,
+    errors: errors.length ? errors : undefined,
+  };
+}
+
+export function SickwDeviceCheck({ initialImei, initialSerial, jobId }: Props) {
+  const [imei, setImei] = useState(initialImei || initialSerial || '');
+  const [selectedServices, setSelectedServices] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BUNDLE_STORAGE_KEY) || '[]');
+      return Array.isArray(saved) ? saved.map(String) : [];
+    } catch { return []; }
+  });
+  const [defaultBundle, setDefaultBundle] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SickwCheckResult | null>(existingResult || null);
+  const [result, setResult] = useState<UnifiedResult | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrSerial, setOcrSerial] = useState<string | null>(null);
   const ocrInputRef = useRef<HTMLInputElement>(null);
+
+  // โหลด default bundle จาก admin settings
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'settings/sickw/default_bundle'), (snap) => {
+      const v = snap.val();
+      if (Array.isArray(v)) setDefaultBundle(v.map(String));
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (selectedServices.length === 0 && defaultBundle.length > 0) {
+      setSelectedServices(defaultBundle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultBundle]);
+
+  useEffect(() => {
+    const incoming = initialImei || initialSerial;
+    if (incoming && !imei) setImei(incoming);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialImei, initialSerial]);
 
   const handleOcrCapture = async (file: File | undefined) => {
     if (!file || !jobId) return;
     setOcrLoading(true);
     setError(null);
     try {
-      // ต้อง upload เข้า storage ก่อนเพราะ Cloud Function OCR รับ storageUri ไม่ใช่ raw file
       const url = await uploadImageToFirebase(file, `jobs/${jobId}/verification`, { opaqueFilename: true });
       const res = await ocrImei(url);
       if (res.fields?.imei) setImei(res.fields.imei);
       else if (res.fields?.serial) setImei(res.fields.serial);
       if (res.fields?.serial) setOcrSerial(res.fields.serial);
-      if (!res.fields?.imei && !res.fields?.serial) {
-        setError('OCR อ่านค่าไม่ได้ — กรุณาพิมพ์เอง');
-      }
+      if (!res.fields?.imei && !res.fields?.serial) setError('OCR อ่านค่าไม่ได้ — กรุณาพิมพ์เอง');
     } catch (e: any) {
       setError('OCR ผิดพลาด: ' + (e?.message || e));
     } finally {
@@ -67,23 +122,22 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
     }
   };
 
-  // Sync เมื่อ parent ส่ง IMEI/Serial หรือ existingResult ใหม่มา — เฉพาะตอน input
-  // ยังว่างอยู่ ห้ามทับสิ่งที่ไรเดอร์เพิ่งพิมพ์
-  useEffect(() => {
-    const incoming = initialImei || initialSerial;
-    if (incoming && !imei) setImei(incoming);
-    if (existingResult && !result) setResult(existingResult);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialImei, initialSerial, existingResult]);
-
   const runCheck = async (forceRefresh = false) => {
     setError(null);
     setLoading(true);
     try {
-      const res = await checkDeviceWithSickw({ imei: imei.trim(), serviceId: serviceId.trim(), forceRefresh, jobId });
-      setResult(res);
-      localStorage.setItem(SVC_ID_STORAGE_KEY, String(serviceId));
-      onChecked?.(res);
+      if (selectedServices.length === 1) {
+        const res = await checkDeviceWithSickw({
+          imei: imei.trim(), serviceId: selectedServices[0], forceRefresh, jobId,
+        });
+        setResult(toUnifiedFromSingle(res));
+      } else {
+        const res = await checkDeviceWithSickwBundle({
+          imei: imei.trim(), serviceIds: selectedServices, forceRefresh, jobId,
+        });
+        setResult(toUnifiedFromBundle(res));
+      }
+      localStorage.setItem(BUNDLE_STORAGE_KEY, JSON.stringify(selectedServices));
     } catch (e: any) {
       setError(e?.message || 'ตรวจสอบไม่สำเร็จ');
       setResult(null);
@@ -92,7 +146,7 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
     }
   };
 
-  const canSubmit = imei.trim().length >= 8 && /^\d+$/.test(serviceId.trim()) && !loading;
+  const canSubmit = imei.trim().length >= 8 && selectedServices.length > 0 && !loading;
 
   return (
     <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 space-y-3">
@@ -100,9 +154,6 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
         <Search size={16} className="text-blue-600" />
         <h3 className="text-sm font-bold text-gray-900">Sickw IMEI Check</h3>
       </div>
-      <p className="text-[11px] text-gray-500 -mt-2">
-        ตรวจรุ่น / ความจุ / ประเทศ / iCloud / FMI / MDM / Blacklist
-      </p>
 
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -120,7 +171,7 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
               <button
                 onClick={() => ocrInputRef.current?.click()}
                 disabled={ocrLoading}
-                className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 disabled:opacity-40"
+                className="flex items-center gap-1 text-[10px] font-bold text-blue-600 disabled:opacity-40"
               >
                 {ocrLoading
                   ? <><Loader2 size={11} className="animate-spin" /> OCR...</>
@@ -138,33 +189,30 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
         />
         {ocrSerial && ocrSerial !== imei && (
           <p className="text-[10px] text-gray-500 mt-1">
-            OCR เจอ Serial ด้วย: <button
+            OCR เจอ Serial: <button
               onClick={() => setImei(ocrSerial!)}
               className="text-blue-600 underline font-mono"
-            >{ocrSerial}</button> (กดเพื่อใช้แทน IMEI)
+            >{ocrSerial}</button> (กดเพื่อใช้แทน)
           </p>
         )}
       </div>
 
-      <div>
-        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Service ID</label>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={serviceId}
-          onChange={(e) => setServiceId(e.target.value.replace(/[^\d]/g, ''))}
-          placeholder="เช่น 3"
-          className="w-full mt-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-mono"
-        />
-      </div>
+      <SickwServicePicker
+        value={selectedServices}
+        onChange={setSelectedServices}
+        defaultBundle={defaultBundle}
+        disabled={loading}
+      />
 
       <div className="flex gap-2">
         <button
           onClick={() => runCheck(false)}
           disabled={!canSubmit}
-          className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm shadow-sm active:scale-95 disabled:opacity-40 disabled:active:scale-100 flex justify-center items-center gap-2"
+          className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm shadow-sm active:scale-95 disabled:opacity-40 flex justify-center items-center gap-2"
         >
-          {loading ? <><Loader2 size={16} className="animate-spin" /> กำลังตรวจ...</> : <><Search size={16} /> ตรวจสอบ</>}
+          {loading
+            ? <><Loader2 size={16} className="animate-spin" /> กำลังตรวจ...</>
+            : <><Search size={16} /> {selectedServices.length > 1 ? `ตรวจครบชุด (${selectedServices.length})` : 'ตรวจสอบ'}</>}
         </button>
         {result && (
           <button
@@ -192,18 +240,23 @@ export function SickwDeviceCheck({ initialImei, initialSerial, defaultServiceId,
   );
 }
 
-function SickwResultPanel({ result, showAll, onToggleAll }: { result: SickwCheckResult; showAll: boolean; onToggleAll: () => void }) {
+function SickwResultPanel({ result, showAll, onToggleAll }: { result: UnifiedResult; showAll: boolean; onToggleAll: () => void }) {
   const p = result.parsed;
 
-  if (result.status !== 'success') {
+  if (result.status !== 'success' && !p.model && !p.fmiStatus && !p.iCloudStatus) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
         <div className="flex items-center gap-2">
           <AlertTriangle size={14} className="text-amber-600" />
-          <span className="text-xs font-bold text-amber-900">Sickw ตอบกลับว่า: {result.status}</span>
+          <span className="text-xs font-bold text-amber-900">Sickw: {result.status}</span>
         </div>
+        {result.errors && (
+          <ul className="text-[10px] text-amber-800 list-disc pl-4">
+            {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        )}
         {result.raw && (
-          <pre className="text-[10px] text-amber-800 bg-white/60 p-2 rounded font-mono whitespace-pre-wrap break-words">
+          <pre className="text-[10px] text-amber-800 bg-white/60 p-2 rounded font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
             {result.raw.slice(0, 500)}
           </pre>
         )}
@@ -218,7 +271,7 @@ function SickwResultPanel({ result, showAll, onToggleAll }: { result: SickwCheck
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center text-[10px] text-gray-500">
-        <span>ตรวจเมื่อ: {new Date(result.checkedAt).toLocaleString('th-TH')}</span>
+        <span>{result.serviceLabel} · {new Date(result.checkedAt).toLocaleString('th-TH')}</span>
         {result.cached && <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-bold uppercase">cached</span>}
       </div>
 
@@ -242,11 +295,18 @@ function SickwResultPanel({ result, showAll, onToggleAll }: { result: SickwCheck
         <InfoRow label="Serial" value={p.serial} mono />
       </div>
 
+      {result.errors && result.errors.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-800">
+          <p className="font-bold mb-1">บาง service ใน bundle ล้มเหลว:</p>
+          <ul className="list-disc pl-4">{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+        </div>
+      )}
+
       <button
         onClick={onToggleAll}
         className="w-full flex items-center justify-center gap-1 text-[11px] text-gray-500 py-1"
       >
-        {showAll ? <><ChevronUp size={12} /> ซ่อนข้อมูลดิบ</> : <><ChevronDown size={12} /> ดูข้อมูลดิบทั้งหมด ({Object.keys(result.fields).length})</>}
+        {showAll ? <><ChevronUp size={12} /> ซ่อน</> : <><ChevronDown size={12} /> ดูข้อมูลดิบ ({Object.keys(result.fields).length})</>}
       </button>
 
       {showAll && (
