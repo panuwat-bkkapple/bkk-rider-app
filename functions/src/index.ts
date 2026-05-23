@@ -106,6 +106,18 @@ async function sendToRider(
 // ============================================================
 // 1. New Job Assigned - notify rider when a job is assigned
 // ============================================================
+//
+// NAME COLLISION WARNING: keep this export name stable but be aware that the
+// bkk-system codebase MUST NOT export a function of the same name on the same
+// region. Firebase Cloud Functions are identified project-wide by
+// {region}/{name}; the codebase concept only groups deploys, it does NOT
+// namespace names. The two repos previously both exported `onJobStatusChanged`
+// here and admin auto-deploys silently overwrote this function with admin
+// code (and rider deploys flipped it back), producing the recurring "rider
+// stopped getting notifications after admin pushed" / "admin stopped getting
+// notifications after rider pushed" symptom. Admin side was renamed to
+// `onAdminJobStatusNotify` in bkk-system to break the loop — see
+// panuwat-bkkapple/bkk-system PR around 2026-05-23.
 export const onJobStatusChanged = onValueWritten(
   {
     ref: "jobs/{jobId}/status",
