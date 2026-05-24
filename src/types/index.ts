@@ -26,6 +26,7 @@ export interface Job {
   cust_phone?: string;
   customer_phone?: string;
   phone?: string;
+  cust_email?: string;
   cust_address?: string;
   address?: string;
   address_detail?: string;
