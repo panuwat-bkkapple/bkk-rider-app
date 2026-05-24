@@ -1,7 +1,7 @@
 // src/pages/JobDetailPage.tsx
 import { useState } from 'react';
 import {
-  ArrowLeft, MapPin, Navigation, Phone, User, Clock, Wallet as WalletIcon,
+  ArrowLeft, MapPin, Navigation, Phone, Mail, User, Clock, Wallet as WalletIcon,
   Bike, CheckCircle2, X, ShieldCheck, MessageSquare, Landmark, PackageOpen,
   AlertTriangle, Loader2, Camera, Tag, Hash, Undo2,
   Monitor, Smartphone, BatteryCharging, Globe, Info, ClipboardCheck,
@@ -117,6 +117,7 @@ export const JobDetailPage = ({
 
   const devices = getDevicesList(job);
   const phone = job.cust_phone || job.customer_phone || job.phone;
+  const email = job.cust_email;
   const photos: string[] = Array.isArray(job.photos) ? job.photos : [];
   const deductions: string[] = Array.isArray(job.deductions) ? job.deductions : [];
   const hasPendingDiscrepancy = job.has_pending_discrepancy && job.discrepancy_reports
@@ -180,6 +181,12 @@ export const JobDetailPage = ({
               </span>
               <span className="text-xs">แตะเพื่อโทร</span>
             </button>
+          )}
+          {email && (
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Mail size={16} className="text-blue-500 shrink-0" />
+              <span className="font-medium break-all">{email}</span>
+            </div>
           )}
           {getAppointmentDisplay(job) && (
             <div className="flex items-center gap-2 text-sm text-amber-600">
