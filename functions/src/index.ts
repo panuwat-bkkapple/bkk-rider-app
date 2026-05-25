@@ -153,6 +153,25 @@ export const onJobStatusChanged = onValueWritten(
     let title = "";
     let body = "";
 
+    // Reopen — admin pulled a soft-cancelled job back onto the same ticket with
+    // this rider still assigned (customer came back for the original revised
+    // offer). The status flips to "Rider En Route", which carries no rider
+    // notification on its own, so surface the turn-around explicitly. A short
+    // recency guard on reopened_at keeps this from firing on ordinary En Route
+    // transitions later in the job.
+    if (
+      job.reopened_at &&
+      Date.now() - job.reopened_at < 2 * 60 * 1000 &&
+      (after === "Rider En Route" || after === "Heading to Customer")
+    ) {
+      await sendToRider(riderId, tokens, "🔄 งานกลับมาแล้ว!", `${deviceName} - ลูกค้าขอขายใหม่ในราคาเดิม กรุณากลับไปรับเครื่อง`, {
+        type: "job_status",
+        jobId,
+        status: after,
+      });
+      return;
+    }
+
     // Tolerant matching: every case lists both the legacy DB string and
     // the canonical name from src/types/job-statuses.ts so the trigger
     // keeps firing while writers still emit legacy values (Phase 2D will
