@@ -139,6 +139,19 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const requiredCountForActive = activeDeviceIsNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
   const allRequiredSlotsFilled = filledSlotCount >= requiredCountForActive;
 
+  // Every condition group (สภาพตัวเครื่อง, แบตเตอรี่, ...) is a required
+  // question with one answer per group — the rider must pick the option
+  // that matches the device (including "สวยสมบูรณ์" / no-deduction). Letting
+  // them skip groups means admin/QC receives an incomplete assessment.
+  // Sealed brand-new devices have no checklist, and a model with no
+  // condition set (empty activeChecklist) has nothing to answer — both are
+  // exempt and `every` is vacuously true.
+  const isGroupAnswered = (group: ConditionGroup) =>
+    !!group.options?.some((opt) => checks.includes(opt.id));
+  const answeredGroupCount = activeDeviceIsNew ? 0 : activeChecklist.filter(isGroupAnswered).length;
+  const allChecksAnswered = activeDeviceIsNew || activeChecklist.every(isGroupAnswered);
+  const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered;
+
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
     const activeDevice = devicesList[activeDeviceIndex];
@@ -150,6 +163,12 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
           ? 'กรุณาถ่ายภาพกล่อง ซีล และ IMEI ครบทั้ง 4 รูปก่อนบันทึก'
           : 'กรุณาถ่ายรูปครบทั้ง 6 ด้านก่อนบันทึก'
       );
+      return;
+    }
+    // Used devices must have every condition group answered so admin/QC
+    // gets a complete assessment — no skipped questions.
+    if (!activeDevice.isNewDevice && !allChecksAnswered) {
+      toast.error('กรุณาเลือกสภาพเครื่องให้ครบทุกหัวข้อก่อนบันทึก');
       return;
     }
     const deductionLabels: string[] = [];
@@ -439,6 +458,11 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
               <div>
                 <label className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <ListChecks size={16} className="text-purple-500" /> เช็คลิสต์สภาพเครื่อง
+                  {!devicesList[activeDeviceIndex]?.isNewDevice && activeChecklist.length > 0 && (
+                    <span className={`text-[11px] font-normal ml-auto ${allChecksAnswered ? 'text-emerald-600' : 'text-gray-500'}`}>
+                      {answeredGroupCount} / {activeChecklist.length}
+                    </span>
+                  )}
                 </label>
                 {devicesList[activeDeviceIndex]?.isNewDevice ? (
                   <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl text-center shadow-sm">
@@ -452,7 +476,14 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 ) : activeChecklist.length > 0 ? (
                   activeChecklist.map((group: any) => (
                     <div key={group.id} className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-600 mb-2 pl-1">{group.title}</h4>
+                      <h4 className="text-sm font-medium text-gray-600 mb-2 pl-1 flex items-center gap-2">
+                        {group.title}
+                        {!isGroupAnswered(group) && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                            ต้องเลือก
+                          </span>
+                        )}
+                      </h4>
                       <div className="space-y-2">
                         {group.options?.map((opt: any) => {
                           const isChecked = checks.includes(opt.id);
@@ -505,9 +536,14 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     เหลืออีก {requiredCountForActive - filledSlotCount} {activeDeviceIsNew ? 'รูปกล่อง' : 'ด้าน'} — บันทึกไม่ได้จนกว่าจะครบ
                   </p>
                 )}
+                {allRequiredSlotsFilled && !allChecksAnswered && (
+                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                    เลือกสภาพเครื่องอีก {activeChecklist.length - answeredGroupCount} หัวข้อ — บันทึกไม่ได้จนกว่าจะครบ
+                  </p>
+                )}
                 <button
                   onClick={saveDeviceInspection}
-                  disabled={!allRequiredSlotsFilled}
+                  disabled={!canSaveDevice}
                   className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                 >
                   บันทึกเครื่องนี้
