@@ -9,7 +9,7 @@
 // previous v1 listed /manifest-icon-192.maskable.png which never existed in
 // public/, so cache.addAll() rejected (atomic) and the install event failed,
 // leaving no active SW to receive background push.
-const CACHE_NAME = 'bkk-rider-v2';
+const CACHE_NAME = 'bkk-rider-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -17,8 +17,21 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  // cache.addAll is atomic — a single 404 rejects the whole promise, the
+  // install event fails, and no SW activates to receive background push
+  // (the v1 regression above). Add each asset individually with .catch so a
+  // missing file only loses its own caching, not the entire install. Mirrors
+  // the hardening already applied to the bkk-system admin SW.
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        STATIC_ASSETS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn(`[SW] Failed to cache ${url}, continuing:`, err?.message || err);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
