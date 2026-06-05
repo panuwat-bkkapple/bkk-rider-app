@@ -9,8 +9,10 @@ import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { getDevicesList } from '../../utils/jobHelpers';
 import { toast } from '../common/Toast';
 import { SickwDeviceCheck } from './SickwDeviceCheck';
+import { DeviceVerifySection } from './DeviceVerifySection';
 import { getSickwReasons } from '../../utils/sickwApi';
-import type { InspectedDeviceData, ConditionGroup } from '../../types';
+import { emptyDeviceVerification } from '../../types';
+import type { InspectedDeviceData, ConditionGroup, DeviceVerification } from '../../types';
 
 // Required photo slots — rider must take one per angle so admin / Internal QC
 // can verify the device condition without ambiguity. Order matters: photos
@@ -54,6 +56,10 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const [activeDeviceIndex, setActiveDeviceIndex] = useState<number | null>(null);
   const [inspectedDevicesData, setInspectedDevicesData] = useState<Record<number, InspectedDeviceData>>({});
   const [checks, setChecks] = useState<string[]>([]);
+  // Per-device verification (battery / Find My / IMEI / warranty) — merged
+  // in from the old DeviceVerificationModal so the rider does everything in
+  // one flow. Reset/restored alongside checks + photos when switching device.
+  const [verify, setVerify] = useState<DeviceVerification>(emptyDeviceVerification());
   // Slot-based photos: 6 named angles + optional damage close-ups.
   const [slotPhotos, setSlotPhotos] = useState<Record<SlotKey, SlotPhoto | null>>({
     front: null, back: null, top: null, bottom: null, left: null, right: null,
@@ -150,7 +156,12 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     !!group.options?.some((opt) => checks.includes(opt.id));
   const answeredGroupCount = activeDeviceIsNew ? 0 : activeChecklist.filter(isGroupAnswered).length;
   const allChecksAnswered = activeDeviceIsNew || activeChecklist.every(isGroupAnswered);
-  const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered;
+  // Battery is required: either a Maximum Capacity % was entered, or the
+  // rider flagged the device un-powerable. Find My ON is a hard gate — a
+  // locked device is unsellable, so the rider can't save until it's off.
+  const batteryDone = verify.battery_unavailable || verify.battery_health_pct != null;
+  const findMyOn = verify.find_my_status === 'on';
+  const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered && batteryDone && !findMyOn;
 
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
@@ -169,6 +180,16 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     // gets a complete assessment — no skipped questions.
     if (!activeDevice.isNewDevice && !allChecksAnswered) {
       toast.error('กรุณาเลือกสภาพเครื่องให้ครบทุกหัวข้อก่อนบันทึก');
+      return;
+    }
+    // Find My ON = locked device, can't accept. Battery is required for
+    // every device (used or new) — read a % or flag it un-powerable.
+    if (findMyOn) {
+      toast.error('Find My ยังเปิดอยู่ — ขอให้ลูกค้า sign out ก่อนรับเครื่อง');
+      return;
+    }
+    if (!batteryDone) {
+      toast.error('กรุณากรอก % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนบันทึก');
       return;
     }
     const deductionLabels: string[] = [];
@@ -212,7 +233,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
         checks: activeDevice.isNewDevice ? [] : [...checks],
         photos: orderedPhotos.map((p) => p.url),
         photoFiles: orderedPhotos.map((p) => p.file),
-        deductions: deductionLabels, final_price: finalPrice
+        deductions: deductionLabels, final_price: finalPrice,
+        verification: verify,
       }
     }));
     setActiveDeviceIndex(null);
@@ -263,6 +285,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     <button
                       onClick={() => {
                         setChecks(inspectedDevicesData[index]?.checks || []);
+                        setVerify(inspectedDevicesData[index]?.verification || emptyDeviceVerification());
                         // Reload slot photos from saved arrays — the first
                         // PHOTO_SLOTS.length entries map back to slots in
                         // order, the rest are damage close-ups.
@@ -351,6 +374,19 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                   </div>
                 );
               })()}
+
+              {/* Device verification — battery (required) / Find My (gate) /
+                  IMEI / warranty. Folded in from the old standalone modal so
+                  the rider captures everything in one pass. */}
+              <div>
+                <label className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-emerald-500" /> ตรวจสอบเครื่อง (แบต / Find My)
+                </label>
+                <p className="text-[11px] text-gray-500 mb-3">
+                  ถ่ายหน้าจอ Settings — ระบบอ่านอัตโนมัติ. แบตเตอรี่จำเป็นต้องระบุทุกเครื่อง
+                </p>
+                <DeviceVerifySection jobId={job.id} value={verify} onChange={setVerify} />
+              </div>
 
               {/* Photos — named slots so admin/QC can match angles */}
               {(() => {
@@ -539,6 +575,16 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 {allRequiredSlotsFilled && !allChecksAnswered && (
                   <p className="text-center text-xs text-amber-600 font-medium mb-2">
                     เลือกสภาพเครื่องอีก {activeChecklist.length - answeredGroupCount} หัวข้อ — บันทึกไม่ได้จนกว่าจะครบ
+                  </p>
+                )}
+                {allRequiredSlotsFilled && allChecksAnswered && findMyOn && (
+                  <p className="text-center text-xs text-red-600 font-medium mb-2">
+                    Find My ยังเปิดอยู่ — ปิดก่อนจึงจะบันทึกได้
+                  </p>
+                )}
+                {allRequiredSlotsFilled && allChecksAnswered && !findMyOn && !batteryDone && (
+                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                    ระบุ % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนจึงจะบันทึกได้
                   </p>
                 )}
                 <button

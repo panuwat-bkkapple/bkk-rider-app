@@ -23,7 +23,6 @@ import { BankModal } from '../components/profile/BankModal';
 import { DocumentModal } from '../components/profile/DocumentModal';
 import { ChatModal } from '../components/chat/ChatModal';
 import { InspectionModal } from '../components/inspection/InspectionModal';
-import { DeviceVerificationModal } from '../components/inspection/DeviceVerificationModal';
 import { KYCModal } from '../components/kyc/KYCModal';
 import { ReportDiscrepancyModal } from '../components/common/ReportDiscrepancyModal';
 import { ModalErrorBoundary } from '../components/common/ModalErrorBoundary';
@@ -60,7 +59,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
 
   // Modal state
   const [inspectingJob, setInspectingJob] = useState<any>(null);
-  const [verifyingJob, setVerifyingJob] = useState<any>(null);
   const [kycJob, setKycJob] = useState<any>(null);
   const [chatJobId, setChatJobId] = useState<string | null>(null);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
@@ -136,6 +134,9 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const handleInspectionSubmit = async (job: any, inspectedData: Record<number, InspectedDeviceData>) => {
     const updatedDevices = [...getDevicesList(job)];
     let jobTotalDevicePrice = 0;
+    // First inspected device's verification feeds the job-level mirror below
+    // (admin QCStation / Inventory read job-level battery, not per-device).
+    let primaryVerification: InspectedDeviceData['verification'] | null = null;
 
     for (let i = 0; i < updatedDevices.length; i++) {
       const data = inspectedData[i];
@@ -143,9 +144,22 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         const uploadedUrls = await Promise.all(
           data.photoFiles.map((file: File) => uploadImageToFirebase(file, `jobs/${job.id}/inspection/device_${i}`))
         );
+        const v = data.verification;
+        if (!primaryVerification) primaryVerification = v;
         updatedDevices[i] = {
           ...updatedDevices[i], photos: uploadedUrls, deductions: data.deductions,
-          estimated_price: data.final_price, price: data.final_price, inspection_status: 'Inspected'
+          estimated_price: data.final_price, price: data.final_price, inspection_status: 'Inspected',
+          // Per-device verification — B2B jobs keep each device's own battery
+          // / IMEI / Find My instead of collapsing to a single job-level value.
+          battery_health_pct: v.battery_health_pct,
+          battery_cycle_count: v.battery_cycle_count,
+          battery_unavailable: v.battery_unavailable,
+          battery_photo: v.battery_photo,
+          device_imei: v.device_imei || updatedDevices[i].device_imei || '',
+          device_serial: v.device_serial,
+          find_my_status: v.find_my_status,
+          warranty_status: v.warranty_status,
+          warranty_expires_at: v.warranty_expires_at,
         };
         jobTotalDevicePrice += data.final_price;
       } else {
@@ -160,13 +174,43 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     // original_price is the customer's quote total at order creation —
     // never overwrite it from QC, otherwise we lose the audit trail
     // that lets admin/finance compare quote vs final.
-    await actions.updateStatus(job.id, 'QC Review', `ไรเดอร์ส่งผลตรวจสภาพ ${updatedDevices.length} เครื่อง`, {
+    const jobUpdates: Record<string, any> = {
       devices: updatedDevices,
       final_price: jobTotalDevicePrice,
       price: jobTotalDevicePrice,
       net_payout: newNetPayout,
-      inspected_at: Date.now()
-    }, { activeList: jobData.activeList, incomingList: jobData.incomingList });
+      inspected_at: Date.now(),
+    };
+
+    // Mirror the primary device's verification onto the job root so existing
+    // readers keep working: admin QCStation/Inventory read `battery_health`,
+    // JobDetailPage reads `battery_health_pct` / `find_my_status` /
+    // `device_imei`. Only write keys we actually have — RTDB rejects
+    // `undefined`. Skip battery when un-powerable so we never report a fake %.
+    if (primaryVerification) {
+      const v = primaryVerification;
+      jobUpdates.verification_completed_at = Date.now();
+      if (v.find_my_status) jobUpdates.find_my_status = v.find_my_status;
+      if (v.device_imei) jobUpdates.device_imei = v.device_imei;
+      if (v.device_serial) jobUpdates.device_serial = v.device_serial;
+      if (v.device_model_number) jobUpdates.device_model_number = v.device_model_number;
+      if (v.battery_health_pct != null) {
+        jobUpdates.battery_health_pct = v.battery_health_pct;
+        jobUpdates.battery_health = v.battery_health_pct; // compat: admin reads battery_health
+      }
+      if (v.battery_cycle_count != null) jobUpdates.battery_cycle_count = v.battery_cycle_count;
+      if (v.battery_unavailable) jobUpdates.battery_unavailable = true;
+      if (v.battery_photo) jobUpdates.verification_battery_photo = v.battery_photo;
+      if (v.verification_imei_photo) jobUpdates.verification_imei_photo = v.verification_imei_photo;
+      if (v.verification_findmy_photo) jobUpdates.verification_findmy_photo = v.verification_findmy_photo;
+      if (v.warranty_status) jobUpdates.warranty_status = v.warranty_status;
+      if (v.warranty_expires_at) jobUpdates.warranty_expires_at = v.warranty_expires_at;
+      if (v.warranty_coverage_type) jobUpdates.warranty_coverage_type = v.warranty_coverage_type;
+      if (v.verification_warranty_photo) jobUpdates.verification_warranty_photo = v.verification_warranty_photo;
+    }
+
+    await actions.updateStatus(job.id, 'QC Review', `ไรเดอร์ส่งผลตรวจสภาพ ${updatedDevices.length} เครื่อง`,
+      jobUpdates, { activeList: jobData.activeList, incomingList: jobData.incomingList });
 
     setInspectingJob(null);
   };
@@ -210,7 +254,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
-          onStartVerification={(job) => setVerifyingJob(job)}
           onStartKYC={(job) => setKycJob(job)}
           onInspectJob={(job) => { setInspectingJob(job); }}
           onCompleteJob={(job) => setCompletingJob(job)}
@@ -236,7 +279,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
-          onStartVerification={(job) => setVerifyingJob(job)}
           onStartKYC={(job) => setKycJob(job)}
           onInspect={(job) => setInspectingJob(job)}
           onCompleteJob={(job) => setCompletingJob(job)}
@@ -334,16 +376,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
               await actions.reportDiscrepancy(jobId, category, detail, imageFile);
               setDiscrepancyJob(null);
             }}
-          />
-        </ModalErrorBoundary>
-      )}
-
-      {verifyingJob && (
-        <ModalErrorBoundary onClose={() => setVerifyingJob(null)}>
-          <DeviceVerificationModal
-            job={verifyingJob}
-            onClose={() => setVerifyingJob(null)}
-            onComplete={() => setVerifyingJob(null)}
           />
         </ModalErrorBoundary>
       )}
