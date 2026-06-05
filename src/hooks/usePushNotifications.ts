@@ -83,9 +83,18 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
 
     const setupPush = async () => {
       try {
-        const permission = await Notification.requestPermission();
+        // Only prompt when the user hasn't decided yet. Calling
+        // requestPermission() unconditionally on every mount is what made the
+        // rider PWA re-ask "Allow Notifications" almost every launch on iOS —
+        // once granted we must NEVER call it again, just re-use the grant and
+        // refresh the token. (iOS also wants the prompt tied to a user gesture;
+        // re-asking on load is both annoying and fragile.)
+        let permission = Notification.permission;
+        if (permission === 'default') {
+          permission = await Notification.requestPermission();
+        }
         if (permission !== 'granted') {
-          console.warn('Notification permission denied');
+          console.warn('Notification permission not granted:', permission);
           return;
         }
 
