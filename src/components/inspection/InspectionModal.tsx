@@ -182,6 +182,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       // Unknown leaves it null so step 2 asks for a screenshot fallback.
       find_my_status: s.fmi === 'clean' ? 'off' : s.fmi === 'flagged' ? 'on' : v.find_my_status,
       warranty_status: mapWarranty(s.parsed.warrantyStatus, v.warranty_status),
+      // Real coverage end date from the GSX lookup (we already pay for it).
+      warranty_expires_at: s.parsed.warrantyExpiry ?? v.warranty_expires_at,
     }));
   };
 
@@ -545,7 +547,10 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     <InfoRow label="ประเทศ" value={sickw?.parsed.country} />
                     <InfoRow label="Carrier" value={sickw?.parsed.carrier} />
                     <InfoRow label="Activation" value={sickw?.parsed.activationStatus} />
+                    <InfoRow label="วันที่ซื้อ/activate" value={sickw?.parsed.estimatedPurchaseDate} />
                     <InfoRow label="ประกัน" value={sickw?.parsed.warrantyStatus} bold />
+                    <InfoRow label="ประกันถึง" value={sickw?.parsed.warrantyExpiry} bold />
+                    <InfoRow label="AppleCare" value={sickw?.parsed.appleCareDescription} />
                   </div>
                 </div>
 

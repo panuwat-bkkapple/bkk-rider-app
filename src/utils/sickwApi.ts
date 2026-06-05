@@ -30,6 +30,8 @@ export interface SickwParsedFields {
   carrier?: string;
   simLock?: string;
   warrantyStatus?: string;
+  warrantyExpiry?: string;        // service 72 GSX "Coverage Duration: Ends on ..."
+  appleCareDescription?: string;  // service 72 GSX coverage type
   estimatedPurchaseDate?: string;
 }
 
