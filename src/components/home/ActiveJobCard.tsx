@@ -17,7 +17,6 @@ interface ActiveJobCardProps {
   onCallCustomer: (job: any) => void;
   onOpenNavigation: (job: any) => void;
   onReject: (job: any) => void;
-  onStartVerification: (job: any) => void;
   onStartKYC: (job: any) => void;
   onInspect: (job: any) => void;
   onCompleteJob: (job: any) => void;
@@ -29,7 +28,7 @@ interface ActiveJobCardProps {
 export const ActiveJobCard = ({
   job, index, totalJobs,
   onUpdateStatus, onOpenChat, onCallCustomer, onOpenNavigation,
-  onReject, onStartVerification, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy, onOpenDetail
+  onReject, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy, onOpenDetail
 }: ActiveJobCardProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
 

@@ -363,12 +363,56 @@ export interface ModelVariant {
   usedPrice?: number;
 }
 
+// Per-device verification captured inside the unified intake flow
+// (merged from the old DeviceVerificationModal). Battery is REQUIRED —
+// the rider must either read a Maximum Capacity % or explicitly flag the
+// device as un-powerable via `battery_unavailable`. All photo fields hold
+// already-uploaded Storage URLs (verification shots upload immediately so
+// OCR can read them), unlike the 6-angle inspection photos which upload at
+// submit time.
+export interface DeviceVerification {
+  battery_health_pct: number | null;
+  battery_cycle_count: number | null;
+  battery_unavailable: boolean;        // true = "เครื่องเปิดไม่ได้/จอเสีย" escape
+  battery_photo: string | null;
+  device_imei: string;
+  device_serial: string | null;
+  device_model_number: string | null;
+  find_my_status: 'on' | 'off' | 'unknown' | null;
+  verification_imei_photo: string | null;
+  verification_findmy_photo: string | null;
+  warranty_status: 'active' | 'expired' | 'unknown' | null;
+  warranty_expires_at: string | null;
+  warranty_coverage_type: string | null;
+  verification_warranty_photo: string | null;
+}
+
+export function emptyDeviceVerification(): DeviceVerification {
+  return {
+    battery_health_pct: null,
+    battery_cycle_count: null,
+    battery_unavailable: false,
+    battery_photo: null,
+    device_imei: '',
+    device_serial: null,
+    device_model_number: null,
+    find_my_status: null,
+    verification_imei_photo: null,
+    verification_findmy_photo: null,
+    warranty_status: null,
+    warranty_expires_at: null,
+    warranty_coverage_type: null,
+    verification_warranty_photo: null,
+  };
+}
+
 export interface InspectedDeviceData {
   checks: string[];
   photos: string[];
   photoFiles: File[];
   deductions: string[];
   final_price: number;
+  verification: DeviceVerification;
 }
 
 export interface DiscrepancyReport {
