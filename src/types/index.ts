@@ -307,6 +307,16 @@ export interface Device {
   photos?: string[];
   deductions?: string[];
   inspection_status?: string;
+  // Per-device verification captured during inspection (see DeviceVerification)
+  battery_health_pct?: number | null;
+  battery_cycle_count?: number | null;
+  battery_unavailable?: boolean;
+  battery_photo?: string | null;
+  device_imei?: string;
+  device_serial?: string | null;
+  find_my_status?: 'on' | 'off' | 'unknown' | null;
+  warranty_status?: 'active' | 'expired' | 'unknown' | null;
+  warranty_expires_at?: string | null;
 }
 
 export interface ChatMessage {
