@@ -495,6 +495,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 <SickwDeviceCheck
                   jobId={job.id}
                   hideResultPanel
+                  hideServices
                   onResult={onSickwResult}
                   initialImei={(activeDevice as any)?.imei || job.device_imei || job.imei || ''}
                   initialSerial={(activeDevice as any)?.serial || job.device_serial || job.serial || ''}
@@ -504,7 +505,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     onClick={() => { setSickwSkipped(true); setStep(2); }}
                     className="w-full text-[11px] font-bold text-gray-400 hover:text-gray-600 underline py-1"
                   >
-                    ตรวจ SickW ไม่ได้ — ข้ามไปกรอก/ยืนยันเอง
+                    ตรวจสอบไม่ได้ — ข้ามไปกรอก/ยืนยันเอง
                   </button>
                 )}
               </div>
