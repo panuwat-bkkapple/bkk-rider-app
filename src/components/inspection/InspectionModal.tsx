@@ -74,6 +74,29 @@ function mapWarranty(raw?: string, fallback: DeviceVerification['warranty_status
   return fallback;
 }
 
+// Order-match: compare the scanned device against what the customer ordered.
+// Formats differ between the order record and SickW, so normalise to model
+// tokens + capacity and treat it as a prominent WARNING (not a hard gate —
+// fuzzy matching can false-positive on string-format differences; admin QC
+// is the backstop).
+function normModel(s?: string): string {
+  return (s || '').toLowerCase()
+    .replace(/\d+\s?(gb|tb)/g, '')   // strip capacity
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+function capacityOf(s?: string): string {
+  const m = (s || '').match(/(\d+)\s?(gb|tb)/i);
+  return m ? `${m[1]}${m[2].toUpperCase()}` : '';
+}
+function simLockState(s?: string): 'clean' | 'flagged' | 'unknown' {
+  if (!s) return 'unknown';
+  const v = s.toLowerCase();
+  if (v.includes('unlock')) return 'clean';
+  if (v.includes('lock')) return 'flagged';
+  return 'unknown';
+}
+
 interface InspectionModalProps {
   job: any;
   modelsData: any;
@@ -342,6 +365,25 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
   const activeDevice = activeDeviceIndex !== null ? devicesList[activeDeviceIndex] : null;
 
+  // Compare scanned (SickW) vs ordered device — only when we have a SickW model.
+  const orderMatch = (() => {
+    if (!sickw?.parsed.model || !activeDevice) return null;
+    const o = normModel(activeDevice.model);
+    const s = normModel(sickw.parsed.model);
+    let modelOk: boolean | null = null;
+    if (o && s) {
+      const ot = o.split(' ').filter(Boolean);
+      const st = s.split(' ').filter(Boolean);
+      modelOk = ot.every((t) => st.includes(t)) || st.every((t) => ot.includes(t));
+    }
+    const oc = capacityOf(`${activeDevice.model || ''} ${(activeDevice as any).variant || ''}`);
+    const sc = capacityOf(sickw.parsed.capacity || sickw.parsed.model);
+    const capOk: boolean | null = (!oc || !sc) ? null : oc === sc;
+    const state: 'ok' | 'mismatch' | 'unknown' =
+      (modelOk === false || capOk === false) ? 'mismatch' : modelOk === true ? 'ok' : 'unknown';
+    return { state, scannedLabel: [sickw.parsed.model, sc].filter(Boolean).join(' ') };
+  })();
+
   return (
     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-end animate-in fade-in duration-300">
       <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 animate-in slide-in-from-bottom duration-500 max-h-[90vh] overflow-y-auto flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
@@ -469,34 +511,52 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
             {/* ── STEP 2: ยืนยันเครื่อง ── */}
             {step === 2 && (
               <div className="space-y-4">
+                {/* Order match — does the scanned device match what was ordered? */}
+                {orderMatch && orderMatch.state !== 'unknown' && (
+                  orderMatch.state === 'ok' ? (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs font-bold text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 size={15} /> ตรงกับออเดอร์
+                    </div>
+                  ) : (
+                    <div className="bg-red-50 border border-red-300 rounded-xl px-3 py-2.5 text-xs text-red-800 flex items-start gap-2">
+                      <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-black">อาจไม่ตรงกับออเดอร์ — ตรวจสอบก่อนรับ</p>
+                        <p className="mt-0.5">ออเดอร์: <span className="font-bold">{activeDevice?.model}</span></p>
+                        <p>สแกนได้: <span className="font-bold">{orderMatch.scannedLabel}</span></p>
+                      </div>
+                    </div>
+                  )
+                )}
+
                 {/* Identity card */}
                 <div className="rounded-2xl border border-gray-200 p-4">
                   <p className="text-lg font-black text-gray-900 leading-tight">
                     {sickw?.parsed.model || activeDevice?.model || 'ไม่ทราบรุ่น'}
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {[sickw?.parsed.capacity, sickw?.parsed.color, sickw?.parsed.country].filter(Boolean).join(' · ') || '—'}
+                    {[sickw?.parsed.capacity, sickw?.parsed.color].filter(Boolean).join(' · ') || '—'}
                   </p>
-                  <div className="mt-2 space-y-1">
-                    {(verify.device_imei || sickw?.imei) && (
-                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">IMEI</span><span className="font-mono text-gray-700">{verify.device_imei || sickw?.imei}</span></div>
-                    )}
-                    {verify.device_serial && (
-                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">Serial</span><span className="font-mono text-gray-700">{verify.device_serial}</span></div>
-                    )}
-                    {sickw?.parsed.warrantyStatus && (
-                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">ประกัน</span><span className="font-bold text-gray-700">{sickw.parsed.warrantyStatus}</span></div>
-                    )}
+                  <div className="mt-3 space-y-1.5">
+                    <InfoRow label="IMEI" value={verify.device_imei || sickw?.imei} mono />
+                    <InfoRow label="IMEI 2" value={sickw?.parsed.imei2} mono />
+                    <InfoRow label="Serial" value={verify.device_serial || undefined} mono />
+                    <InfoRow label="Model No." value={verify.device_model_number || sickw?.parsed.modelNumber} mono />
+                    <InfoRow label="ประเทศ" value={sickw?.parsed.country} />
+                    <InfoRow label="Carrier" value={sickw?.parsed.carrier} />
+                    <InfoRow label="Activation" value={sickw?.parsed.activationStatus} />
+                    <InfoRow label="ประกัน" value={sickw?.parsed.warrantyStatus} bold />
                   </div>
                 </div>
 
-                {/* Status semaphore */}
-                <div className="grid grid-cols-3 gap-2">
+                {/* Status semaphore — Find My (gate) + SIM Lock + Blacklist + MDM */}
+                <div className="grid grid-cols-2 gap-2">
                   <StatusChip
                     label="Find My"
                     state={verify.find_my_status === 'off' ? 'clean' : verify.find_my_status === 'on' ? 'flagged' : 'unknown'}
                     value={verify.find_my_status === 'off' ? 'ปิด' : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
                   />
+                  <StatusChip label="SIM Lock" state={simLockState(sickw?.parsed.simLock)} value={sickw?.parsed.simLock || '-'} />
                   <StatusChip label="Blacklist" state={sickw?.blacklist || 'unknown'} value={sickw?.parsed.blacklistStatus || sickw?.parsed.iCloudStatus || '-'} />
                   <StatusChip label="MDM" state={sickw?.mdm || 'unknown'} value={sickw?.parsed.mdmStatus || '-'} />
                 </div>
@@ -766,6 +826,17 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     </div>
   );
 };
+
+// ── Identity row (step 2) — renders nothing when the value is absent ──────
+function InfoRow({ label, value, mono, bold }: { label: string; value?: string; mono?: boolean; bold?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex justify-between items-baseline gap-3 text-[11px]">
+      <span className="text-gray-400 shrink-0">{label}</span>
+      <span className={`text-right text-gray-700 ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : 'font-medium'}`}>{value}</span>
+    </div>
+  );
+}
 
 // ── Status semaphore chip (step 2) ───────────────────────────────────────
 function StatusChip({ label, state, value }: { label: string; state: 'clean' | 'flagged' | 'unknown'; value: string }) {
