@@ -423,6 +423,9 @@ export interface InspectedDeviceData {
   deductions: string[];
   final_price: number;
   verification: DeviceVerification;
+  // SickW identity/status summary captured in step 1 (typed loosely to avoid
+  // a circular import with the component that owns the shape).
+  sickw?: any | null;
 }
 
 export interface DiscrepancyReport {
