@@ -1,16 +1,29 @@
 // src/components/inspection/InspectionModal.tsx
+//
+// Unified rider intake — a 3-step stepper per device:
+//   1) ระบุเครื่อง   : scan/enter IMEI → SickW returns identity + status
+//   2) ยืนยันเครื่อง  : confirm card (Find My / Blacklist / MDM / warranty),
+//                       auto-filled from SickW; Find My is the go/no-go gate.
+//                       Only asks for a Find My screenshot when SickW can't
+//                       read it (fallback).
+//   3) ตรวจสภาพ      : battery (the one value SickW can't read — required),
+//                       6-angle photos + condition checklist → price.
+//
+// SickW already provides IMEI/serial/Find My/warranty, so we DON'T make the
+// rider re-photograph those — they flow straight into the verification record.
 import { useState, useRef, useMemo } from 'react';
 import {
-  X, ChevronLeft, CheckCircle2, Camera, Upload,
-  Smartphone, ShieldCheck, PackageOpen, ListChecks
+  X, ChevronLeft, ChevronRight, CheckCircle2, Camera, Upload,
+  Smartphone, ShieldCheck, PackageOpen, ListChecks, AlertTriangle,
+  HelpCircle, Loader2, Search,
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { getDevicesList } from '../../utils/jobHelpers';
+import { ocrFindMy } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
-import { SickwDeviceCheck } from './SickwDeviceCheck';
-import { DeviceVerifySection } from './DeviceVerifySection';
-import { getSickwReasons } from '../../utils/sickwApi';
+import { SickwDeviceCheck, type SickwResultSummary } from './SickwDeviceCheck';
+import { BatteryCheck } from './BatteryCheck';
 import { emptyDeviceVerification } from '../../types';
 import type { InspectedDeviceData, ConditionGroup, DeviceVerification } from '../../types';
 
@@ -42,7 +55,24 @@ const SLOT_KEYS: SlotKey[] = PHOTO_SLOTS.map((s) => s.key);
 const REQUIRED_SLOTS = PHOTO_SLOTS.length;
 const NEW_DEVICE_REQUIRED_SLOTS = NEW_DEVICE_PHOTO_SLOTS.length;
 
+const STEPS = [
+  { n: 1 as const, label: 'ระบุเครื่อง' },
+  { n: 2 as const, label: 'ยืนยัน' },
+  { n: 3 as const, label: 'ตรวจสภาพ' },
+];
+type Step = 1 | 2 | 3;
+
 interface SlotPhoto { url: string; file: File }
+
+// Best-effort map SickW's free-text warranty string → our enum (informational
+// only; the rider doesn't act on it).
+function mapWarranty(raw?: string, fallback: DeviceVerification['warranty_status'] = null): DeviceVerification['warranty_status'] {
+  if (!raw) return fallback;
+  const s = raw.toLowerCase();
+  if (s.includes('active') || s.includes('valid') || s.includes('in warranty') || s.includes('applecare')) return 'active';
+  if (s.includes('expire') || s.includes('out of') || s.includes('no coverage')) return 'expired';
+  return fallback;
+}
 
 interface InspectionModalProps {
   job: any;
@@ -55,11 +85,14 @@ interface InspectionModalProps {
 export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSubmit }: InspectionModalProps) => {
   const [activeDeviceIndex, setActiveDeviceIndex] = useState<number | null>(null);
   const [inspectedDevicesData, setInspectedDevicesData] = useState<Record<number, InspectedDeviceData>>({});
+  const [step, setStep] = useState<Step>(1);
   const [checks, setChecks] = useState<string[]>([]);
-  // Per-device verification (battery / Find My / IMEI / warranty) — merged
-  // in from the old DeviceVerificationModal so the rider does everything in
-  // one flow. Reset/restored alongside checks + photos when switching device.
+  // Per-device verification (battery + Find My + identity from SickW).
   const [verify, setVerify] = useState<DeviceVerification>(emptyDeviceVerification());
+  // SickW identity/status summary from step 1 (drives the step 2 confirm card).
+  const [sickw, setSickw] = useState<SickwResultSummary | null>(null);
+  const [sickwSkipped, setSickwSkipped] = useState(false);
+  const [fmUploading, setFmUploading] = useState(false);
   // Slot-based photos: 6 named angles + optional damage close-ups.
   const [slotPhotos, setSlotPhotos] = useState<Record<SlotKey, SlotPhoto | null>>({
     front: null, back: null, top: null, bottom: null, left: null, right: null,
@@ -68,6 +101,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const [isUploading, setIsUploading] = useState(false);
   const slotInputRef = useRef<HTMLInputElement>(null);
   const damageInputRef = useRef<HTMLInputElement>(null);
+  const fmInputRef = useRef<HTMLInputElement>(null);
   const [activeSlot, setActiveSlot] = useState<SlotKey | null>(null);
 
   const devicesList = getDevicesList(job);
@@ -112,6 +146,42 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     return Number(device?.estimated_price || 0);
   };
 
+  // ── SickW result → auto-fill identity/status (step 1) ──────────────────
+  const onSickwResult = (s: SickwResultSummary) => {
+    setSickw(s);
+    setSickwSkipped(false);
+    setVerify((v) => ({
+      ...v,
+      device_imei: s.imei || v.device_imei,
+      device_serial: s.parsed.serial ?? v.device_serial,
+      device_model_number: s.parsed.modelNumber ?? v.device_model_number,
+      // SickW FMI is authoritative when known: clean→off, flagged→on.
+      // Unknown leaves it null so step 2 asks for a screenshot fallback.
+      find_my_status: s.fmi === 'clean' ? 'off' : s.fmi === 'flagged' ? 'on' : v.find_my_status,
+      warranty_status: mapWarranty(s.parsed.warrantyStatus, v.warranty_status),
+    }));
+  };
+
+  // ── Find My screenshot fallback (step 2, only when SickW can't read it) ─
+  const handleFindMyShot = async (file?: File) => {
+    if (!file) return;
+    setFmUploading(true);
+    try {
+      const url = await uploadImageToFirebase(file, `jobs/${job.id}/verification`, { opaqueFilename: true });
+      try {
+        const r = await ocrFindMy(url);
+        setVerify((v) => ({ ...v, verification_findmy_photo: url, find_my_status: r.fields?.findMyStatus ?? 'unknown' }));
+      } catch {
+        setVerify((v) => ({ ...v, verification_findmy_photo: url }));
+        toast.info('อ่าน Find My อัตโนมัติไม่ได้ — ยืนยันด้วยตาเปล่า');
+      }
+    } catch (e: any) {
+      toast.error('อัปโหลดไม่สำเร็จ: ' + (e?.message || e));
+    } finally {
+      setFmUploading(false);
+    }
+  };
+
   const handleSlotCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // reset so re-selecting same file fires onChange
@@ -145,29 +215,27 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const requiredCountForActive = activeDeviceIsNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
   const allRequiredSlotsFilled = filledSlotCount >= requiredCountForActive;
 
-  // Every condition group (สภาพตัวเครื่อง, แบตเตอรี่, ...) is a required
-  // question with one answer per group — the rider must pick the option
-  // that matches the device (including "สวยสมบูรณ์" / no-deduction). Letting
-  // them skip groups means admin/QC receives an incomplete assessment.
-  // Sealed brand-new devices have no checklist, and a model with no
-  // condition set (empty activeChecklist) has nothing to answer — both are
-  // exempt and `every` is vacuously true.
+  // Every condition group is a required question with one answer per group.
+  // Sealed brand-new devices have no checklist; a model with no condition set
+  // has nothing to answer — both are exempt and `every` is vacuously true.
   const isGroupAnswered = (group: ConditionGroup) =>
     !!group.options?.some((opt) => checks.includes(opt.id));
   const answeredGroupCount = activeDeviceIsNew ? 0 : activeChecklist.filter(isGroupAnswered).length;
   const allChecksAnswered = activeDeviceIsNew || activeChecklist.every(isGroupAnswered);
-  // Battery is required: either a Maximum Capacity % was entered, or the
-  // rider flagged the device un-powerable. Find My ON is a hard gate — a
-  // locked device is unsellable, so the rider can't save until it's off.
-  const batteryDone = verify.battery_unavailable || verify.battery_health_pct != null;
+
+  // Gates. New sealed devices can't be powered on, so Find My + battery are
+  // not required for them (box/seal photos prove authenticity instead).
   const findMyOn = verify.find_my_status === 'on';
+  const findMyOk = activeDeviceIsNew || verify.find_my_status === 'off';
+  const batteryDone = activeDeviceIsNew || verify.battery_unavailable || verify.battery_health_pct != null;
   const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered && batteryDone && !findMyOn;
+
+  const canNextStep1 = !!sickw || sickwSkipped || activeDeviceIsNew;
+  const canNextStep2 = findMyOk;
 
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
     const activeDevice = devicesList[activeDeviceIndex];
-    // Photo requirement differs by device type: 6 angle shots for used
-    // devices, 4 box+seal+IMEI shots for brand-new sealed units.
     if (!allRequiredSlotsFilled) {
       toast.error(
         activeDevice.isNewDevice
@@ -176,14 +244,10 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       );
       return;
     }
-    // Used devices must have every condition group answered so admin/QC
-    // gets a complete assessment — no skipped questions.
     if (!activeDevice.isNewDevice && !allChecksAnswered) {
       toast.error('กรุณาเลือกสภาพเครื่องให้ครบทุกหัวข้อก่อนบันทึก');
       return;
     }
-    // Find My ON = locked device, can't accept. Battery is required for
-    // every device (used or new) — read a % or flag it un-powerable.
     if (findMyOn) {
       toast.error('Find My ยังเปิดอยู่ — ขอให้ลูกค้า sign out ก่อนรับเครื่อง');
       return;
@@ -218,10 +282,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
     const finalPrice = activeDevice.isNewDevice ? startingPrice : Math.max(0, startingPrice - totalDeduction);
 
-    // Flatten slots → ordered array. Required slots come first (6 in
-    // PHOTO_SLOTS order), then any damage close-ups append after.
-    // saveDeviceInspection guards on allRequiredSlotsFilled so no nulls
-    // sneak in here, but we filter for safety.
+    // Flatten slots → ordered array. Required slots first (PHOTO_SLOTS order),
+    // then damage close-ups. Guarded by allRequiredSlotsFilled; filter for safety.
     const slotPairs = SLOT_KEYS
       .map((k) => slotPhotos[k])
       .filter((p): p is SlotPhoto => p != null);
@@ -235,9 +297,36 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
         photoFiles: orderedPhotos.map((p) => p.file),
         deductions: deductionLabels, final_price: finalPrice,
         verification: verify,
+        sickw,
       }
     }));
     setActiveDeviceIndex(null);
+  };
+
+  const openDevice = (index: number) => {
+    const saved = inspectedDevicesData[index];
+    setChecks(saved?.checks || []);
+    setVerify(saved?.verification || emptyDeviceVerification());
+    setSickw(saved?.sickw || null);
+    setSickwSkipped(false);
+    // Reload slot photos from saved arrays — the first PHOTO_SLOTS.length
+    // entries map back to slots in order, the rest are damage close-ups.
+    const savedUrls = saved?.photos || [];
+    const savedFiles = saved?.photoFiles || [];
+    const restored: Record<SlotKey, SlotPhoto | null> = {
+      front: null, back: null, top: null, bottom: null, left: null, right: null,
+    };
+    SLOT_KEYS.forEach((k, i) => {
+      if (savedUrls[i] && savedFiles[i]) restored[k] = { url: savedUrls[i], file: savedFiles[i] };
+    });
+    setSlotPhotos(restored);
+    const damage: SlotPhoto[] = [];
+    for (let i = REQUIRED_SLOTS; i < savedUrls.length; i++) {
+      if (savedUrls[i] && savedFiles[i]) damage.push({ url: savedUrls[i], file: savedFiles[i] });
+    }
+    setDamagePhotos(damage);
+    setStep(1);
+    setActiveDeviceIndex(index);
   };
 
   const handleSubmitAll = async () => {
@@ -251,11 +340,13 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     }
   };
 
+  const activeDevice = activeDeviceIndex !== null ? devicesList[activeDeviceIndex] : null;
+
   return (
     <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[100] flex items-end animate-in fade-in duration-300">
       <div className="bg-white w-full rounded-t-[2rem] p-6 pb-12 animate-in slide-in-from-bottom duration-500 max-h-[90vh] overflow-y-auto flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
 
-        {/* Device list view */}
+        {/* ─────────────── Device list view ─────────────── */}
         {activeDeviceIndex === null ? (
           <div className="animate-in fade-in">
             <div className="flex justify-between items-center mb-6">
@@ -283,28 +374,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                       </div>
                     </div>
                     <button
-                      onClick={() => {
-                        setChecks(inspectedDevicesData[index]?.checks || []);
-                        setVerify(inspectedDevicesData[index]?.verification || emptyDeviceVerification());
-                        // Reload slot photos from saved arrays — the first
-                        // PHOTO_SLOTS.length entries map back to slots in
-                        // order, the rest are damage close-ups.
-                        const savedUrls = inspectedDevicesData[index]?.photos || [];
-                        const savedFiles = inspectedDevicesData[index]?.photoFiles || [];
-                        const restored: Record<SlotKey, SlotPhoto | null> = {
-                          front: null, back: null, top: null, bottom: null, left: null, right: null,
-                        };
-                        SLOT_KEYS.forEach((k, i) => {
-                          if (savedUrls[i] && savedFiles[i]) restored[k] = { url: savedUrls[i], file: savedFiles[i] };
-                        });
-                        setSlotPhotos(restored);
-                        const damage: SlotPhoto[] = [];
-                        for (let i = REQUIRED_SLOTS; i < savedUrls.length; i++) {
-                          if (savedUrls[i] && savedFiles[i]) damage.push({ url: savedUrls[i], file: savedFiles[i] });
-                        }
-                        setDamagePhotos(damage);
-                        setActiveDeviceIndex(index);
-                      }}
+                      onClick={() => openDevice(index)}
                       className={`px-4 py-2 rounded-xl font-semibold text-xs transition-all ${isDone ? 'bg-white text-gray-600 border border-gray-200' : 'bg-blue-600 text-white shadow-md hover:bg-blue-700'}`}
                     >
                       {isDone ? 'แก้ไข' : 'เริ่มตรวจ'}
@@ -329,264 +399,355 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
             </button>
           </div>
         ) : (
-          /* Single device inspection */
-          <div className="animate-in slide-in-from-right duration-300">
-            <div className="flex items-center gap-3 mb-6">
-              <button onClick={() => setActiveDeviceIndex(null)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200">
+          /* ─────────────── Single device — stepper ─────────────── */
+          <div className="animate-in slide-in-from-right duration-300 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={() => (step === 1 ? setActiveDeviceIndex(null) : setStep((step - 1) as Step))}
+                className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-gray-200"
+              >
                 <ChevronLeft size={20} />
               </button>
-              <h3 className="text-lg font-bold text-gray-900 leading-tight flex-1 line-clamp-1">
-                {devicesList[activeDeviceIndex].model}
+              <h3 className="text-base font-bold text-gray-900 leading-tight flex-1 line-clamp-1">
+                {activeDevice?.model}
               </h3>
+              <span className="text-[11px] font-bold text-gray-400">ขั้น {step}/3</span>
             </div>
 
-            <div className="space-y-8">
-              {/* Sickw IMEI Check — ตรวจสอบสถานะเครื่องกับฐานข้อมูล Apple
-                  วางก่อน Photos เพื่อให้ไรเดอร์ verify รุ่น/ความจุ/FMI
-                  ก่อนเริ่มถ่ายรูป — ถ้าเครื่องติด iCloud/MDM/Blacklist จะรู้
-                  ตั้งแต่ต้น ไม่ต้องเสียเวลาตรวจสภาพ */}
-              <SickwDeviceCheck
-                jobId={job.id}
-                initialImei={
-                  // Device type ใน rider app ยังไม่ติด imei field (legacy รับมาจาก job)
-                  (devicesList[activeDeviceIndex] as any)?.imei ||
-                  job.device_imei || job.imei || ''
-                }
-                initialSerial={
-                  (devicesList[activeDeviceIndex] as any)?.serial ||
-                  job.device_serial || job.serial || ''
-                }
-              />
-              {(() => {
-                const sickwIssues = getSickwReasons(job?.sickw_check);
-                if (sickwIssues.length === 0) return null;
+            {/* Step indicator */}
+            <div className="flex items-center mb-6">
+              {STEPS.map((s, i) => {
+                const done = step > s.n;
+                const current = step === s.n;
                 return (
-                  <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 -mt-4">
-                    <p className="text-xs font-black text-red-900 uppercase tracking-tight mb-1">
-                      ⚠ เครื่องนี้ติด Sickw — แอดมินจะ block ที่ขั้น QC
-                    </p>
-                    <ul className="text-xs text-red-800 list-disc pl-5">
-                      {sickwIssues.map((r) => <li key={r}>{r}</li>)}
-                    </ul>
-                    <p className="text-[11px] text-red-700 mt-2">
-                      แจ้งลูกค้าให้ sign out / เคลียร์ MDM ก่อน แล้วกดตรวจซ้ำ
-                    </p>
+                  <div key={s.n} className="flex items-center flex-1 last:flex-none">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                        done ? 'bg-emerald-500 text-white' : current ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {done ? <CheckCircle2 size={16} /> : s.n}
+                      </div>
+                      <span className={`text-[10px] mt-1 font-medium ${current ? 'text-blue-600' : 'text-gray-400'}`}>{s.label}</span>
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <div className={`h-0.5 flex-1 mx-1 mb-4 rounded ${step > s.n ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                    )}
                   </div>
                 );
-              })()}
+              })}
+            </div>
 
-              {/* Device verification — battery (required) / Find My (gate) /
-                  IMEI / warranty. Folded in from the old standalone modal so
-                  the rider captures everything in one pass. */}
-              <div>
-                <label className="text-sm font-semibold text-gray-800 mb-1 flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-emerald-500" /> ตรวจสอบเครื่อง (แบต / Find My)
-                </label>
-                <p className="text-[11px] text-gray-500 mb-3">
-                  ถ่ายหน้าจอ Settings — ระบบอ่านอัตโนมัติ. แบตเตอรี่จำเป็นต้องระบุทุกเครื่อง
-                </p>
-                <DeviceVerifySection jobId={job.id} value={verify} onChange={setVerify} />
-              </div>
-
-              {/* Photos — named slots so admin/QC can match angles */}
-              {(() => {
-                const isNew = devicesList[activeDeviceIndex]?.isNewDevice;
-                // Brand-new sealed devices: replace the 6-angle device
-                // shots (we can't see the device, it's in the box) with
-                // box + seal + IMEI proof. Same SlotKey storage so the
-                // submit array stays consistent.
-                const slotsToShow = isNew ? NEW_DEVICE_PHOTO_SLOTS : PHOTO_SLOTS;
-                const totalRequired = isNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
-                return (
-              <div>
-                <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                  <Camera size={16} className="text-blue-500" />
-                  {isNew ? 'รูปถ่ายกล่อง + ซีล' : 'รูปถ่ายตัวเครื่อง'}
-                  <span className={`text-[11px] font-normal ml-auto ${allRequiredSlotsFilled ? 'text-emerald-600' : 'text-gray-500'}`}>
-                    {filledSlotCount} / {totalRequired}
-                  </span>
-                </label>
-                <p className="text-[11px] text-gray-500 mb-3">
-                  {isNew
-                    ? 'เครื่องใหม่ยังไม่แกะซีล — ถ่ายกล่อง ซีลพลาสติก และเลข IMEI ให้ครบ'
-                    : 'ถ่ายทั้ง 6 ด้านเพื่อให้แอดมินตรวจสภาพได้ครบ'}
-                </p>
-                <div className="grid grid-cols-3 gap-3">
-                  {slotsToShow.map((slot) => {
-                    const photo = slotPhotos[slot.key];
-                    return (
-                      <div key={slot.key} className="space-y-1">
-                        {photo ? (
-                          <div className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-emerald-200">
-                            <img src={photo.url} className="w-full h-full object-cover" />
-                            <button
-                              onClick={() => handleClearSlot(slot.key)}
-                              className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm"
-                            >
-                              <X size={12} />
-                            </button>
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
-                              <p className="text-[10px] font-bold text-white truncate">{slot.label}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setActiveSlot(slot.key); slotInputRef.current?.click(); }}
-                            className="w-full aspect-square rounded-2xl border-2 border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-blue-50/30 px-1 text-center"
-                          >
-                            <Camera size={20} />
-                            <span className="text-[11px] font-bold mt-1 leading-tight">{slot.label}</span>
-                            <span className="text-[9px] text-blue-400 mt-0.5 leading-tight line-clamp-2">{slot.hint}</span>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+            {/* ── STEP 1: ระบุเครื่อง ── */}
+            {step === 1 && (
+              <div className="space-y-4">
+                <div className="flex items-start gap-2">
+                  <Search size={18} className="text-blue-500 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm">สแกน / กรอก IMEI</h4>
+                    <p className="text-[11px] text-gray-500">ระบบจะดึงรุ่น · Find My · ประกัน · สถานะ จาก Apple ให้อัตโนมัติ</p>
+                  </div>
                 </div>
-                <input
-                  ref={slotInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handleSlotCapture}
+                <SickwDeviceCheck
+                  jobId={job.id}
+                  hideResultPanel
+                  onResult={onSickwResult}
+                  initialImei={(activeDevice as any)?.imei || job.device_imei || job.imei || ''}
+                  initialSerial={(activeDevice as any)?.serial || job.device_serial || job.serial || ''}
                 />
+                {!sickw && !activeDeviceIsNew && (
+                  <button
+                    onClick={() => { setSickwSkipped(true); setStep(2); }}
+                    className="w-full text-[11px] font-bold text-gray-400 hover:text-gray-600 underline py-1"
+                  >
+                    ตรวจ SickW ไม่ได้ — ข้ามไปกรอก/ยืนยันเอง
+                  </button>
+                )}
+              </div>
+            )}
 
-                {/* Optional damage close-ups */}
-                <div className="mt-4">
-                  <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
-                    เพิ่มภาพรอย/จุดเสียหาย (ถ้ามี)
+            {/* ── STEP 2: ยืนยันเครื่อง ── */}
+            {step === 2 && (
+              <div className="space-y-4">
+                {/* Identity card */}
+                <div className="rounded-2xl border border-gray-200 p-4">
+                  <p className="text-lg font-black text-gray-900 leading-tight">
+                    {sickw?.parsed.model || activeDevice?.model || 'ไม่ทราบรุ่น'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {[sickw?.parsed.capacity, sickw?.parsed.color, sickw?.parsed.country].filter(Boolean).join(' · ') || '—'}
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {(verify.device_imei || sickw?.imei) && (
+                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">IMEI</span><span className="font-mono text-gray-700">{verify.device_imei || sickw?.imei}</span></div>
+                    )}
+                    {verify.device_serial && (
+                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">Serial</span><span className="font-mono text-gray-700">{verify.device_serial}</span></div>
+                    )}
+                    {sickw?.parsed.warrantyStatus && (
+                      <div className="flex justify-between text-[11px]"><span className="text-gray-400">ประกัน</span><span className="font-bold text-gray-700">{sickw.parsed.warrantyStatus}</span></div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status semaphore */}
+                <div className="grid grid-cols-3 gap-2">
+                  <StatusChip
+                    label="Find My"
+                    state={verify.find_my_status === 'off' ? 'clean' : verify.find_my_status === 'on' ? 'flagged' : 'unknown'}
+                    value={verify.find_my_status === 'off' ? 'ปิด' : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
+                  />
+                  <StatusChip label="Blacklist" state={sickw?.blacklist || 'unknown'} value={sickw?.parsed.blacklistStatus || sickw?.parsed.iCloudStatus || '-'} />
+                  <StatusChip label="MDM" state={sickw?.mdm || 'unknown'} value={sickw?.parsed.mdmStatus || '-'} />
+                </div>
+
+                {/* Gate / fallback */}
+                {activeDeviceIsNew ? (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2">
+                    <PackageOpen size={16} className="mt-0.5 shrink-0" />
+                    เครื่องใหม่ (ซีล) — ข้ามการตรวจ Find My/แบต ใช้รูปกล่อง+ซีลเป็นหลักฐานแทน
+                  </div>
+                ) : findMyOn ? (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2 items-start">
+                    <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
+                    <div className="text-xs text-red-900">
+                      <p className="font-bold">Find My เปิดอยู่ — ห้ามรับเครื่อง</p>
+                      <p className="mt-1">ขอให้ลูกค้า Sign out จาก Apple ID และปิด Find My ก่อน แล้วกดตรวจซ้ำที่ขั้น 1</p>
+                    </div>
+                  </div>
+                ) : verify.find_my_status === 'off' ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 font-medium flex items-center gap-2">
+                    <CheckCircle2 size={16} /> Find My ปิดแล้ว — รับเครื่องต่อได้
+                  </div>
+                ) : (
+                  /* Unknown FMI → fallback: screenshot OCR or manual confirm */
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                    <p className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <AlertTriangle size={14} /> ยืนยันสถานะ Find My (SickW อ่านไม่ได้)
+                    </p>
+                    <p className="text-[11px] text-amber-700">ที่เครื่อง: Settings → [Apple ID] → Find My</p>
+                    <input ref={fmInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={(e) => { handleFindMyShot(e.target.files?.[0]); e.target.value = ''; }} />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => fmInputRef.current?.click()}
+                        disabled={fmUploading}
+                        className="flex-1 bg-white border border-amber-300 text-amber-800 rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50"
+                      >
+                        {fmUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />} ถ่ายหน้าจอ
+                      </button>
+                      <button
+                        onClick={() => setVerify((v) => ({ ...v, find_my_status: 'off' }))}
+                        className="flex-1 bg-amber-500 text-white rounded-lg py-2 text-xs font-bold"
+                      >
+                        ยืนยันด้วยตาเปล่าว่าปิดแล้ว
+                      </button>
+                    </div>
+                    {verify.verification_findmy_photo && (
+                      <p className="text-[11px] text-amber-700">แนบรูปแล้ว — ถ้าเห็นว่า "ปิด" กดยืนยันด้วยตาเปล่าได้</p>
+                    )}
+                  </div>
+                )}
+
+                {(sickw?.blacklist === 'flagged') && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 flex items-start gap-2">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    เครื่องติด Blacklist/iCloud — แจ้งแอดมินก่อนรับ (แอดมินจะ block ที่ขั้น QC)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── STEP 3: ตรวจสภาพ ── */}
+            {step === 3 && (
+              <div className="space-y-7">
+                {/* Battery — the one value SickW can't read */}
+                {!activeDeviceIsNew && (
+                  <div>
+                    <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                      <ShieldCheck size={16} className="text-emerald-500" /> แบตเตอรี่
+                    </label>
+                    <BatteryCheck jobId={job.id} value={verify} onChange={setVerify} />
+                  </div>
+                )}
+
+                {/* Photos */}
+                {(() => {
+                  const isNew = activeDevice?.isNewDevice;
+                  const slotsToShow = isNew ? NEW_DEVICE_PHOTO_SLOTS : PHOTO_SLOTS;
+                  const totalRequired = isNew ? NEW_DEVICE_REQUIRED_SLOTS : REQUIRED_SLOTS;
+                  return (
+                <div>
+                  <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                    <Camera size={16} className="text-blue-500" />
+                    {isNew ? 'รูปถ่ายกล่อง + ซีล' : 'รูปถ่ายตัวเครื่อง'}
+                    <span className={`text-[11px] font-normal ml-auto ${allRequiredSlotsFilled ? 'text-emerald-600' : 'text-gray-500'}`}>
+                      {filledSlotCount} / {totalRequired}
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    {isNew
+                      ? 'เครื่องใหม่ยังไม่แกะซีล — ถ่ายกล่อง ซีลพลาสติก และเลข IMEI ให้ครบ'
+                      : 'ถ่ายทั้ง 6 ด้านเพื่อให้แอดมินตรวจสภาพได้ครบ'}
                   </p>
                   <div className="grid grid-cols-3 gap-3">
-                    {damagePhotos.map((p, i) => (
-                      <div key={i} className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-amber-200">
-                        <img src={p.url} className="w-full h-full object-cover" />
-                        <button
-                          onClick={() => handleClearDamage(i)}
-                          className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => damageInputRef.current?.click()}
-                      className="aspect-square rounded-2xl border-2 border-dashed border-amber-200 flex flex-col items-center justify-center text-amber-500 hover:bg-amber-50 transition-colors bg-amber-50/30"
-                    >
-                      <Camera size={20} />
-                      <span className="text-[11px] font-bold mt-1">เพิ่มภาพรอย</span>
-                    </button>
+                    {slotsToShow.map((slot) => {
+                      const photo = slotPhotos[slot.key];
+                      return (
+                        <div key={slot.key} className="space-y-1">
+                          {photo ? (
+                            <div className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-emerald-200">
+                              <img src={photo.url} className="w-full h-full object-cover" />
+                              <button
+                                onClick={() => handleClearSlot(slot.key)}
+                                className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm"
+                              >
+                                <X size={12} />
+                              </button>
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+                                <p className="text-[10px] font-bold text-white truncate">{slot.label}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setActiveSlot(slot.key); slotInputRef.current?.click(); }}
+                              className="w-full aspect-square rounded-2xl border-2 border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors bg-blue-50/30 px-1 text-center"
+                            >
+                              <Camera size={20} />
+                              <span className="text-[11px] font-bold mt-1 leading-tight">{slot.label}</span>
+                              <span className="text-[9px] text-blue-400 mt-0.5 leading-tight line-clamp-2">{slot.hint}</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <input
-                    ref={damageInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleDamageCapture}
-                  />
+                  <input ref={slotInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleSlotCapture} />
+
+                  {/* Optional damage close-ups */}
+                  <div className="mt-4">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">เพิ่มภาพรอย/จุดเสียหาย (ถ้ามี)</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      {damagePhotos.map((p, i) => (
+                        <div key={i} className="aspect-square rounded-2xl overflow-hidden relative shadow-sm border border-amber-200">
+                          <img src={p.url} className="w-full h-full object-cover" />
+                          <button onClick={() => handleClearDamage(i)} className="absolute top-1.5 right-1.5 bg-white/90 text-red-500 rounded-full p-1 shadow-sm">
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => damageInputRef.current?.click()}
+                        className="aspect-square rounded-2xl border-2 border-dashed border-amber-200 flex flex-col items-center justify-center text-amber-500 hover:bg-amber-50 transition-colors bg-amber-50/30"
+                      >
+                        <Camera size={20} />
+                        <span className="text-[11px] font-bold mt-1">เพิ่มภาพรอย</span>
+                      </button>
+                    </div>
+                    <input ref={damageInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleDamageCapture} />
+                  </div>
+                </div>
+                  );
+                })()}
+
+                {/* Checklist */}
+                <div>
+                  <label className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    <ListChecks size={16} className="text-purple-500" /> เช็คลิสต์สภาพเครื่อง
+                    {!activeDevice?.isNewDevice && activeChecklist.length > 0 && (
+                      <span className={`text-[11px] font-normal ml-auto ${allChecksAnswered ? 'text-emerald-600' : 'text-gray-500'}`}>
+                        {answeredGroupCount} / {activeChecklist.length}
+                      </span>
+                    )}
+                  </label>
+                  {activeDevice?.isNewDevice ? (
+                    <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl text-center shadow-sm">
+                      <PackageOpen size={36} className="text-blue-500 mx-auto mb-3 animate-pulse" />
+                      <h4 className="font-bold text-blue-800 text-base mb-1">เครื่องใหม่มือ 1 (Brand New)</h4>
+                      <p className="text-xs text-blue-600 font-medium leading-relaxed">
+                        รายการนี้เป็นเครื่องใหม่ยังไม่แกะซีล<br />ไม่ต้องทำรายการเช็คลิสต์สภาพตัวเครื่อง<br />
+                        <strong className="text-blue-800 mt-2 block bg-white p-2 rounded-lg border border-blue-100">กรุณาถ่ายรูปกล่อง ซีลพลาสติก และเลข IMEI ให้ชัดเจน</strong>
+                      </p>
+                    </div>
+                  ) : activeChecklist.length > 0 ? (
+                    activeChecklist.map((group: any) => (
+                      <div key={group.id} className="mb-4">
+                        <h4 className="text-sm font-medium text-gray-600 mb-2 pl-1 flex items-center gap-2">
+                          {group.title}
+                          {!isGroupAnswered(group) && (
+                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">ต้องเลือก</span>
+                          )}
+                        </h4>
+                        <div className="space-y-2">
+                          {group.options?.map((opt: any) => {
+                            const isChecked = checks.includes(opt.id);
+                            const startingPrice = getBasePrice(activeDevice);
+                            let displayDeduct = 0;
+                            if (startingPrice >= 30000) displayDeduct = Number(opt.t1 || 0);
+                            else if (startingPrice >= 15000 && startingPrice < 30000) displayDeduct = Number(opt.t2 || 0);
+                            else displayDeduct = Number(opt.t3 || 0);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  setChecks(prev => {
+                                    const optionsInThisGroup = group.options.map((o: any) => o.id);
+                                    const otherChecks = prev.filter((id: string) => !optionsInThisGroup.includes(id));
+                                    return isChecked ? otherChecks : [...otherChecks, opt.id];
+                                  });
+                                }}
+                                className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${isChecked ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-gray-200 hover:border-gray-300'}`}
+                              >
+                                <div>
+                                  <div className={`font-semibold text-sm mb-1 ${isChecked ? 'text-red-700' : 'text-gray-800'}`}>{opt.label}</div>
+                                  <div className="text-xs font-medium text-red-500 bg-red-100/50 px-2 py-0.5 rounded-md w-fit">หัก {formatCurrency(displayDeduct)}</div>
+                                </div>
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isChecked ? 'bg-red-500 border-red-500 text-white' : 'border-gray-300'}`}>
+                                  {isChecked && <CheckCircle2 size={16} strokeWidth={3} />}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-2xl border-dashed border-2 border-gray-200">
+                      <ShieldCheck size={24} className="text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 font-medium">ไม่มีชุดคำถามสำหรับรุ่นนี้</p>
+                    </div>
+                  )}
                 </div>
               </div>
-                );
-              })()}
+            )}
 
-              {/* Checklist */}
-              <div>
-                <label className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <ListChecks size={16} className="text-purple-500" /> เช็คลิสต์สภาพเครื่อง
-                  {!devicesList[activeDeviceIndex]?.isNewDevice && activeChecklist.length > 0 && (
-                    <span className={`text-[11px] font-normal ml-auto ${allChecksAnswered ? 'text-emerald-600' : 'text-gray-500'}`}>
-                      {answeredGroupCount} / {activeChecklist.length}
-                    </span>
-                  )}
-                </label>
-                {devicesList[activeDeviceIndex]?.isNewDevice ? (
-                  <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl text-center shadow-sm">
-                    <PackageOpen size={36} className="text-blue-500 mx-auto mb-3 animate-pulse" />
-                    <h4 className="font-bold text-blue-800 text-base mb-1">เครื่องใหม่มือ 1 (Brand New)</h4>
-                    <p className="text-xs text-blue-600 font-medium leading-relaxed">
-                      รายการนี้เป็นเครื่องใหม่ยังไม่แกะซีล<br />ไม่ต้องทำรายการเช็คลิสต์สภาพตัวเครื่อง<br />
-                      <strong className="text-blue-800 mt-2 block bg-white p-2 rounded-lg border border-blue-100">กรุณาถ่ายรูปกล่อง ซีลพลาสติก และเลข IMEI ให้ชัดเจน</strong>
-                    </p>
-                  </div>
-                ) : activeChecklist.length > 0 ? (
-                  activeChecklist.map((group: any) => (
-                    <div key={group.id} className="mb-4">
-                      <h4 className="text-sm font-medium text-gray-600 mb-2 pl-1 flex items-center gap-2">
-                        {group.title}
-                        {!isGroupAnswered(group) && (
-                          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">
-                            ต้องเลือก
-                          </span>
-                        )}
-                      </h4>
-                      <div className="space-y-2">
-                        {group.options?.map((opt: any) => {
-                          const isChecked = checks.includes(opt.id);
-                          const currentDevice = devicesList[activeDeviceIndex];
-                          const startingPrice = getBasePrice(currentDevice);
+            {/* ── Footer nav ── */}
+            <div className="pt-5 mt-2">
+              {step === 3 && !allRequiredSlotsFilled && (
+                <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                  เหลืออีก {requiredCountForActive - filledSlotCount} {activeDeviceIsNew ? 'รูปกล่อง' : 'ด้าน'} — บันทึกไม่ได้จนกว่าจะครบ
+                </p>
+              )}
+              {step === 3 && allRequiredSlotsFilled && !allChecksAnswered && (
+                <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                  เลือกสภาพเครื่องอีก {activeChecklist.length - answeredGroupCount} หัวข้อก่อนบันทึก
+                </p>
+              )}
+              {step === 3 && allRequiredSlotsFilled && allChecksAnswered && !batteryDone && (
+                <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                  ระบุ % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนบันทึก
+                </p>
+              )}
 
-                          let displayDeduct = 0;
-                          if (startingPrice >= 30000) displayDeduct = Number(opt.t1 || 0);
-                          else if (startingPrice >= 15000 && startingPrice < 30000) displayDeduct = Number(opt.t2 || 0);
-                          else displayDeduct = Number(opt.t3 || 0);
-
-                          return (
-                            <button
-                              key={opt.id}
-                              onClick={() => {
-                                setChecks(prev => {
-                                  const optionsInThisGroup = group.options.map((o: any) => o.id);
-                                  const otherChecks = prev.filter((id: string) => !optionsInThisGroup.includes(id));
-                                  return isChecked ? otherChecks : [...otherChecks, opt.id];
-                                });
-                              }}
-                              className={`w-full p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${isChecked ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-gray-200 hover:border-gray-300'}`}
-                            >
-                              <div>
-                                <div className={`font-semibold text-sm mb-1 ${isChecked ? 'text-red-700' : 'text-gray-800'}`}>{opt.label}</div>
-                                <div className="text-xs font-medium text-red-500 bg-red-100/50 px-2 py-0.5 rounded-md w-fit">
-                                  หัก {formatCurrency(displayDeduct)}
-                                </div>
-                              </div>
-                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isChecked ? 'bg-red-500 border-red-500 text-white' : 'border-gray-300'}`}>
-                                {isChecked && <CheckCircle2 size={16} strokeWidth={3} />}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-2xl border-dashed border-2 border-gray-200">
-                    <ShieldCheck size={24} className="text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500 font-medium">ไม่มีชุดคำถามสำหรับรุ่นนี้</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2">
-                {!allRequiredSlotsFilled && (
-                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
-                    เหลืออีก {requiredCountForActive - filledSlotCount} {activeDeviceIsNew ? 'รูปกล่อง' : 'ด้าน'} — บันทึกไม่ได้จนกว่าจะครบ
-                  </p>
-                )}
-                {allRequiredSlotsFilled && !allChecksAnswered && (
-                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
-                    เลือกสภาพเครื่องอีก {activeChecklist.length - answeredGroupCount} หัวข้อ — บันทึกไม่ได้จนกว่าจะครบ
-                  </p>
-                )}
-                {allRequiredSlotsFilled && allChecksAnswered && findMyOn && (
-                  <p className="text-center text-xs text-red-600 font-medium mb-2">
-                    Find My ยังเปิดอยู่ — ปิดก่อนจึงจะบันทึกได้
-                  </p>
-                )}
-                {allRequiredSlotsFilled && allChecksAnswered && !findMyOn && !batteryDone && (
-                  <p className="text-center text-xs text-amber-600 font-medium mb-2">
-                    ระบุ % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนจึงจะบันทึกได้
-                  </p>
-                )}
+              {step < 3 ? (
+                <button
+                  onClick={() => setStep((step + 1) as Step)}
+                  disabled={step === 1 ? !canNextStep1 : !canNextStep2}
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-40 disabled:active:scale-100"
+                >
+                  ถัดไป <ChevronRight size={20} />
+                </button>
+              ) : (
                 <button
                   onClick={saveDeviceInspection}
                   disabled={!canSaveDevice}
@@ -594,7 +755,10 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 >
                   บันทึกเครื่องนี้
                 </button>
-              </div>
+              )}
+              {step === 2 && !canNextStep2 && !findMyOn && (
+                <p className="text-center text-[11px] text-amber-600 font-medium mt-2">ยืนยันสถานะ Find My ก่อนจึงจะไปต่อได้</p>
+              )}
             </div>
           </div>
         )}
@@ -602,3 +766,21 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     </div>
   );
 };
+
+// ── Status semaphore chip (step 2) ───────────────────────────────────────
+function StatusChip({ label, state, value }: { label: string; state: 'clean' | 'flagged' | 'unknown'; value: string }) {
+  const color =
+    state === 'clean' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+    state === 'flagged' ? 'bg-red-50 border-red-300 text-red-800' :
+    'bg-gray-50 border-gray-200 text-gray-600';
+  const Icon = state === 'clean' ? CheckCircle2 : state === 'flagged' ? AlertTriangle : HelpCircle;
+  return (
+    <div className={`border rounded-lg p-2 ${color}`}>
+      <div className="flex items-center gap-1 mb-0.5">
+        <Icon size={11} />
+        <span className="text-[9px] font-black uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="text-[11px] font-bold truncate" title={value}>{value}</p>
+    </div>
+  );
+}

@@ -20,10 +20,25 @@ import { SickwServicePicker } from './SickwServicePicker';
 
 const BUNDLE_STORAGE_KEY = 'sickw:lastSelectedServices';
 
+// Distilled SickW outcome handed up to the parent (the unified intake
+// stepper) so step 2 can render the confirm/gate card and auto-fill IMEI /
+// serial / Find My / warranty without the rider re-photographing anything.
+export interface SickwResultSummary {
+  parsed: SickwParsedFields;
+  fmi: SickwFlagState;
+  mdm: SickwFlagState;
+  blacklist: SickwFlagState;
+  imei: string;
+}
+
 interface Props {
   initialImei?: string;
   initialSerial?: string;
   jobId?: string;
+  /** Fired after every successful check so the parent can read the result. */
+  onResult?: (summary: SickwResultSummary) => void;
+  /** Hide the built-in result panel (the stepper shows its own confirm card). */
+  hideResultPanel?: boolean;
 }
 
 interface UnifiedResult {
@@ -65,7 +80,7 @@ function toUnifiedFromBundle(r: SickwBundleResult): UnifiedResult {
   };
 }
 
-export function SickwDeviceCheck({ initialImei, initialSerial, jobId }: Props) {
+export function SickwDeviceCheck({ initialImei, initialSerial, jobId, onResult, hideResultPanel }: Props) {
   const [imei, setImei] = useState(initialImei || initialSerial || '');
   const [selectedServices, setSelectedServices] = useState<string[]>(() => {
     try {
@@ -122,21 +137,37 @@ export function SickwDeviceCheck({ initialImei, initialSerial, jobId }: Props) {
     }
   };
 
+  const emitResult = (u: UnifiedResult) => {
+    if (!onResult) return;
+    const p = u.parsed;
+    onResult({
+      parsed: p,
+      // fmi ห้ามดู iCloudStatus — "icloud status: CLEAN" บอกแค่ไม่ stolen
+      fmi: interpretFmi(p.fmiStatus || p.activationLock),
+      mdm: interpretMdm(p.mdmStatus),
+      blacklist: interpretBlacklist(p.blacklistStatus || p.iCloudStatus),
+      imei: p.imei || u.imei,
+    });
+  };
+
   const runCheck = async (forceRefresh = false) => {
     setError(null);
     setLoading(true);
     try {
+      let unified: UnifiedResult;
       if (selectedServices.length === 1) {
         const res = await checkDeviceWithSickw({
           imei: imei.trim(), serviceId: selectedServices[0], forceRefresh, jobId, source: 'rider',
         });
-        setResult(toUnifiedFromSingle(res));
+        unified = toUnifiedFromSingle(res);
       } else {
         const res = await checkDeviceWithSickwBundle({
           imei: imei.trim(), serviceIds: selectedServices, forceRefresh, jobId, source: 'rider',
         });
-        setResult(toUnifiedFromBundle(res));
+        unified = toUnifiedFromBundle(res);
       }
+      setResult(unified);
+      emitResult(unified);
       localStorage.setItem(BUNDLE_STORAGE_KEY, JSON.stringify(selectedServices));
     } catch (e: any) {
       setError(e?.message || 'ตรวจสอบไม่สำเร็จ');
@@ -233,8 +264,17 @@ export function SickwDeviceCheck({ initialImei, initialSerial, jobId }: Props) {
         </div>
       )}
 
-      {result && (
+      {result && !hideResultPanel && (
         <SickwResultPanel result={result} showAll={showAll} onToggleAll={() => setShowAll((v) => !v)} />
+      )}
+
+      {result && hideResultPanel && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          <span className="text-xs font-bold text-emerald-900">
+            ดึงข้อมูลเครื่องแล้ว{result.parsed.model ? ` — ${result.parsed.model}` : ''} · กด "ถัดไป" เพื่อยืนยัน
+          </span>
+        </div>
       )}
     </div>
   );
