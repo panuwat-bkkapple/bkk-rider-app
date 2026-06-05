@@ -39,6 +39,9 @@ interface Props {
   onResult?: (summary: SickwResultSummary) => void;
   /** Hide the built-in result panel (the stepper shows its own confirm card). */
   hideResultPanel?: boolean;
+  /** Hide the service picker (provider/service-id/price are internal — keep
+   *  them away from riders). The admin-configured default bundle is used. */
+  hideServices?: boolean;
 }
 
 interface UnifiedResult {
@@ -80,7 +83,7 @@ function toUnifiedFromBundle(r: SickwBundleResult): UnifiedResult {
   };
 }
 
-export function SickwDeviceCheck({ initialImei, initialSerial, jobId, onResult, hideResultPanel }: Props) {
+export function SickwDeviceCheck({ initialImei, initialSerial, jobId, onResult, hideResultPanel, hideServices }: Props) {
   const [imei, setImei] = useState(initialImei || initialSerial || '');
   const [selectedServices, setSelectedServices] = useState<string[]>(() => {
     try {
@@ -183,7 +186,7 @@ export function SickwDeviceCheck({ initialImei, initialSerial, jobId, onResult, 
     <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Search size={16} className="text-blue-600" />
-        <h3 className="text-sm font-bold text-gray-900">Sickw IMEI Check</h3>
+        <h3 className="text-sm font-bold text-gray-900">IMEI Check</h3>
       </div>
 
       <div>
@@ -228,12 +231,14 @@ export function SickwDeviceCheck({ initialImei, initialSerial, jobId, onResult, 
         )}
       </div>
 
-      <SickwServicePicker
-        value={selectedServices}
-        onChange={setSelectedServices}
-        defaultBundle={defaultBundle}
-        disabled={loading}
-      />
+      {!hideServices && (
+        <SickwServicePicker
+          value={selectedServices}
+          onChange={setSelectedServices}
+          defaultBundle={defaultBundle}
+          disabled={loading}
+        />
+      )}
 
       <div className="flex gap-2">
         <button
@@ -288,7 +293,7 @@ function SickwResultPanel({ result, showAll, onToggleAll }: { result: UnifiedRes
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
         <div className="flex items-center gap-2">
           <AlertTriangle size={14} className="text-amber-600" />
-          <span className="text-xs font-bold text-amber-900">Sickw: {result.status}</span>
+          <span className="text-xs font-bold text-amber-900">สถานะ: {result.status}</span>
         </div>
         {result.errors && (
           <ul className="text-[10px] text-amber-800 list-disc pl-4">
@@ -312,7 +317,7 @@ function SickwResultPanel({ result, showAll, onToggleAll }: { result: UnifiedRes
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center text-[10px] text-gray-500">
-        <span>{result.serviceLabel} · {new Date(result.checkedAt).toLocaleString('th-TH')}</span>
+        <span>ตรวจสอบเมื่อ {new Date(result.checkedAt).toLocaleString('th-TH')}</span>
         {result.cached && <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-bold uppercase">cached</span>}
       </div>
 
@@ -338,7 +343,7 @@ function SickwResultPanel({ result, showAll, onToggleAll }: { result: UnifiedRes
 
       {result.errors && result.errors.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-800">
-          <p className="font-bold mb-1">บาง service ใน bundle ล้มเหลว:</p>
+          <p className="font-bold mb-1">ตรวจสอบบางรายการไม่สำเร็จ:</p>
           <ul className="list-disc pl-4">{result.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
         </div>
       )}
