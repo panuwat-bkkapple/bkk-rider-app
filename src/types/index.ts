@@ -315,6 +315,7 @@ export interface Device {
   device_imei?: string;
   device_serial?: string | null;
   find_my_status?: 'on' | 'off' | 'unknown' | null;
+  find_my_manual?: boolean;
   warranty_status?: 'active' | 'expired' | 'unknown' | null;
   warranty_expires_at?: string | null;
 }
@@ -389,6 +390,10 @@ export interface DeviceVerification {
   device_serial: string | null;
   device_model_number: string | null;
   find_my_status: 'on' | 'off' | 'unknown' | null;
+  // How find_my_status was determined: true = rider self-attested / SickW was
+  // skipped (NOT system-verified) → UI must not show it as a clean "passed".
+  // false/undefined = came from the IMEI lookup or an OCR'd screenshot.
+  find_my_manual?: boolean;
   verification_imei_photo: string | null;
   verification_findmy_photo: string | null;
   warranty_status: 'active' | 'expired' | 'unknown' | null;
@@ -407,6 +412,7 @@ export function emptyDeviceVerification(): DeviceVerification {
     device_serial: null,
     device_model_number: null,
     find_my_status: null,
+    find_my_manual: false,
     verification_imei_photo: null,
     verification_findmy_photo: null,
     warranty_status: null,

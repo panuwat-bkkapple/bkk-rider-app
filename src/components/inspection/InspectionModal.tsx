@@ -180,6 +180,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       // SickW FMI is authoritative when known: clean→off, flagged→on.
       // Unknown leaves it null so step 2 asks for a screenshot fallback.
       find_my_status: s.fmi === 'clean' ? 'off' : s.fmi === 'flagged' ? 'on' : v.find_my_status,
+      // System-verified when the lookup actually returned an FMI state.
+      find_my_manual: s.fmi === 'unknown' ? v.find_my_manual : false,
       warranty_status: mapWarranty(s.parsed.warrantyStatus, v.warranty_status),
       // Real coverage end date from the GSX lookup (we already pay for it).
       warranty_expires_at: s.parsed.warrantyExpiry ?? v.warranty_expires_at,
@@ -194,7 +196,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       const url = await uploadImageToFirebase(file, `jobs/${job.id}/verification`, { opaqueFilename: true });
       try {
         const r = await ocrFindMy(url);
-        setVerify((v) => ({ ...v, verification_findmy_photo: url, find_my_status: r.fields?.findMyStatus ?? 'unknown' }));
+        // OCR of a real screenshot counts as verified (not a blind attest).
+        setVerify((v) => ({ ...v, verification_findmy_photo: url, find_my_status: r.fields?.findMyStatus ?? 'unknown', find_my_manual: false }));
       } catch {
         setVerify((v) => ({ ...v, verification_findmy_photo: url }));
         toast.info('อ่าน Find My อัตโนมัติไม่ได้ — ยืนยันด้วยตาเปล่า');
@@ -515,6 +518,15 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 {/* ผลตรวจ — โผล่ทันทีในจอเดียวกับที่สแกน (สแกน = เห็น) */}
                 {deviceIdentified && (
                   <div className="space-y-4 pt-3 border-t border-gray-100">
+                    {sickwSkipped && !sickw && !activeDeviceIsNew && (
+                      <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-3 text-xs text-orange-900 flex items-start gap-2">
+                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-orange-600" />
+                        <div>
+                          <p className="font-black">ข้ามการตรวจระบบ — ยังไม่ได้ verify</p>
+                          <p className="mt-0.5">ข้อมูลด้านล่างเป็นการกรอก/ยืนยันเอง ระบบยังไม่ได้ตรวจสอบกับฐานข้อมูล — แอดมินจะตรวจซ้ำที่ขั้น QC</p>
+                        </div>
+                      </div>
+                    )}
                     {/* เทียบกับออเดอร์ */}
                     {orderMatch && orderMatch.state !== 'unknown' && (
                       orderMatch.state === 'ok' ? (
@@ -560,8 +572,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                     <div className="grid grid-cols-2 gap-2">
                       <StatusChip
                         label="Find My"
-                        state={verify.find_my_status === 'off' ? 'clean' : verify.find_my_status === 'on' ? 'flagged' : 'unknown'}
-                        value={verify.find_my_status === 'off' ? 'ปิด' : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
+                        state={verify.find_my_status === 'on' ? 'flagged' : verify.find_my_status === 'off' ? (verify.find_my_manual ? 'unknown' : 'clean') : 'unknown'}
+                        value={verify.find_my_status === 'off' ? (verify.find_my_manual ? 'ปิด (เอง)' : 'ปิด') : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
                       />
                       <StatusChip label="SIM Lock" state={simLockState(sickw?.parsed.simLock)} value={sickw?.parsed.simLock || '-'} />
                       <StatusChip label="Blacklist" state={sickw?.blacklist || 'unknown'} value={sickw?.parsed.blacklistStatus || sickw?.parsed.iCloudStatus || '-'} />
@@ -582,9 +594,17 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                           <p className="mt-1">ถ่ายสภาพ (ขั้น 2) รอไปได้เลย แต่จะ "บันทึก" ไม่ได้จนกว่า Find My ปิด — พอลูกค้า sign out แล้ว กด refresh ที่ช่องตรวจด้านบนเพื่อตรวจซ้ำ</p>
                         </div>
                       </div>
-                    ) : verify.find_my_status === 'off' ? (
+                    ) : verify.find_my_status === 'off' && !verify.find_my_manual ? (
                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 font-medium flex items-center gap-2">
-                        <CheckCircle2 size={16} /> Find My ปิดแล้ว — รับเครื่องได้
+                        <CheckCircle2 size={16} /> Find My ปิด (ตรวจจากระบบแล้ว) — รับเครื่องได้
+                      </div>
+                    ) : verify.find_my_status === 'off' && verify.find_my_manual ? (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2">
+                        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+                        <div>
+                          <p className="font-bold">Find My: ยืนยันด้วยตนเอง (ระบบยังไม่ได้ตรวจ)</p>
+                          <p className="mt-0.5">แอดมินจะตรวจซ้ำกับฐานข้อมูลที่ขั้น QC — ถ้ามีสัญญาณ แนะนำกด refresh ตรวจระบบด้านบน</p>
+                        </div>
                       </div>
                     ) : (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
@@ -603,7 +623,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                             {fmUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />} ถ่ายหน้าจอ
                           </button>
                           <button
-                            onClick={() => setVerify((v) => ({ ...v, find_my_status: 'off' }))}
+                            onClick={() => setVerify((v) => ({ ...v, find_my_status: 'off', find_my_manual: true }))}
                             className="flex-1 bg-amber-500 text-white rounded-lg py-2 text-xs font-bold"
                           >
                             ยืนยันด้วยตาเปล่าว่าปิดแล้ว
