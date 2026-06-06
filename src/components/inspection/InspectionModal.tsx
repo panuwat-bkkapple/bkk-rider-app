@@ -589,7 +589,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                   /* Unknown FMI → fallback: screenshot OCR or manual confirm */
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
                     <p className="text-xs font-bold text-amber-900 flex items-center gap-1">
-                      <AlertTriangle size={14} /> ยืนยันสถานะ Find My (SickW อ่านไม่ได้)
+                      <AlertTriangle size={14} /> ยืนยันสถานะ Find My (อ่านอัตโนมัติไม่ได้)
                     </p>
                     <p className="text-[11px] text-amber-700">ที่เครื่อง: Settings → [Apple ID] → Find My</p>
                     <input ref={fmInputRef} type="file" accept="image/*" capture="environment" className="hidden"
