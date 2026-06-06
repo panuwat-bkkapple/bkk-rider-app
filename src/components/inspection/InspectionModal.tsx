@@ -56,11 +56,10 @@ const REQUIRED_SLOTS = PHOTO_SLOTS.length;
 const NEW_DEVICE_REQUIRED_SLOTS = NEW_DEVICE_PHOTO_SLOTS.length;
 
 const STEPS = [
-  { n: 1 as const, label: 'ระบุเครื่อง' },
-  { n: 2 as const, label: 'ยืนยัน' },
-  { n: 3 as const, label: 'ตรวจสภาพ' },
+  { n: 1 as const, label: 'ตรวจเครื่อง' },
+  { n: 2 as const, label: 'สภาพ + ราคา' },
 ];
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 interface SlotPhoto { url: string; file: File }
 
@@ -253,10 +252,13 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   const findMyOn = verify.find_my_status === 'on';
   const findMyOk = activeDeviceIsNew || verify.find_my_status === 'off';
   const batteryDone = activeDeviceIsNew || verify.battery_unavailable || verify.battery_health_pct != null;
-  const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered && batteryDone && !findMyOn;
-
-  const canNextStep1 = !!sickw || sickwSkipped || activeDeviceIsNew;
-  const canNextStep2 = findMyOk;
+  // Find My is the hard gate at SAVE (end of step 2), NOT a step-1→2 block —
+  // so the rider can photograph the body while the customer signs out of
+  // Apple ID (real on-site dead time). Battery + IMEI are quick Settings
+  // reads done together in step 1, so they're required to leave step 1.
+  const canSaveDevice = allRequiredSlotsFilled && allChecksAnswered && batteryDone && findMyOk;
+  const deviceIdentified = !!sickw || sickwSkipped || activeDeviceIsNew;
+  const canNextStep1 = deviceIdentified && batteryDone;
 
   const saveDeviceInspection = () => {
     if (activeDeviceIndex === null) return;
@@ -273,8 +275,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       toast.error('กรุณาเลือกสภาพเครื่องให้ครบทุกหัวข้อก่อนบันทึก');
       return;
     }
-    if (findMyOn) {
-      toast.error('Find My ยังเปิดอยู่ — ขอให้ลูกค้า sign out ก่อนรับเครื่อง');
+    if (!findMyOk) {
+      toast.error('Find My ยังไม่ปิด/ยังไม่ยืนยัน — กลับไปขั้น 1 ตรวจซ้ำหลังลูกค้า sign out');
       return;
     }
     if (!batteryDone) {
@@ -456,7 +458,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
               <h3 className="text-base font-bold text-gray-900 leading-tight flex-1 line-clamp-1">
                 {activeDevice?.model}
               </h3>
-              <span className="text-[11px] font-bold text-gray-400">ขั้น {step}/3</span>
+              <span className="text-[11px] font-bold text-gray-400">ขั้น {step}/{STEPS.length}</span>
             </div>
 
             {/* Step indicator */}
@@ -482,7 +484,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
               })}
             </div>
 
-            {/* ── STEP 1: ระบุเครื่อง ── */}
+            {/* ── STEP 1: ตรวจเครื่อง — ทุกอย่างที่อ่านจากในเครื่อง (Settings):
+                IMEI → รายละเอียด+สถานะทันที + Find My + แบต รวดเดียว ── */}
             {step === 1 && (
               <div className="space-y-4">
                 <div className="flex items-start gap-2">
@@ -500,143 +503,139 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                   initialImei={(activeDevice as any)?.imei || job.device_imei || job.imei || ''}
                   initialSerial={(activeDevice as any)?.serial || job.device_serial || job.serial || ''}
                 />
-                {!sickw && !activeDeviceIsNew && (
+                {!sickw && !sickwSkipped && !activeDeviceIsNew && (
                   <button
-                    onClick={() => { setSickwSkipped(true); setStep(2); }}
+                    onClick={() => setSickwSkipped(true)}
                     className="w-full text-[11px] font-bold text-gray-400 hover:text-gray-600 underline py-1"
                   >
-                    ตรวจสอบไม่ได้ — ข้ามไปกรอก/ยืนยันเอง
+                    ตรวจสอบไม่ได้ (สัญญาณ/บริการ) — กรอก/ยืนยันเอง
                   </button>
                 )}
-              </div>
-            )}
 
-            {/* ── STEP 2: ยืนยันเครื่อง ── */}
-            {step === 2 && (
-              <div className="space-y-4">
-                {/* Order match — does the scanned device match what was ordered? */}
-                {orderMatch && orderMatch.state !== 'unknown' && (
-                  orderMatch.state === 'ok' ? (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs font-bold text-emerald-800 flex items-center gap-2">
-                      <CheckCircle2 size={15} /> ตรงกับออเดอร์
-                    </div>
-                  ) : (
-                    <div className="bg-red-50 border border-red-300 rounded-xl px-3 py-2.5 text-xs text-red-800 flex items-start gap-2">
-                      <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                      <div>
-                        <p className="font-black">อาจไม่ตรงกับออเดอร์ — ตรวจสอบก่อนรับ</p>
-                        <p className="mt-0.5">ออเดอร์: <span className="font-bold">{activeDevice?.model}</span></p>
-                        <p>สแกนได้: <span className="font-bold">{orderMatch.scannedLabel}</span></p>
+                {/* ผลตรวจ — โผล่ทันทีในจอเดียวกับที่สแกน (สแกน = เห็น) */}
+                {deviceIdentified && (
+                  <div className="space-y-4 pt-3 border-t border-gray-100">
+                    {/* เทียบกับออเดอร์ */}
+                    {orderMatch && orderMatch.state !== 'unknown' && (
+                      orderMatch.state === 'ok' ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs font-bold text-emerald-800 flex items-center gap-2">
+                          <CheckCircle2 size={15} /> ตรงกับออเดอร์
+                        </div>
+                      ) : (
+                        <div className="bg-red-50 border border-red-300 rounded-xl px-3 py-2.5 text-xs text-red-800 flex items-start gap-2">
+                          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                          <div>
+                            <p className="font-black">อาจไม่ตรงกับออเดอร์ — ตรวจสอบก่อนรับ</p>
+                            <p className="mt-0.5">ออเดอร์: <span className="font-bold">{activeDevice?.model}</span></p>
+                            <p>สแกนได้: <span className="font-bold">{orderMatch.scannedLabel}</span></p>
+                          </div>
+                        </div>
+                      )
+                    )}
+
+                    {/* การ์ดข้อมูลเครื่อง */}
+                    <div className="rounded-2xl border border-gray-200 p-4">
+                      <p className="text-lg font-black text-gray-900 leading-tight">
+                        {sickw?.parsed.model || activeDevice?.model || 'ไม่ทราบรุ่น'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {[sickw?.parsed.capacity, sickw?.parsed.color].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                      <div className="mt-3 space-y-1.5">
+                        <InfoRow label="IMEI" value={verify.device_imei || sickw?.imei} mono />
+                        <InfoRow label="IMEI 2" value={sickw?.parsed.imei2} mono />
+                        <InfoRow label="Serial" value={verify.device_serial || undefined} mono />
+                        <InfoRow label="Model No." value={verify.device_model_number || sickw?.parsed.modelNumber} mono />
+                        <InfoRow label="ประเทศ" value={sickw?.parsed.country} />
+                        <InfoRow label="Carrier" value={sickw?.parsed.carrier} />
+                        <InfoRow label="Activation" value={sickw?.parsed.activationStatus} />
+                        <InfoRow label="วันที่ซื้อ/activate" value={sickw?.parsed.estimatedPurchaseDate} />
+                        <InfoRow label="ประกัน" value={sickw?.parsed.warrantyStatus} bold />
+                        <InfoRow label="ประกันถึง" value={sickw?.parsed.warrantyExpiry} bold />
+                        <InfoRow label="AppleCare" value={sickw?.parsed.appleCareDescription} />
                       </div>
                     </div>
-                  )
-                )}
 
-                {/* Identity card */}
-                <div className="rounded-2xl border border-gray-200 p-4">
-                  <p className="text-lg font-black text-gray-900 leading-tight">
-                    {sickw?.parsed.model || activeDevice?.model || 'ไม่ทราบรุ่น'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {[sickw?.parsed.capacity, sickw?.parsed.color].filter(Boolean).join(' · ') || '—'}
-                  </p>
-                  <div className="mt-3 space-y-1.5">
-                    <InfoRow label="IMEI" value={verify.device_imei || sickw?.imei} mono />
-                    <InfoRow label="IMEI 2" value={sickw?.parsed.imei2} mono />
-                    <InfoRow label="Serial" value={verify.device_serial || undefined} mono />
-                    <InfoRow label="Model No." value={verify.device_model_number || sickw?.parsed.modelNumber} mono />
-                    <InfoRow label="ประเทศ" value={sickw?.parsed.country} />
-                    <InfoRow label="Carrier" value={sickw?.parsed.carrier} />
-                    <InfoRow label="Activation" value={sickw?.parsed.activationStatus} />
-                    <InfoRow label="วันที่ซื้อ/activate" value={sickw?.parsed.estimatedPurchaseDate} />
-                    <InfoRow label="ประกัน" value={sickw?.parsed.warrantyStatus} bold />
-                    <InfoRow label="ประกันถึง" value={sickw?.parsed.warrantyExpiry} bold />
-                    <InfoRow label="AppleCare" value={sickw?.parsed.appleCareDescription} />
-                  </div>
-                </div>
-
-                {/* Status semaphore — Find My (gate) + SIM Lock + Blacklist + MDM */}
-                <div className="grid grid-cols-2 gap-2">
-                  <StatusChip
-                    label="Find My"
-                    state={verify.find_my_status === 'off' ? 'clean' : verify.find_my_status === 'on' ? 'flagged' : 'unknown'}
-                    value={verify.find_my_status === 'off' ? 'ปิด' : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
-                  />
-                  <StatusChip label="SIM Lock" state={simLockState(sickw?.parsed.simLock)} value={sickw?.parsed.simLock || '-'} />
-                  <StatusChip label="Blacklist" state={sickw?.blacklist || 'unknown'} value={sickw?.parsed.blacklistStatus || sickw?.parsed.iCloudStatus || '-'} />
-                  <StatusChip label="MDM" state={sickw?.mdm || 'unknown'} value={sickw?.parsed.mdmStatus || '-'} />
-                </div>
-
-                {/* Gate / fallback */}
-                {activeDeviceIsNew ? (
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2">
-                    <PackageOpen size={16} className="mt-0.5 shrink-0" />
-                    เครื่องใหม่ (ซีล) — ข้ามการตรวจ Find My/แบต ใช้รูปกล่อง+ซีลเป็นหลักฐานแทน
-                  </div>
-                ) : findMyOn ? (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2 items-start">
-                    <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
-                    <div className="text-xs text-red-900">
-                      <p className="font-bold">Find My เปิดอยู่ — ห้ามรับเครื่อง</p>
-                      <p className="mt-1">ขอให้ลูกค้า Sign out จาก Apple ID และปิด Find My ก่อน แล้วกดตรวจซ้ำที่ขั้น 1</p>
+                    {/* ป้ายสถานะ */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <StatusChip
+                        label="Find My"
+                        state={verify.find_my_status === 'off' ? 'clean' : verify.find_my_status === 'on' ? 'flagged' : 'unknown'}
+                        value={verify.find_my_status === 'off' ? 'ปิด' : verify.find_my_status === 'on' ? 'เปิดอยู่' : 'ไม่ทราบ'}
+                      />
+                      <StatusChip label="SIM Lock" state={simLockState(sickw?.parsed.simLock)} value={sickw?.parsed.simLock || '-'} />
+                      <StatusChip label="Blacklist" state={sickw?.blacklist || 'unknown'} value={sickw?.parsed.blacklistStatus || sickw?.parsed.iCloudStatus || '-'} />
+                      <StatusChip label="MDM" state={sickw?.mdm || 'unknown'} value={sickw?.parsed.mdmStatus || '-'} />
                     </div>
-                  </div>
-                ) : verify.find_my_status === 'off' ? (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 font-medium flex items-center gap-2">
-                    <CheckCircle2 size={16} /> Find My ปิดแล้ว — รับเครื่องต่อได้
-                  </div>
-                ) : (
-                  /* Unknown FMI → fallback: screenshot OCR or manual confirm */
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
-                    <p className="text-xs font-bold text-amber-900 flex items-center gap-1">
-                      <AlertTriangle size={14} /> ยืนยันสถานะ Find My (อ่านอัตโนมัติไม่ได้)
-                    </p>
-                    <p className="text-[11px] text-amber-700">ที่เครื่อง: Settings → [Apple ID] → Find My</p>
-                    <input ref={fmInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-                      onChange={(e) => { handleFindMyShot(e.target.files?.[0]); e.target.value = ''; }} />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => fmInputRef.current?.click()}
-                        disabled={fmUploading}
-                        className="flex-1 bg-white border border-amber-300 text-amber-800 rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50"
-                      >
-                        {fmUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />} ถ่ายหน้าจอ
-                      </button>
-                      <button
-                        onClick={() => setVerify((v) => ({ ...v, find_my_status: 'off' }))}
-                        className="flex-1 bg-amber-500 text-white rounded-lg py-2 text-xs font-bold"
-                      >
-                        ยืนยันด้วยตาเปล่าว่าปิดแล้ว
-                      </button>
-                    </div>
-                    {verify.verification_findmy_photo && (
-                      <p className="text-[11px] text-amber-700">แนบรูปแล้ว — ถ้าเห็นว่า "ปิด" กดยืนยันด้วยตาเปล่าได้</p>
+
+                    {/* Find My — ไม่บล็อกการถ่ายรูป แต่บล็อกตอน "บันทึก" */}
+                    {activeDeviceIsNew ? (
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2">
+                        <PackageOpen size={16} className="mt-0.5 shrink-0" />
+                        เครื่องใหม่ (ซีล) — ข้ามการตรวจ Find My/แบต ใช้รูปกล่อง+ซีลเป็นหลักฐานแทน
+                      </div>
+                    ) : findMyOn ? (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2 items-start">
+                        <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
+                        <div className="text-xs text-red-900">
+                          <p className="font-bold">Find My เปิดอยู่ — ให้ลูกค้า Sign out</p>
+                          <p className="mt-1">ถ่ายสภาพ (ขั้น 2) รอไปได้เลย แต่จะ "บันทึก" ไม่ได้จนกว่า Find My ปิด — พอลูกค้า sign out แล้ว กด refresh ที่ช่องตรวจด้านบนเพื่อตรวจซ้ำ</p>
+                        </div>
+                      </div>
+                    ) : verify.find_my_status === 'off' ? (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 font-medium flex items-center gap-2">
+                        <CheckCircle2 size={16} /> Find My ปิดแล้ว — รับเครื่องได้
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                        <p className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                          <AlertTriangle size={14} /> ยืนยันสถานะ Find My (อ่านอัตโนมัติไม่ได้)
+                        </p>
+                        <p className="text-[11px] text-amber-700">ที่เครื่อง: Settings → [Apple ID] → Find My</p>
+                        <input ref={fmInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                          onChange={(e) => { handleFindMyShot(e.target.files?.[0]); e.target.value = ''; }} />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => fmInputRef.current?.click()}
+                            disabled={fmUploading}
+                            className="flex-1 bg-white border border-amber-300 text-amber-800 rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-50"
+                          >
+                            {fmUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />} ถ่ายหน้าจอ
+                          </button>
+                          <button
+                            onClick={() => setVerify((v) => ({ ...v, find_my_status: 'off' }))}
+                            className="flex-1 bg-amber-500 text-white rounded-lg py-2 text-xs font-bold"
+                          >
+                            ยืนยันด้วยตาเปล่าว่าปิดแล้ว
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(sickw?.blacklist === 'flagged') && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 flex items-start gap-2">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                        เครื่องติด Blacklist/iCloud — แจ้งแอดมินก่อนรับ (แอดมินจะ block ที่ขั้น QC)
+                      </div>
+                    )}
+
+                    {/* แบต — อยู่ใน Settings เดียวกับ IMEI/Find My เก็บรวดเดียว */}
+                    {!activeDeviceIsNew && (
+                      <div>
+                        <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                          <ShieldCheck size={16} className="text-emerald-500" /> แบตเตอรี่
+                        </label>
+                        <BatteryCheck jobId={job.id} value={verify} onChange={setVerify} />
+                      </div>
                     )}
                   </div>
                 )}
-
-                {(sickw?.blacklist === 'flagged') && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 flex items-start gap-2">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                    เครื่องติด Blacklist/iCloud — แจ้งแอดมินก่อนรับ (แอดมินจะ block ที่ขั้น QC)
-                  </div>
-                )}
               </div>
             )}
 
-            {/* ── STEP 3: ตรวจสภาพ ── */}
-            {step === 3 && (
+            {/* ── STEP 2: สภาพ + ราคา ── */}
+            {step === 2 && (
               <div className="space-y-7">
-                {/* Battery — the one value SickW can't read */}
-                {!activeDeviceIsNew && (
-                  <div>
-                    <label className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                      <ShieldCheck size={16} className="text-emerald-500" /> แบตเตอรี่
-                    </label>
-                    <BatteryCheck jobId={job.id} value={verify} onChange={setVerify} />
-                  </div>
-                )}
-
                 {/* Photos */}
                 {(() => {
                   const isNew = activeDevice?.isNewDevice;
@@ -789,29 +788,36 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
             {/* ── Footer nav ── */}
             <div className="pt-5 mt-2">
-              {step === 3 && !allRequiredSlotsFilled && (
+              {/* step 1 hints */}
+              {step === 1 && deviceIdentified && !batteryDone && (
+                <p className="text-center text-xs text-amber-600 font-medium mb-2">
+                  ระบุ % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนไปต่อ
+                </p>
+              )}
+              {/* step 2 hints */}
+              {step === 2 && !allRequiredSlotsFilled && (
                 <p className="text-center text-xs text-amber-600 font-medium mb-2">
                   เหลืออีก {requiredCountForActive - filledSlotCount} {activeDeviceIsNew ? 'รูปกล่อง' : 'ด้าน'} — บันทึกไม่ได้จนกว่าจะครบ
                 </p>
               )}
-              {step === 3 && allRequiredSlotsFilled && !allChecksAnswered && (
+              {step === 2 && allRequiredSlotsFilled && !allChecksAnswered && (
                 <p className="text-center text-xs text-amber-600 font-medium mb-2">
                   เลือกสภาพเครื่องอีก {activeChecklist.length - answeredGroupCount} หัวข้อก่อนบันทึก
                 </p>
               )}
-              {step === 3 && allRequiredSlotsFilled && allChecksAnswered && !batteryDone && (
-                <p className="text-center text-xs text-amber-600 font-medium mb-2">
-                  ระบุ % แบต หรือกด "เครื่องเปิดไม่ได้" ก่อนบันทึก
+              {step === 2 && allRequiredSlotsFilled && allChecksAnswered && !findMyOk && (
+                <p className="text-center text-xs text-red-600 font-medium mb-2">
+                  Find My ยังไม่ปิด — กลับไปขั้น 1 ตรวจซ้ำหลังลูกค้า sign out
                 </p>
               )}
 
-              {step < 3 ? (
+              {step < 2 ? (
                 <button
                   onClick={() => setStep((step + 1) as Step)}
-                  disabled={step === 1 ? !canNextStep1 : !canNextStep2}
+                  disabled={!canNextStep1}
                   className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-40 disabled:active:scale-100"
                 >
-                  ถัดไป <ChevronRight size={20} />
+                  ถัดไป (ถ่ายสภาพ) <ChevronRight size={20} />
                 </button>
               ) : (
                 <button
@@ -821,9 +827,6 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 >
                   บันทึกเครื่องนี้
                 </button>
-              )}
-              {step === 2 && !canNextStep2 && !findMyOn && (
-                <p className="text-center text-[11px] text-amber-600 font-medium mt-2">ยืนยันสถานะ Find My ก่อนจึงจะไปต่อได้</p>
               )}
             </div>
           </div>
