@@ -158,6 +158,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           device_imei: v.device_imei || updatedDevices[i].device_imei || '',
           device_serial: v.device_serial,
           find_my_status: v.find_my_status,
+          find_my_manual: !!v.find_my_manual,
           warranty_status: v.warranty_status,
           warranty_expires_at: v.warranty_expires_at,
         };
@@ -191,6 +192,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
       const v = primaryVerification;
       jobUpdates.verification_completed_at = Date.now();
       if (v.find_my_status) jobUpdates.find_my_status = v.find_my_status;
+      // Audit: was Find My system-verified or rider self-attested/skipped?
+      if (v.find_my_status === 'off') jobUpdates.find_my_manual = !!v.find_my_manual;
       if (v.device_imei) jobUpdates.device_imei = v.device_imei;
       if (v.device_serial) jobUpdates.device_serial = v.device_serial;
       if (v.device_model_number) jobUpdates.device_model_number = v.device_model_number;
