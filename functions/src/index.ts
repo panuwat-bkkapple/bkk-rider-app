@@ -205,6 +205,18 @@ export const onJobStatusChanged = onValueWritten(
         body = `${deviceName} - ขอบคุณครับ!`;
         break;
 
+      case "Waiting for Handover":
+      case "Waiting For Handover":
+      case "Payment Completed":
+        // Finance transferred the payout to the customer. The rider already
+        // handed the device over at QC, so for them this is the closing signal
+        // that the money went out. Previously this status hit `default` and the
+        // rider got nothing when Finance paid. (B2C Finance writes the
+        // lowercase-'for' legacy string; B2B writes "Payment Completed".)
+        title = "💸 โอนเงินให้ลูกค้าแล้ว";
+        body = `${deviceName} - งานเสร็จสมบูรณ์`;
+        break;
+
       case "Cancelled": {
         // Differentiate cancel source — rider needs to know whether to expect
         // a call from the customer, a refund flow from admin, or just move on.
@@ -237,10 +249,19 @@ export const onJobStatusChanged = onValueWritten(
         return;
     }
 
+    const isPayout =
+      after === "Waiting for Handover" ||
+      after === "Waiting For Handover" ||
+      after === "Payment Completed";
     await sendToRider(riderId, tokens, title, body, {
       type: "job_status",
       jobId,
       status: after,
+      // Mark payout pushes so the client can special-case them; type stays
+      // "job_status" so existing SW / onMessage rendering keeps working.
+      ...(isPayout
+        ? { event: "payment_transferred", amount: String(job.net_payout != null ? job.net_payout : "") }
+        : {}),
     });
   }
 );
