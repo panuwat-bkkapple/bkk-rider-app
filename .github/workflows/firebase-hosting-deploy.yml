@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
 
+# Hosting and Functions are deployed by two INDEPENDENT jobs that run in
+# parallel. Previously they were sequential steps in one job with Functions
+# before Hosting and no continue-on-error, so any Functions failure (e.g. a
+# Firebase auth error) aborted the job before Hosting ran and the rider PWA
+# silently stopped deploying. Splitting them isolates the two deploys.
 jobs:
-  build-and-deploy:
+  deploy-hosting:
+    name: Deploy Hosting (rider PWA)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -30,21 +35,6 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
 
-      # Deploy Cloud Functions (codebase: rider-notifications)
-      - name: Install Functions dependencies
-        run: cd functions && npm ci
-
-      - name: Build Functions
-        run: cd functions && npm run build
-
-      - name: Deploy Firebase Functions
-        uses: w9jds/firebase-action@master
-        with:
-          args: deploy --only functions:rider-notifications --project bkk-apple-tradein
-        env:
-          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BKK_APPLE_TRADEIN }}
-
-      # Deploy Hosting (target: rider)
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
@@ -52,3 +42,38 @@ jobs:
           channelId: live
           projectId: bkk-apple-tradein
           target: rider
+
+  deploy-functions:
+    name: Deploy Cloud Functions (rider-notifications)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: cd functions && npm ci
+
+      - name: Build Functions
+        run: cd functions && npm run build
+
+      # Deploy via firebase-tools directly (pinned), authenticating with the
+      # SAME service-account secret the Hosting job uses successfully, exposed
+      # as Application Default Credentials. Replaces w9jds/firebase-action@master
+      # whose moving @master tag broke auth ("Failed to authenticate") while the
+      # pinned Hosting action kept working. Scoped to the rider-notifications
+      # codebase so it cannot touch the bkk-system codebase's functions.
+      - name: Deploy Firebase Functions
+        run: |
+          printf '%s' "$FIREBASE_SA" > "$RUNNER_TEMP/gcp_sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp_sa.json"
+          npx --yes firebase-tools@15.22.0 deploy \
+            --only functions:rider-notifications \
+            --project bkk-apple-tradein \
+            --non-interactive
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BKK_APPLE_TRADEIN }}
