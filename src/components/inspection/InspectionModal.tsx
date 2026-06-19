@@ -18,6 +18,7 @@ import {
   HelpCircle, Loader2, Search,
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import { resolveOptionDeduction } from '../../utils/pricingResolver';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { getDevicesList } from '../../utils/jobHelpers';
 import { ocrFindMy } from '../../utils/visionOcr';
@@ -310,11 +311,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
       activeChecklist.forEach((group: any) => {
         group.options?.forEach((opt: any) => {
           if (checks.includes(opt.id)) {
-            let deductAmount = 0;
-            if (startingPrice >= 30000) deductAmount = Number(opt.t1 || 0);
-            else if (startingPrice >= 15000 && startingPrice < 30000) deductAmount = Number(opt.t2 || 0);
-            else deductAmount = Number(opt.t3 || 0);
-            deductAmount = Math.round(deductAmount * lf);
+            const deductAmount = resolveOptionDeduction(opt, startingPrice, lf);
             totalDeduction += deductAmount;
             deductionLabels.push(deductAmount > 0
               ? `[${group.title}] ${opt.label} (-฿${deductAmount.toLocaleString()})`
@@ -782,11 +779,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                           {group.options?.map((opt: any) => {
                             const isChecked = checks.includes(opt.id);
                             const startingPrice = getBasePrice(activeDevice);
-                            let displayDeduct = 0;
-                            if (startingPrice >= 30000) displayDeduct = Number(opt.t1 || 0);
-                            else if (startingPrice >= 15000 && startingPrice < 30000) displayDeduct = Number(opt.t2 || 0);
-                            else displayDeduct = Number(opt.t3 || 0);
-                            displayDeduct = Math.round(displayDeduct * getLiquidityFactor(activeDevice));
+                            const displayDeduct = resolveOptionDeduction(opt, startingPrice, getLiquidityFactor(activeDevice));
                             return (
                               <button
                                 key={opt.id}
