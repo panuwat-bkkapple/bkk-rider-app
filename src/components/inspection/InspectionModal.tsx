@@ -168,6 +168,19 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     return Number(device?.estimated_price || 0);
   };
 
+  // Per-model liquidity multiplier — MUST mirror the customer quote
+  // (SellPageClient), internal QC and the server (validateAndCreateOrder) so
+  // the rider's inspection deductions don't diverge from what the customer was
+  // shown. <1 = high-demand model, deduct less.
+  const getLiquidityFactor = (device: any): number => {
+    if (!modelsData || !device) return 1;
+    const modelList = Array.isArray(modelsData) ? modelsData : Object.keys(modelsData).map(k => ({ id: k, ...(modelsData as any)[k] }));
+    const baseModelName = (device?.model || '').split(' (')[0].trim();
+    const targetModel = modelList.find((m: any) => m.name === device.model || m.name === baseModelName || (device?.model || '').includes(m.name));
+    const lf = Number(targetModel?.liquidityFactor);
+    return lf > 0 ? lf : 1;
+  };
+
   // ── SickW result → auto-fill identity/status (step 1) ──────────────────
   const onSickwResult = (s: SickwResultSummary) => {
     setSickw(s);
@@ -293,6 +306,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
     if (activeDevice.isNewDevice) {
       deductionLabels.push('[สภาพสินค้า] เครื่องใหม่มือ 1 (ตรวจสอบซีลและกล่องสมบูรณ์)');
     } else {
+      const lf = getLiquidityFactor(activeDevice);
       activeChecklist.forEach((group: any) => {
         group.options?.forEach((opt: any) => {
           if (checks.includes(opt.id)) {
@@ -300,6 +314,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
             if (startingPrice >= 30000) deductAmount = Number(opt.t1 || 0);
             else if (startingPrice >= 15000 && startingPrice < 30000) deductAmount = Number(opt.t2 || 0);
             else deductAmount = Number(opt.t3 || 0);
+            deductAmount = Math.round(deductAmount * lf);
             totalDeduction += deductAmount;
             deductionLabels.push(deductAmount > 0
               ? `[${group.title}] ${opt.label} (-฿${deductAmount.toLocaleString()})`
@@ -771,6 +786,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                             if (startingPrice >= 30000) displayDeduct = Number(opt.t1 || 0);
                             else if (startingPrice >= 15000 && startingPrice < 30000) displayDeduct = Number(opt.t2 || 0);
                             else displayDeduct = Number(opt.t3 || 0);
+                            displayDeduct = Math.round(displayDeduct * getLiquidityFactor(activeDevice));
                             return (
                               <button
                                 key={opt.id}
