@@ -39,6 +39,8 @@ export interface Job {
   rider_fee?: number;
   rider_fee_status?: string;
   pickup_fee?: number;
+  /** ส่วนลดค่าไรเดอร์ที่บริษัทรับภาระ — หัก pickup_fee (ไม่แตะค่าจ้างไรเดอร์) */
+  rider_fee_discount?: number;
   applied_coupon?: { value?: number; actual_value?: number };
   devices?: Device[];
   photos?: string[];
