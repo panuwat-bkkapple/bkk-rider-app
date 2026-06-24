@@ -79,6 +79,10 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const [completingJob, setCompletingJob] = useState<any>(null);
   const [revertingJob, setRevertingJob] = useState<any>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // Must live with the other hooks ABOVE the `if (jobsLoading) return` early
+  // return — declaring it after that guard changed the hook count between
+  // renders (React #310).
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Open chat from notification deep link
   useEffect(() => {
@@ -235,8 +239,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   // Profile photo upload → Storage (riders/{id}/profile, rider-writable per
   // storage.rules) then persist riders/{id}/photo_url (publicly readable, so
   // the customer /track + admin show it). Rider sees it via the riders/{id}
-  // listener in useRiderData.
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // listener in useRiderData. (uploadingPhoto state is declared with the
+  // other hooks above, before the loading early-return.)
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
