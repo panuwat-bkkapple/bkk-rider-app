@@ -8,6 +8,7 @@ export interface RiderInfo {
   accountName: string;
   idCardImg: string | null;
   licenseImg: string | null;
+  photoUrl?: string | null;
 }
 
 export interface Job {

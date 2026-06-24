@@ -1,5 +1,5 @@
 // src/components/profile/ProfileTab.tsx
-import { X, CreditCard, FileText, ChevronRight, LogOut } from 'lucide-react';
+import { X, CreditCard, FileText, ChevronRight, LogOut, Camera, Loader2 } from 'lucide-react';
 import type { RiderInfo } from '../../types';
 
 interface ProfileTabProps {
@@ -8,9 +8,11 @@ interface ProfileTabProps {
   onOpenBank: () => void;
   onOpenDoc: () => void;
   onLogout: () => void;
+  onUploadPhoto?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  uploadingPhoto?: boolean;
 }
 
-export const ProfileTab = ({ riderInfo, onGoHome, onOpenBank, onOpenDoc, onLogout }: ProfileTabProps) => (
+export const ProfileTab = ({ riderInfo, onGoHome, onOpenBank, onOpenDoc, onLogout, onUploadPhoto, uploadingPhoto }: ProfileTabProps) => (
   <div className="h-full bg-[#F3F4F6] animate-in slide-in-from-right duration-300 overflow-y-auto pb-32">
     {/* Header */}
     <div className="bg-white p-6 pt-12 pb-6 flex items-center gap-4 sticky top-0 z-20 border-b border-gray-100">
@@ -23,9 +25,22 @@ export const ProfileTab = ({ riderInfo, onGoHome, onOpenBank, onOpenDoc, onLogou
     <div className="p-6 space-y-6">
       {/* Avatar & name */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-5">
-        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold text-2xl shadow-inner">
-          {riderInfo.name.charAt(0)}
-        </div>
+        <label className="relative w-16 h-16 shrink-0 cursor-pointer group">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-2xl shadow-inner">
+            {riderInfo.photoUrl ? (
+              <img src={riderInfo.photoUrl} alt={riderInfo.name} className="w-full h-full object-cover" />
+            ) : (
+              riderInfo.name.charAt(0)
+            )}
+          </div>
+          {/* camera badge / uploading spinner */}
+          <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white shadow">
+            {uploadingPhoto ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+          </div>
+          {onUploadPhoto && (
+            <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={onUploadPhoto} />
+          )}
+        </label>
         <div className="flex-1">
           <h3 className="text-xl font-bold text-gray-900">{riderInfo.name}</h3>
           <p className="text-xs font-medium text-gray-500 mt-1">รหัสพนักงาน: {riderInfo.id}</p>
