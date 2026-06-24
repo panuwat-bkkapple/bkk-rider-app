@@ -1,8 +1,10 @@
 // src/pages/RiderApp.tsx - Orchestrator (rebuilt from 1,110 lines monolith)
 import { useState, useEffect, useMemo } from 'react';
 import { signOut } from 'firebase/auth';
-import { auth } from '../api/firebase';
+import { ref, update } from 'firebase/database';
+import { auth, db } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
+import { toast } from '../components/common/Toast';
 import { getDevicesList } from '../utils/jobHelpers';
 
 // Hooks
@@ -230,6 +232,27 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     }
   };
 
+  // Profile photo upload → Storage (riders/{id}/profile, rider-writable per
+  // storage.rules) then persist riders/{id}/photo_url (publicly readable, so
+  // the customer /track + admin show it). Rider sees it via the riders/{id}
+  // listener in useRiderData.
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !riderInfo.id) return;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadImageToFirebase(file, `riders/${riderInfo.id}/profile`, { opaqueFilename: true });
+      await update(ref(db, `riders/${riderInfo.id}`), { photo_url: url });
+      toast.success('อัปเดตรูปโปรไฟล์แล้ว');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   const handleLogout = async () => {
     setShowLogoutConfirm(true);
   };
@@ -321,6 +344,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onOpenBank={() => setIsBankModalOpen(true)}
           onOpenDoc={() => setIsDocModalOpen(true)}
           onLogout={handleLogout}
+          onUploadPhoto={handleUploadPhoto}
+          uploadingPhoto={uploadingPhoto}
         />
       )}
 

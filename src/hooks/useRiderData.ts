@@ -87,7 +87,8 @@ export const useRiderData = (currentRiderId: string) => {
         accountNo: data.bank?.account || '-',
         accountName: data.name || '-',
         idCardImg: data.documents?.idCard || null,
-        licenseImg: data.documents?.license || null
+        licenseImg: data.documents?.license || null,
+        photoUrl: data.photo_url || data.photo || null
       }));
     });
     return () => unsubscribe();
