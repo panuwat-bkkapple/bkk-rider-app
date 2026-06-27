@@ -324,6 +324,21 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
 
     const finalPrice = activeDevice.isNewDevice ? startingPrice : Math.max(0, startingPrice - totalDeduction);
 
+    // Functional re-check (Phase 2): a selected option in a functional group
+    // marked failBehavior:'reject' means the device failed the physical working
+    // test → the rider must not complete the buy (gated in handleSubmitAll).
+    const functionalRejects: string[] = [];
+    if (!activeDevice.isNewDevice) {
+      activeChecklist.forEach((group: any) => {
+        if (group.kind !== 'functional') return;
+        group.options?.forEach((opt: any) => {
+          if (checks.includes(opt.id) && opt.failBehavior === 'reject') {
+            functionalRejects.push(`[${group.title}] ${opt.label}`);
+          }
+        });
+      });
+    }
+
     // Flatten slots → ordered array. Required slots first (PHOTO_SLOTS order),
     // then damage close-ups. Guarded by allRequiredSlotsFilled; filter for safety.
     const slotPairs = SLOT_KEYS
@@ -338,6 +353,7 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
         photos: orderedPhotos.map((p) => p.url),
         photoFiles: orderedPhotos.map((p) => p.file),
         deductions: deductionLabels, final_price: finalPrice,
+        functional_check: { checked_at: Date.now(), rejects: functionalRejects, passed: functionalRejects.length === 0 },
         verification: verify,
         sickw,
       }
@@ -372,6 +388,15 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
   };
 
   const handleSubmitAll = async () => {
+    // Functional re-check gate (Phase 2): a device failed a 'reject' working
+    // check. The rider can't override or silently buy it — direct them to the
+    // report-problem (amendment) flow so admin decides.
+    const fnRejectReasons = Object.values(inspectedDevicesData)
+      .flatMap((d: any) => Array.isArray(d?.functional_check?.rejects) ? d.functional_check.rejects : []);
+    if (fnRejectReasons.length > 0) {
+      toast.error(`เครื่องไม่ผ่านการตรวจการทำงาน: ${fnRejectReasons.join(', ')} — กรุณาแจ้งปัญหาให้แอดมินตัดสินใจ ไม่ดำเนินการรับซื้อเอง`);
+      return;
+    }
     setIsUploading(true);
     try {
       await onSubmit(job, inspectedDevicesData);
