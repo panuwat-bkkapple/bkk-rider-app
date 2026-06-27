@@ -1,0 +1,15 @@
+// Ad-hoc price adjustments on a job — itemised deductions/additions that admin
+// QC or a rider (via approved amendment) records. net_payout folds in only the
+// ones with status 'applied'. Mirrored in bkk-system + bkk-frontend-next — keep
+// in sync. See bkk-system/CLAUDE.md invariant #2 for the canonical formula.
+export function sumAppliedAdjustments(job: unknown): number {
+  const raw = (job as { adjustments?: unknown } | null)?.adjustments;
+  const list = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' ? Object.values(raw as Record<string, unknown>) : []);
+  return (list as Array<{ status?: string; amount?: unknown }>).reduce((sum, a) => {
+    if (!a || a.status !== 'applied') return sum;
+    const amt = Number(a.amount);
+    return Number.isFinite(amt) ? sum + amt : sum;
+  }, 0);
+}

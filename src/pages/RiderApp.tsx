@@ -6,6 +6,7 @@ import { auth, db } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { toast } from '../components/common/Toast';
 import { getDevicesList } from '../utils/jobHelpers';
+import { sumAppliedAdjustments } from '../utils/adjustments';
 
 // Hooks
 import { useRiderData } from '../hooks/useRiderData';
@@ -181,7 +182,9 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     const riderFeeDiscount = job.receive_method === 'Pickup' ? Number(job.rider_fee_discount || 0) : 0;
     const pickupFee = Math.max(0, grossPickupFee - riderFeeDiscount);
     const couponValue = Number(job.applied_coupon?.value || job.applied_coupon?.actual_value || 0);
-    const newNetPayout = Math.max(0, jobTotalDevicePrice - pickupFee + couponValue);
+    // Preserve any already-applied ad-hoc adjustments (admin QC / approved rider
+    // proposal) when the rider's inspection recomputes the payout.
+    const newNetPayout = Math.max(0, jobTotalDevicePrice - pickupFee + couponValue + sumAppliedAdjustments(job));
 
     // original_price is the customer's quote total at order creation —
     // never overwrite it from QC, otherwise we lose the audit trail
