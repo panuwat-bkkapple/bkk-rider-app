@@ -133,6 +133,9 @@ export type JobAmendmentType =
   | 'address_wrong'
   | 'customer_info_wrong'
   | 'customer_request_cancel'
+  // Financial — rider proposes a price deduction for a defect not in the
+  // condition set; admin approves → applied as an itemised adjustment.
+  | 'ad_hoc_deduction'
   | 'other';
 
 export const AMENDMENT_TYPE_CLASS: Record<JobAmendmentType, AmendmentClass> = {
@@ -143,6 +146,7 @@ export const AMENDMENT_TYPE_CLASS: Record<JobAmendmentType, AmendmentClass> = {
   address_wrong: 'operational',
   customer_info_wrong: 'operational',
   customer_request_cancel: 'operational',
+  ad_hoc_deduction: 'operational',
   other: 'operational',
 };
 
@@ -154,6 +158,7 @@ export const AMENDMENT_TYPE_LABEL_TH: Record<JobAmendmentType, string> = {
   address_wrong: 'ที่อยู่ไม่ตรง',
   customer_info_wrong: 'ข้อมูลลูกค้าไม่ตรง (ชื่อ/เบอร์/อีเมล)',
   customer_request_cancel: 'ลูกค้าขอยกเลิกทั้งงาน',
+  ad_hoc_deduction: 'พบตำหนิเพิ่ม — เสนอหักราคา',
   other: 'อื่นๆ — admin โทรคุยลูกค้า',
 };
 
@@ -191,6 +196,7 @@ export type AmendmentTarget =
   | { kind: 'address'; new_address: string; new_lat?: number; new_lng?: number }
   | { kind: 'customer_info'; field: 'cust_name' | 'cust_phone' | 'cust_email'; new_value: string }
   | { kind: 'cancel'; reason_category: AmendmentCancelCategory; reason_detail?: string }
+  | { kind: 'ad_hoc_deduction'; label: string; amount: number; device_index?: number }
   | { kind: 'other'; admin_freeform?: string }
   | {
       kind: 'device_pick';

@@ -142,6 +142,7 @@ const TYPE_GROUPS: Array<{
       { type: 'address_wrong', icon: MapPin, description: 'ที่อยู่ในระบบไม่ตรงกับสถานที่จริง' },
       { type: 'customer_info_wrong', icon: User, description: 'ชื่อ / เบอร์โทร / อีเมล ของลูกค้าผิด' },
       { type: 'customer_request_cancel', icon: Ban, description: 'ลูกค้าขอยกเลิกทั้งงาน' },
+      { type: 'ad_hoc_deduction', icon: AlertTriangle, description: 'พบตำหนิ/ปัญหาที่ไม่มีในรายการประเมิน — เสนอหักราคา (admin อนุมัติ)' },
       { type: 'other', icon: MessageSquare, description: 'อื่นๆ — admin โทรคุยลูกค้า' },
     ],
   },
@@ -164,6 +165,10 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
   const [custInfoValue, setCustInfoValue] = useState<string>('');
   const [cancelCategory, setCancelCategory] = useState<AmendmentCancelCategory>('customer_changed_mind');
   const [removeIdx, setRemoveIdx] = useState<number>(0);
+  // Ad-hoc deduction: rider enters the defect label + the baht amount to deduct
+  // (entered as a positive magnitude; stored negative). Admin approval applies it.
+  const [adjLabel, setAdjLabel] = useState<string>('');
+  const [adjAmount, setAdjAmount] = useState<string>('');
   // Device pick (model_id|variant_id) — used by device_mismatch + add_device.
   // Rider has the device in hand and can read it directly off the back/box,
   // so we let them seed the catalog binding here instead of forcing admin
@@ -258,6 +263,10 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
     if (type === 'customer_request_cancel') {
       return { kind: 'cancel', reason_category: cancelCategory };
     }
+    if (type === 'ad_hoc_deduction' && adjLabel.trim() && Number(adjAmount) > 0) {
+      // Stored negative: a deduction reduces the customer payout.
+      return { kind: 'ad_hoc_deduction', label: adjLabel.trim(), amount: -Math.abs(Number(adjAmount)) };
+    }
     if ((type === 'device_mismatch' || type === 'add_device') && selectedDevice) {
       const t: AmendmentTarget = {
         kind: 'device_pick',
@@ -281,6 +290,7 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
     if (type === 'remove_device' && (!job.devices || removeIdx >= (job.devices?.length || 0))) return false;
     if (type === 'address_wrong' && newAddress.trim().length < 5) return false;
     if (type === 'customer_info_wrong' && custInfoValue.trim().length < 1) return false;
+    if (type === 'ad_hoc_deduction' && (adjLabel.trim().length < 2 || !(Number(adjAmount) > 0))) return false;
     return true;
   })();
 
@@ -506,6 +516,31 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 leading-relaxed">
             <p className="font-bold mb-1">💰 ค่าเสียเวลาไรเดอร์:</p>
             <p>หากคุณกำลังเดินทาง/ถึงจุดหมายแล้ว ลูกค้ายกเลิก = ระบบจ่ายค่าเสียเวลา 100฿ อัตโนมัติ (ถ้าลูกค้ายังไม่ส่งคุณออกเดินทาง = ไม่ได้)</p>
+          </div>
+        </>
+      )}
+
+      {type === 'ad_hoc_deduction' && (
+        <>
+          <Field title="ตำหนิ/ปัญหาที่พบ">
+            <input
+              value={adjLabel}
+              onChange={(e) => setAdjLabel(e.target.value)}
+              placeholder="เช่น กล้องหลังถ่ายไม่ติด"
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm"
+            />
+          </Field>
+          <Field title="จำนวนเงินที่เสนอหัก (บาท)">
+            <input
+              value={adjAmount}
+              onChange={(e) => setAdjAmount(e.target.value.replace(/[^0-9]/g, ''))}
+              inputMode="numeric"
+              placeholder="เช่น 1500"
+              className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-right font-bold"
+            />
+          </Field>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 leading-relaxed">
+            เป็นการ <b>เสนอ</b> ให้แอดมินอนุมัติ — ยังไม่หักจนกว่าแอดมินจะกดอนุมัติ แนบรูปตำหนิด้วยจะช่วยให้อนุมัติเร็วขึ้น
           </div>
         </>
       )}
