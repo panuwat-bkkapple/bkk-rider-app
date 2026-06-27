@@ -438,6 +438,9 @@ export interface InspectedDeviceData {
   deductions: string[];
   final_price: number;
   verification: DeviceVerification;
+  // Functional re-check result (Phase 2): rejects = selected failBehavior:'reject'
+  // working-check options. Non-empty rejects gate the rider's submit.
+  functional_check?: { checked_at: number; rejects: string[]; passed: boolean };
   // SickW identity/status summary captured in step 1 (typed loosely to avoid
   // a circular import with the component that owns the shape).
   sickw?: any | null;

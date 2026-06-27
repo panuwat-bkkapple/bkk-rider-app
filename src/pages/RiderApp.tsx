@@ -156,6 +156,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         updatedDevices[i] = {
           ...updatedDevices[i], photos: uploadedUrls, deductions: data.deductions,
           estimated_price: data.final_price, price: data.final_price, inspection_status: 'Inspected',
+          ...(data.functional_check ? { functional_check: data.functional_check } : {}),
           // Per-device verification — B2B jobs keep each device's own battery
           // / IMEI / Find My instead of collapsing to a single job-level value.
           battery_health_pct: v.battery_health_pct,
