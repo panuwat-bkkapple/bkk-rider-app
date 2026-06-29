@@ -101,6 +101,23 @@ export function BatteryCheck({ jobId, value, onChange }: Props) {
         />
       </div>
 
+      {/* Cycle count — กรอกเองได้ (OCR เติมให้อัตโนมัติถ้าอ่านรูปได้) */}
+      <div>
+        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Cycle Count (รอบการชาร์จ)</label>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={value.battery_cycle_count ?? ''}
+          onChange={(e) => {
+            const n = e.target.value === '' ? null : parseInt(e.target.value, 10);
+            patch({ battery_cycle_count: n != null && Number.isFinite(n) ? n : null });
+          }}
+          placeholder="เช่น 120"
+          className="w-full mt-1 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-base font-mono"
+        />
+      </div>
+
       {/* Optional screenshot → OCR auto-fills the % above */}
       {value.battery_photo ? (
         <div className="flex items-center gap-3">
