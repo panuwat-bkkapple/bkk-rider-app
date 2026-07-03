@@ -119,6 +119,7 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
                       <img src={msg.imageUrl} alt="attachment" className="mt-2 rounded-xl w-full max-h-48 object-cover border border-black/10" />
                     )}
                     <p className={`text-[9px] mt-2 text-right ${isMe ? 'text-purple-200' : 'text-gray-400'}`}>
+                      {isMe && msg.read && <span>อ่านแล้ว · </span>}
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
