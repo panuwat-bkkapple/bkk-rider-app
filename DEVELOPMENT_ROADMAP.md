@@ -126,8 +126,8 @@
 ```
 ปัจจุบัน: แชทใช้งานได้แต่ขาด read receipt ฝั่ง admin
 ```
-- [ ] **bkk-rider-app**: (Done) Auto mark read + notification deep link
-- [ ] **bkk-frontend-next**: แสดงสถานะอ่านแล้ว/ยังไม่อ่านของไรเดอร์
+- [x] **bkk-rider-app**: (Done) Auto mark read + notification deep link
+- [x] **bkk-frontend-next**: แสดงสถานะอ่านแล้ว/ยังไม่อ่านของไรเดอร์ (ลูกค้าเปิดแชท → mark read ข้อความไรเดอร์ + แสดง "อ่านแล้ว" ใต้ bubble ผู้ส่งครบทุกฝั่ง: rider ChatModal, customer RiderChatModal, admin AdminChatBox/MobileTicketDetail)
 - [ ] **bkk-frontend-next**: แสดง typing indicator
 - [ ] **bkk-system**: Cloud Function ส่ง push notification ไปหาลูกค้า (ถ้ามีแอพลูกค้า)
 
