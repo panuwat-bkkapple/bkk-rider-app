@@ -359,9 +359,14 @@ export interface Transaction {
 export interface ConditionOption {
   id: string;
   label: string;
+  /** LEGACY tier buckets — read fallback only (see utils/pricingResolver). */
   t1?: number;
   t2?: number;
   t3?: number;
+  /** Single flat baht deduction (per-model condition sets). */
+  deduct?: number;
+  /** Percentage-of-base deduction — overrides deduct and legacy tiers. */
+  pct?: number;
 }
 
 export interface ConditionGroup {

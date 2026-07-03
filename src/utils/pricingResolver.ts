@@ -6,21 +6,31 @@
 // imports aren't possible, so this file is kept byte-for-byte in sync. If you
 // change the math here, change every mirror (see CLAUDE.md cross-repo rule).
 //
-// Behavior: tier (t1/t2/t3) x liquidityFactor today; an `option.pct`
-// percentage-of-base mode takes precedence when present (inert until data adds it).
+// Deduction precedence per option: pct > deduct > legacy tiers.
+//   pct    — percentage-of-base, scales smoothly with the variant price
+//   deduct — single flat baht value (condition sets are authored per model now,
+//            so one value per option is exact; replaces the t1/t2/t3 buckets)
+//   t1/t2/t3 — LEGACY tier buckets picked by base price. No longer authorable in
+//            the Engine UI; kept ONLY as a read fallback so condition sets that
+//            have not been re-saved / cloned yet keep resolving identically.
 
 export interface ConditionOptionLike {
   id?: string;
   label?: string;
   name?: string;
+  /** LEGACY tier buckets — read-only fallback for unmigrated data. */
   t1?: number;
   t2?: number;
   t3?: number;
   /**
+   * Single flat baht deduction. The standard fixed-amount mode now that
+   * condition sets are per-model. Takes precedence over legacy t1/t2/t3.
+   */
+  deduct?: number;
+  /**
    * Percentage-of-base deduction (e.g. 35 = 35% of the model's base price).
-   * When set to a finite number >= 0 it takes precedence over t1/t2/t3 and the
-   * deduction scales smoothly with price (no tier buckets). Legacy options have
-   * no `pct`, so they keep using tiers — this field is inert until data adds it.
+   * When set to a finite number >= 0 it takes precedence over BOTH `deduct`
+   * and the legacy tiers, and scales smoothly with price (no buckets).
    */
   pct?: number;
 }
@@ -31,8 +41,9 @@ export interface ConditionGroupLike {
 }
 
 /**
- * Tier deduction for a base price — the 3-bucket logic used everywhere:
+ * LEGACY tier deduction for a base price — the old 3-bucket logic:
  *   base >= 30,000 -> t1 | 15,000-29,999 -> t2 | < 15,000 -> t3
+ * Only used as a fallback when an option has no `deduct` and no `pct`.
  */
 export function tierDeduction(opt: ConditionOptionLike, basePrice: number): number {
   const b = Number(basePrice) || 0;
@@ -54,10 +65,18 @@ export function isPercentOption(opt: ConditionOptionLike): boolean {
   return Number.isFinite(p) && p >= 0;
 }
 
+/** Whether an option carries a single flat baht deduction (a finite `deduct` >= 0). */
+export function isFixedDeductOption(opt: ConditionOptionLike): boolean {
+  if (opt?.deduct == null) return false;
+  const d = Number(opt.deduct);
+  return Number.isFinite(d) && d >= 0;
+}
+
 /**
  * Resolve one condition option's baht deduction for a model.
  *   percentage mode: round(basePrice × pct/100 × liquidityFactor)
- *   tier mode:       round(tierDeduction × liquidityFactor)   [legacy default]
+ *   fixed mode:      round(deduct × liquidityFactor)
+ *   legacy tiers:    round(tierDeduction × liquidityFactor)   [fallback only]
  */
 export function resolveOptionDeduction(
   opt: ConditionOptionLike,
@@ -67,6 +86,9 @@ export function resolveOptionDeduction(
   const lf = normalizeLiquidityFactor(liquidityFactor);
   if (isPercentOption(opt)) {
     return Math.round(((Number(basePrice) || 0) * Number(opt.pct)) / 100 * lf);
+  }
+  if (isFixedDeductOption(opt)) {
+    return Math.round(Number(opt.deduct) * lf);
   }
   return Math.round(tierDeduction(opt, basePrice) * lf);
 }
