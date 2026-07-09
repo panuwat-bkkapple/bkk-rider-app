@@ -12,6 +12,7 @@ import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAp
 import { JOB_STATUS } from '../types/job-statuses';
 import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
 import { RequestAmendmentModal } from '../components/amendments/RequestAmendmentModal';
+import DiagnosPanel from '../components/diagnos/DiagnosPanel';
 
 const parseCustomerCondition = (raw: string): { category: string; detail: string } => {
   const m = raw.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
@@ -445,6 +446,9 @@ export const JobDetailPage = ({
                 {/* Verification (battery / Find My / IMEI) now lives inside the
                     inspection flow itself — a single "เริ่มตรวจสภาพเครื่อง"
                     entry covers everything per device. */}
+                {/* SOP: run BKK Diagnos on the customer's device first, then
+                    the rider's own inspection (photos / SickW / cosmetics). */}
+                <DiagnosPanel job={job} />
                 <button
                   onClick={() => {
                     if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
