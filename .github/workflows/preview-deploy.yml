@@ -1,0 +1,54 @@
+name: Preview Deploy (manual)
+
+# Manual preview-channel deploy of the rider PWA from any branch — used to
+# test features (e.g. BKK Diagnos panel) against the REAL Firebase project
+# without touching the live rider app. The preview URL is shown in the run
+# summary. Same-site preview channels share auth/DB with production, so a
+# rider can log in normally on the preview URL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Preview channel id'
+        required: false
+        default: 'diagnos-preview'
+
+permissions:
+  checks: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 — firebase-tools auth breaks on newer runner Node (see the
+      # main deploy workflow). Do not bump without re-testing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build project
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_VAPID_KEY: ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BKK_APPLE_TRADEIN }}
+          projectId: bkk-apple-tradein
+          target: rider
+          channelId: ${{ github.event.inputs.channel }}
+          expires: 3d
