@@ -57,25 +57,28 @@ export const DIAGNOS_STEP_LABEL: Record<string, string> = {
   faceid_guided: 'Face ID',
 };
 
-const storageKey = (jobId: string) => `diagnos_session_${jobId}`;
+// One live session per job+device — the panel now lives inside the
+// per-device inspection stepper, so the key is device-scoped.
+const storageKey = (jobId: string, deviceIndex: number) =>
+  `diagnos_session_${jobId}_${deviceIndex}`;
 
-export const rememberSession = (jobId: string, sessionId: string) => {
+export const rememberSession = (jobId: string, deviceIndex: number, sessionId: string) => {
   try {
-    localStorage.setItem(storageKey(jobId), sessionId);
+    localStorage.setItem(storageKey(jobId, deviceIndex), sessionId);
   } catch { /* private mode */ }
 };
 
-export const recallSession = (jobId: string): string | null => {
+export const recallSession = (jobId: string, deviceIndex: number): string | null => {
   try {
-    return localStorage.getItem(storageKey(jobId));
+    return localStorage.getItem(storageKey(jobId, deviceIndex));
   } catch {
     return null;
   }
 };
 
-export const forgetSession = (jobId: string) => {
+export const forgetSession = (jobId: string, deviceIndex: number) => {
   try {
-    localStorage.removeItem(storageKey(jobId));
+    localStorage.removeItem(storageKey(jobId, deviceIndex));
   } catch { /* private mode */ }
 };
 
@@ -87,7 +90,7 @@ export async function createDiagnosSession(
   const create = httpsCallable(fns, 'createDiagnosticSession');
   const res = await create({ jobId, deviceIndex, mode: 'customer' });
   const data = res.data as { ok: boolean; sessionId: string; url: string; expiresAt: number };
-  rememberSession(jobId, data.sessionId);
+  rememberSession(jobId, deviceIndex, data.sessionId);
   return data;
 }
 

@@ -1,15 +1,15 @@
-// BKK Diagnos panel — lives in the job detail during Arrived/Being Inspected.
-// Rider taps start -> QR appears -> customer scans and runs the SOP on their
-// own device -> results stream into the checklist here live. The rider's
-// only input is the Face ID verdict (staff-confirmed step).
+// BKK Diagnos panel — embedded in step 1 of the per-device inspection
+// stepper (InspectionModal), scoped to ONE device. Rider taps start -> QR
+// appears -> customer scans and runs the SOP on their own device -> results
+// stream into the checklist here live. The rider's only input is the
+// Face ID verdict (staff-confirmed step).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
   Activity, Loader2, QrCode, RefreshCcw, CheckCircle2, XCircle, MinusCircle,
   ScanFace,
 } from 'lucide-react';
-import { getDevicesList } from '../../utils/jobHelpers';
 import {
   DIAGNOS_STEP_ORDER,
   DIAGNOS_STEP_LABEL,
@@ -23,6 +23,8 @@ import {
 
 interface Props {
   job: any;
+  /** Which job device this panel tests — the panel is device-scoped. */
+  deviceIndex: number;
 }
 
 const ResultIcon = ({ result }: { result?: string }) => {
@@ -32,12 +34,10 @@ const ResultIcon = ({ result }: { result?: string }) => {
   return <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-gray-200" />;
 };
 
-export default function DiagnosPanel({ job }: Props) {
-  const devices = useMemo(() => getDevicesList(job), [job]);
-  const [deviceIndex, setDeviceIndex] = useState(0);
+export default function DiagnosPanel({ job, deviceIndex }: Props) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-  const [sessionId, setSessionId] = useState<string | null>(() => recallSession(job.id));
+  const [sessionId, setSessionId] = useState<string | null>(() => recallSession(job.id, deviceIndex));
   const [session, setSession] = useState<DiagnosSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [now, setNow] = useState(Date.now());
@@ -47,16 +47,16 @@ export default function DiagnosPanel({ job }: Props) {
   useEffect(() => {
     if (!sessionId) return;
     const unsub = subscribeDiagnosSession(sessionId, (s) => {
-      if (!s || s.job_id !== job.id) {
+      if (!s || s.job_id !== job.id || (s.device_index ?? 0) !== deviceIndex) {
         setSession(null);
         setSessionId(null);
-        forgetSession(job.id);
+        forgetSession(job.id, deviceIndex);
         return;
       }
       setSession(s);
     });
     return unsub;
-  }, [sessionId, job.id]);
+  }, [sessionId, job.id, deviceIndex]);
 
   // Expiry countdown tick.
   useEffect(() => {
@@ -64,11 +64,11 @@ export default function DiagnosPanel({ job }: Props) {
     return () => clearInterval(t);
   }, []);
 
-  const start = async (idx: number) => {
+  const start = async () => {
     setCreating(true);
     setError('');
     try {
-      const res = await createDiagnosSession(job.id, idx);
+      const res = await createDiagnosSession(job.id, deviceIndex);
       urlRef.current = res.url;
       setQrDataUrl(await QRCode.toDataURL(res.url, { width: 560, margin: 1 }));
       setSessionId(res.sessionId);
@@ -107,26 +107,9 @@ export default function DiagnosPanel({ job }: Props) {
         {session?.status === 'expired' && (
           <p className="text-xs text-amber-600">เซสชันก่อนหน้าหมดอายุ — สร้างใหม่ได้เลย</p>
         )}
-        {devices.length > 1 && (
-          <div className="flex flex-wrap gap-2">
-            {devices.map((d: any, i: number) => (
-              <button
-                key={d.device_id || i}
-                onClick={() => setDeviceIndex(i)}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold border ${
-                  deviceIndex === i
-                    ? 'bg-emerald-500 text-white border-emerald-500'
-                    : 'bg-white text-gray-600 border-gray-200'
-                }`}
-              >
-                เครื่อง {i + 1}: {d.model || '-'}
-              </button>
-            ))}
-          </div>
-        )}
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button
-          onClick={() => start(deviceIndex)}
+          onClick={start}
           disabled={creating}
           className="w-full bg-emerald-500 text-white py-3 rounded-2xl font-bold flex justify-center items-center gap-2 active:scale-95 disabled:opacity-50"
         >
@@ -183,7 +166,7 @@ export default function DiagnosPanel({ job }: Props) {
           })}
         </div>
         <button
-          onClick={() => start(session.device_index ?? 0)}
+          onClick={start}
           disabled={creating}
           className="w-full text-xs font-bold text-gray-400 underline py-1"
         >
@@ -220,7 +203,7 @@ export default function DiagnosPanel({ job }: Props) {
               เซสชันเดิมยังไม่ถูกสแกนและ QR ไม่อยู่ในหน้านี้แล้ว — สร้าง QR ใหม่เพื่อเริ่ม
             </p>
             <button
-              onClick={() => start(session.device_index ?? 0)}
+              onClick={start}
               disabled={creating}
               className="mt-2 w-full bg-amber-500 text-white py-2.5 rounded-xl font-bold text-sm flex justify-center items-center gap-2"
             >
@@ -275,7 +258,7 @@ export default function DiagnosPanel({ job }: Props) {
       {error && <p className="text-xs text-red-500">{error}</p>}
 
       <button
-        onClick={() => start(session.device_index ?? 0)}
+        onClick={start}
         disabled={creating}
         className="w-full text-xs font-bold text-gray-400 underline py-1"
       >
