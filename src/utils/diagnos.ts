@@ -39,6 +39,7 @@ export const DIAGNOS_STEP_ORDER = [
   'mic_speaker',
   'gps',
   'motion',
+  'haptic_guided',
   'battery_guided',
   'faceid_guided',
 ] as const;
@@ -53,6 +54,7 @@ export const DIAGNOS_STEP_LABEL: Record<string, string> = {
   mic_speaker: 'ไมค์/ลำโพง',
   gps: 'GPS',
   motion: 'เซ็นเซอร์',
+  haptic_guided: 'ระบบสั่น',
   battery_guided: 'แบตเตอรี่',
   faceid_guided: 'Face ID',
 };
