@@ -51,4 +51,4 @@ jobs:
           projectId: bkk-apple-tradein
           target: rider
           channelId: ${{ github.event.inputs.channel }}
-          expires: 3d
+          expires: 7d
