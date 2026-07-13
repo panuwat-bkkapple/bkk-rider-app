@@ -25,6 +25,7 @@ import { ocrFindMy } from '../../utils/visionOcr';
 import { toast } from '../common/Toast';
 import { SickwDeviceCheck, type SickwResultSummary } from './SickwDeviceCheck';
 import { BatteryCheck } from './BatteryCheck';
+import DiagnosPanel from '../diagnos/DiagnosPanel';
 import { emptyDeviceVerification } from '../../types';
 import type { InspectedDeviceData, ConditionGroup, DeviceVerification } from '../../types';
 
@@ -528,6 +529,11 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 IMEI → รายละเอียด+สถานะทันที + Find My + แบต รวดเดียว ── */}
             {step === 1 && (
               <div className="space-y-4">
+                {/* BKK Diagnos — customer runs the hardware SOP on THIS device
+                    while the rider does IMEI/battery below. key remounts the
+                    panel when switching devices (session is device-scoped). */}
+                <DiagnosPanel key={activeDeviceIndex} job={job} deviceIndex={activeDeviceIndex} />
+
                 <div className="flex items-start gap-2">
                   <Search size={18} className="text-blue-500 mt-0.5" />
                   <div>
