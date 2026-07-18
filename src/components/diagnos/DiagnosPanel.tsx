@@ -8,8 +8,9 @@ import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
   Activity, Loader2, QrCode, RefreshCcw, CheckCircle2, XCircle, MinusCircle,
-  ScanFace,
+  ScanFace, AlertTriangle,
 } from 'lucide-react';
+import { requestAmendment, generateRequestId } from '../../utils/amendments';
 import {
   DIAGNOS_STEP_ORDER,
   DIAGNOS_STEP_LABEL,
@@ -37,6 +38,14 @@ const ResultIcon = ({ result }: { result?: string }) => {
 export default function DiagnosPanel({ job, deviceIndex }: Props) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  // Propose-deduction composer (submitted view) — fires the same
+  // requestAmendment flow the rider already uses, prefilled from results.
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjLabel, setAdjLabel] = useState('');
+  const [adjAmount, setAdjAmount] = useState('');
+  const [adjBusy, setAdjBusy] = useState(false);
+  const [adjDone, setAdjDone] = useState('');
+  const [adjErr, setAdjErr] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(() => recallSession(job.id, deviceIndex));
   const [session, setSession] = useState<DiagnosSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
@@ -123,6 +132,15 @@ export default function DiagnosPanel({ job, deviceIndex }: Props) {
   // --- submitted: summary ---
   if (submitted) {
     const s = session.summary || { pass: 0, fail: 0, skipped: 0 };
+    // Server-verified snapshot on the job (finalize wrote it) — carries the
+    // mismatches vs what the customer reported and any evidence photos.
+    const devs: any[] = Array.isArray(job.devices)
+      ? job.devices
+      : job.devices ? Object.values(job.devices) : [];
+    const diag = devs[deviceIndex]?.diagnostics;
+    const mismatches: any[] = Array.isArray(diag?.mismatches) ? diag.mismatches : [];
+    const failedSteps = DIAGNOS_STEP_ORDER.filter((id) => steps[id]?.result === 'fail');
+    const canPropose = mismatches.length > 0 || failedSteps.length > 0;
     return (
       <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -165,6 +183,126 @@ export default function DiagnosPanel({ job, deviceIndex }: Props) {
             );
           })}
         </div>
+        {mismatches.length > 0 && (
+          <div className="space-y-1.5">
+            {mismatches.map((m: any, i: number) => (
+              <div key={i} className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-2.5 text-[11px] font-bold text-red-700">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <span>
+                  {m.reason || `${m.step_label || m.step_id} เทสไม่ผ่าน — ขัดกับที่ลูกค้าแจ้ง${m.customer_said ? `: ${m.customer_said}` : ''}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {adjDone ? (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs font-bold text-emerald-700">
+            {adjDone}
+          </div>
+        ) : canPropose && !adjOpen ? (
+          <button
+            onClick={() => {
+              const first = mismatches[0];
+              const firstFail = failedSteps[0];
+              setAdjLabel(
+                first?.step_label
+                  ? `ผลเทส: ${first.step_label} ไม่ผ่าน`
+                  : firstFail
+                    ? `ผลเทส: ${DIAGNOS_STEP_LABEL[firstFail]} ไม่ผ่าน`
+                    : 'ตำหนิจากผลเทส BKK Diagnos',
+              );
+              setAdjErr('');
+              setAdjOpen(true);
+            }}
+            className="w-full bg-amber-50 border-2 border-amber-200 text-amber-800 py-3 rounded-2xl font-bold flex justify-center items-center gap-2 active:scale-95"
+          >
+            <AlertTriangle size={16} /> เสนอปรับราคาจากผลเทส
+          </button>
+        ) : null}
+
+        {adjOpen && !adjDone && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+            <p className="text-[11px] font-bold text-amber-800">
+              เสนอหักราคา (แอดมินอนุมัติก่อนมีผล) — แนบผลเทสเป็นหลักฐานให้อัตโนมัติ
+            </p>
+            <input
+              type="text"
+              value={adjLabel}
+              onChange={(e) => setAdjLabel(e.target.value)}
+              placeholder="รายการตำหนิ เช่น ผลเทส: ทัชสกรีนไม่ผ่าน"
+              className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-gray-800"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-500">หัก</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                value={adjAmount}
+                onChange={(e) => setAdjAmount(e.target.value)}
+                placeholder="จำนวนเงิน"
+                className="flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm font-bold text-gray-800"
+              />
+              <span className="text-xs font-bold text-gray-500">บาท</span>
+            </div>
+            {adjErr && <p className="text-[11px] font-bold text-red-500">{adjErr}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAdjOpen(false)}
+                disabled={adjBusy}
+                className="flex-1 border border-gray-200 bg-white text-gray-600 py-2.5 rounded-xl font-bold text-xs"
+              >
+                ยกเลิก
+              </button>
+              <button
+                disabled={adjBusy || adjLabel.trim().length < 2 || !(Number(adjAmount) > 0)}
+                onClick={async () => {
+                  setAdjBusy(true);
+                  setAdjErr('');
+                  try {
+                    const photos = ['camera_back', 'camera_front'].flatMap((k) => {
+                      const list = diag?.values?.[k]?.photos;
+                      return Array.isArray(list) ? list : [];
+                    });
+                    const evidence = photos
+                      .filter((p: any) => typeof p?.url === 'string' && p.url.startsWith('https://'))
+                      .slice(0, 6)
+                      .map((p: any) => ({ url: p.url, purpose: 'other' as const, uploaded_at: Date.now() }));
+                    const ref = (diag?.session_id || sessionId || '').slice(-6).toUpperCase();
+                    const reasons = mismatches
+                      .map((m: any) => m.reason || m.step_label || m.step_id)
+                      .filter(Boolean)
+                      .join(' / ');
+                    await requestAmendment({
+                      jobId: job.id,
+                      type: 'ad_hoc_deduction',
+                      riderNote: `อ้างอิงผล BKK Diagnos #${ref}${reasons ? ` — ${reasons}` : ''}`,
+                      target: {
+                        kind: 'ad_hoc_deduction',
+                        label: adjLabel.trim(),
+                        amount: -Math.abs(Number(adjAmount)),
+                        device_index: deviceIndex,
+                      },
+                      evidence,
+                      clientRequestId: generateRequestId(),
+                    });
+                    setAdjOpen(false);
+                    setAdjDone('ส่งคำขอหักราคาให้แอดมินแล้ว — สถานะขึ้นที่แบนเนอร์คำขอของงานนี้');
+                  } catch (e: any) {
+                    setAdjErr(e?.message || 'ส่งคำขอไม่สำเร็จ');
+                  } finally {
+                    setAdjBusy(false);
+                  }
+                }}
+                className="flex-1 bg-amber-500 text-white py-2.5 rounded-xl font-bold text-xs disabled:opacity-50 flex justify-center items-center gap-1.5"
+              >
+                {adjBusy ? <Loader2 size={14} className="animate-spin" /> : null} ส่งให้แอดมินอนุมัติ
+              </button>
+            </div>
+          </div>
+        )}
+
         <button
           onClick={start}
           disabled={creating}
