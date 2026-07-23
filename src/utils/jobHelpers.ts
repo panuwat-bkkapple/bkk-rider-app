@@ -52,6 +52,14 @@ export const getAppointmentDateKey = (job: any): string | null => {
   return null;
 };
 
+// อุปกรณ์เสริมที่ขายพ่วง (iPad + Apple Pencil/Keyboard) — มูลค่ารวมอยู่ใน
+// price/final_price ของ job แล้ว ห้ามนำไปบวกกับ getDisplayPrice ซ้ำ
+export const getAccessoryItems = (job: any): { id: string; model_id: string; model_name: string; price: number; serial?: string }[] =>
+  Array.isArray(job?.accessory_items) ? job.accessory_items.filter(Boolean) : [];
+
+export const sumAccessoryItems = (job: any): number =>
+  getAccessoryItems(job).reduce((sum, it) => sum + (Number(it?.price) || 0), 0);
+
 export const getDevicesList = (job: any): Device[] => {
   if (!job) return [];
   if (job.devices && Array.isArray(job.devices) && job.devices.length > 0) return job.devices;

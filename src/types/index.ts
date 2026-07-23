@@ -44,6 +44,9 @@ export interface Job {
   rider_fee_discount?: number;
   applied_coupon?: { value?: number; actual_value?: number };
   devices?: Device[];
+  /** อุปกรณ์เสริม iPad ที่ขายพ่วง (Apple Pencil / Magic Keyboard) — มูลค่ารวมอยู่ใน
+   *  price/final_price แล้ว (breakdown เท่านั้น). ไรเดอร์ต้องเก็บของตามรายการนี้ด้วย */
+  accessory_items?: { id: string; model_id: string; model_name: string; price: number; serial?: string }[];
   photos?: string[];
   deductions?: string[];
   chats?: Record<string, ChatMessage>;

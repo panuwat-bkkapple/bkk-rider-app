@@ -8,7 +8,7 @@ import {
   Maximize2, ExternalLink
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay } from '../utils/jobHelpers';
+import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getAccessoryItems } from '../utils/jobHelpers';
 import { JOB_STATUS } from '../types/job-statuses';
 import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
 import { RequestAmendmentModal } from '../components/amendments/RequestAmendmentModal';
@@ -115,6 +115,7 @@ export const JobDetailPage = ({
   };
 
   const devices = getDevicesList(job);
+  const accessoryItems = getAccessoryItems(job);
   const phone = job.cust_phone || job.customer_phone || job.phone;
   const email = job.cust_email;
   const photos: string[] = Array.isArray(job.photos) ? job.photos : [];
@@ -296,6 +297,31 @@ export const JobDetailPage = ({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* อุปกรณ์เสริมที่ลูกค้าขายพ่วง (Apple Pencil / Magic Keyboard) — ไรเดอร์
+            ต้องเก็บของตามรายการนี้กลับมาด้วย มูลค่ารวมอยู่ในยอดโอนแล้ว */}
+        {accessoryItems.length > 0 && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
+              <PackageOpen size={12} /> อุปกรณ์เสริมที่ต้องรับ ({accessoryItems.length})
+            </h3>
+            <ul className="space-y-1.5">
+              {accessoryItems.map((it, idx) => (
+                <li
+                  key={it.id || idx}
+                  className="flex items-start gap-2 bg-white border border-gray-100 rounded-lg px-2.5 py-2 text-xs text-gray-700 leading-relaxed"
+                >
+                  <PackageOpen size={14} className="text-gray-500 shrink-0 mt-0.5" />
+                  <span className="flex-1 min-w-0 font-semibold text-gray-800">{it.model_name}</span>
+                  <span className="text-emerald-600 font-bold whitespace-nowrap">{formatCurrency(Number(it.price) || 0)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 leading-relaxed">
+              รับเฉพาะของแท้ Apple เท่านั้น — ตรวจของให้ครบทุกชิ้นก่อนออกจากจุดนัด ถ้าของไม่ครบ/ไม่ใช่ของแท้ ให้กด "แจ้งปัญหา" เสนอหักราคาให้แอดมินอนุมัติ
+            </p>
           </div>
         )}
 

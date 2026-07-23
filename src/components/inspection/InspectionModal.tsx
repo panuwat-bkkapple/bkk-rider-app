@@ -470,6 +470,20 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 );
               })}
             </div>
+            {/* อุปกรณ์เสริมที่ขายพ่วง — เตือนให้ตรวจ/เก็บของครบก่อนส่งผล. มูลค่า
+                รวมอยู่ในยอดโอนแล้ว (RiderApp บวกกลับตอน recompute payout) */}
+            {Array.isArray(job?.accessory_items) && job.accessory_items.length > 0 && (
+              <div className="mb-8 -mt-4 p-4 rounded-2xl border border-indigo-100 bg-indigo-50 space-y-2">
+                <div className="text-xs font-bold text-indigo-600">อุปกรณ์เสริมที่ต้องรับพร้อมเครื่อง ({job.accessory_items.length})</div>
+                {job.accessory_items.filter(Boolean).map((it: any, i: number) => (
+                  <div key={it.id || i} className="flex justify-between items-center bg-white border border-indigo-100 rounded-lg px-3 py-2 text-xs">
+                    <span className="font-semibold text-gray-800">{it.model_name}</span>
+                    <span className="font-bold text-indigo-600">฿{(Number(it.price) || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+                <p className="text-[11px] text-indigo-500 leading-relaxed">เช็คว่าเป็นของแท้ Apple และใช้งานได้ก่อนส่งผล — มีปัญหาให้เสนอหักราคาผ่าน "แจ้งปัญหา"</p>
+              </div>
+            )}
             <button
               onClick={handleSubmitAll}
               disabled={isUploading || Object.keys(inspectedDevicesData).length !== devicesList.length}
