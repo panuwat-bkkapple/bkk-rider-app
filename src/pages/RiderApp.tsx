@@ -5,7 +5,7 @@ import { ref, update } from 'firebase/database';
 import { auth, db } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { toast } from '../components/common/Toast';
-import { getDevicesList } from '../utils/jobHelpers';
+import { getDevicesList, sumAccessoryItems } from '../utils/jobHelpers';
 import { sumAppliedAdjustments } from '../utils/adjustments';
 
 // Hooks
@@ -183,17 +183,22 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     const riderFeeDiscount = job.receive_method === 'Pickup' ? Number(job.rider_fee_discount || 0) : 0;
     const pickupFee = Math.max(0, grossPickupFee - riderFeeDiscount);
     const couponValue = Number(job.applied_coupon?.value || job.applied_coupon?.actual_value || 0);
+    // อุปกรณ์เสริมที่ขายพ่วง (accessory_items) ไม่อยู่ใน devices[] แต่มูลค่าอยู่ใน
+    // price/final_price ของงาน — การ recompute จากราคาเครื่องล้วนๆ ต้องบวกกลับ
+    // ไม่งั้นเงินอุปกรณ์เสริมหายจาก payout ตอนไรเดอร์ส่งผลตรวจ
+    const accessoriesTotal = sumAccessoryItems(job);
+    const jobTotalPrice = jobTotalDevicePrice + accessoriesTotal;
     // Preserve any already-applied ad-hoc adjustments (admin QC / approved rider
     // proposal) when the rider's inspection recomputes the payout.
-    const newNetPayout = Math.max(0, jobTotalDevicePrice - pickupFee + couponValue + sumAppliedAdjustments(job));
+    const newNetPayout = Math.max(0, jobTotalPrice - pickupFee + couponValue + sumAppliedAdjustments(job));
 
     // original_price is the customer's quote total at order creation —
     // never overwrite it from QC, otherwise we lose the audit trail
     // that lets admin/finance compare quote vs final.
     const jobUpdates: Record<string, any> = {
       devices: updatedDevices,
-      final_price: jobTotalDevicePrice,
-      price: jobTotalDevicePrice,
+      final_price: jobTotalPrice,
+      price: jobTotalPrice,
       net_payout: newNetPayout,
       inspected_at: Date.now(),
     };
