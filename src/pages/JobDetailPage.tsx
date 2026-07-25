@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getAccessoryItems } from '../utils/jobHelpers';
+import { hasUnreadFromAdmin } from '../utils/jobChats';
 import { JOB_STATUS } from '../types/job-statuses';
 import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
 import { RequestAmendmentModal } from '../components/amendments/RequestAmendmentModal';
@@ -123,7 +124,7 @@ export const JobDetailPage = ({
   const hasPendingDiscrepancy = job.has_pending_discrepancy && job.discrepancy_reports
     ? Object.values(job.discrepancy_reports).some((r: any) => r.status === 'pending')
     : false;
-  const unreadChat = job.chats && Object.values(job.chats).some((c: any) => c.sender === 'admin' && !c.read);
+  const unreadChat = hasUnreadFromAdmin(job);
   const paymentSlip = getPaymentSlip(job);
   const [slipLightbox, setSlipLightbox] = useState(false);
 

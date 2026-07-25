@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
+import { hasUnreadFromAdmin } from '../../utils/jobChats';
 import { JOB_STATUS } from '../../types/job-statuses';
 
 interface ActiveJobCardProps {
@@ -63,7 +64,7 @@ export const ActiveJobCard = ({
       <div className="flex gap-2" onClick={stop}>
         <button onClick={() => onOpenChat(job.id)} className="bg-purple-50 p-3 rounded-full text-purple-600 hover:bg-purple-100 relative">
           <MessageSquare size={20} />
-          {job.chats && Object.values(job.chats).some((c: any) => c.sender === 'admin' && !c.read) && (
+          {hasUnreadFromAdmin(job) && (
             <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
           )}
         </button>
