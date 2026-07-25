@@ -4,6 +4,7 @@ import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
+import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
@@ -41,7 +42,9 @@ const HISTORY_LIST_STATUSES = new Set<JobStatus>([
 import { toast } from '../components/common/Toast';
 
 export const useRiderData = (currentRiderId: string) => {
-  const { data: jobs, loading: jobsLoading } = useDatabase('jobs');
+  // Rider-scoped queries only — never subscribe to the whole /jobs node
+  // from a rider device (bandwidth cost scales with total job count).
+  const { data: jobs, loading: jobsLoading } = useRiderJobs(currentRiderId);
   const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp', { field: 'rider_id', value: currentRiderId });
   const { data: modelsData, loading: modelsLoading } = useDatabase('models');
   const { data: conditionSets, loading: conditionsLoading } = useDatabase('settings/condition_sets');
