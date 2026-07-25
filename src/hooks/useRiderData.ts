@@ -46,6 +46,9 @@ export const useRiderData = (currentRiderId: string) => {
   // from a rider device (bandwidth cost scales with total job count).
   const { data: jobs, loading: jobsLoading } = useRiderJobs(currentRiderId);
   const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp', { field: 'rider_id', value: currentRiderId });
+  // Own withdrawal requests — pending ones hold part of the balance so the
+  // rider can't queue multiple full-balance withdrawals before Finance pays.
+  const { data: withdrawals } = usePaginatedDatabase('withdrawals', 'requested_at', { field: 'rider_id', value: currentRiderId });
   const { data: modelsData, loading: modelsLoading } = useDatabase('models');
   const { data: conditionSets, loading: conditionsLoading } = useDatabase('settings/condition_sets');
 
@@ -145,6 +148,14 @@ export const useRiderData = (currentRiderId: string) => {
     const myJobs = list.filter((j: any) => j.rider_id === currentRiderId);
     const myTx = tx.filter((t: any) => t.rider_id === currentRiderId).sort((a: any, b: any) => b.timestamp - a.timestamp);
     const balance = myTx.reduce((acc: number, t: any) => t.type === 'CREDIT' ? acc + Number(t.amount) : acc - Number(t.amount), 0);
+    // Requested-but-unpaid withdrawals hold their amount: Finance writes the
+    // DEBIT transaction only when the transfer is made, so without this hold
+    // the same baht could be requested twice.
+    const wd = Array.isArray(withdrawals) ? withdrawals : [];
+    const pendingWithdraw = wd
+      .filter((w: any) => w.rider_id === currentRiderId && w.status === 'Withdrawal Requested')
+      .reduce((acc: number, w: any) => acc + Number(w.withdraw_amount || 0), 0);
+    const availableBalance = Math.max(0, balance - pendingWithdraw);
 
     const incomingList = list.filter((j: any) => {
       if (j.receive_method !== RECEIVE_METHOD.PICKUP) return false;
@@ -170,9 +181,11 @@ export const useRiderData = (currentRiderId: string) => {
         return canonical && HISTORY_LIST_STATUSES.has(canonical) && j.completed_at;
       }).sort((a: any, b: any) => (b.completed_at || 0) - (a.completed_at || 0)),
       balance,
+      pendingWithdraw,
+      availableBalance,
       transactions: myTx
     };
-  }, [jobs, transactions, currentRiderId, dispatchMode]);
+  }, [jobs, transactions, withdrawals, currentRiderId, dispatchMode]);
 
   return {
     jobData, riderInfo, setRiderInfo,

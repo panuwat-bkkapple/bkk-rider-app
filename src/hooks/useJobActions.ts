@@ -399,7 +399,9 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   ) => {
     const amount = Number(withdrawAmount);
     if (!amount || amount < 100) return toast.error('ระบุขั้นต่ำ 100 บาท');
-    if (amount > balance) return toast.error('ยอดเงินไม่เพียงพอ');
+    // `balance` here is the available balance: wallet total minus withdrawals
+    // already requested but not yet transferred (see useRiderData).
+    if (amount > balance) return toast.error('ยอดเงินไม่เพียงพอ (มียอดที่รอโอนค้างอยู่หรือยอดในกระเป๋าไม่พอ)');
     try {
       await push(ref(db, 'withdrawals'), {
         rider_id: riderInfoData.id, rider_name: riderInfoData.name,
@@ -410,8 +412,11 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       sendAdminNotification('คำขอถอนเงิน', `ไรเดอร์ ${riderInfoData.name} ขอเบิกเงิน ${formatCurrency(amount)}`);
       toast.success('ส่งคำขอถอนเงินสำเร็จ!');
       onDone();
-    } catch (e) {
-      toast.error('เกิดข้อผิดพลาด: ' + e);
+    } catch (e: any) {
+      const msg = e?.code === 'PERMISSION_DENIED' || String(e).includes('PERMISSION_DENIED')
+        ? 'ไม่มีสิทธิ์ส่งคำขอถอนเงิน กรุณาติดต่อแอดมิน'
+        : 'เกิดข้อผิดพลาด: ' + (e?.message || e);
+      toast.error(msg);
     }
   };
 

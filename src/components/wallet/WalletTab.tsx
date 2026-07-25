@@ -4,19 +4,25 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 
 interface WalletTabProps {
   balance: number;
+  pendingWithdraw?: number;
   transactions: any[];
   hasMoreTx?: boolean;
   onLoadMoreTx?: () => void;
   onOpenWithdraw: () => void;
 }
 
-export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
+export const WalletTab = ({ balance, pendingWithdraw = 0, transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
   <div className="h-full bg-[#F9FAFB] overflow-y-auto pb-32 animate-in fade-in">
     {/* Header */}
     <div className="bg-emerald-600 p-8 pt-16 pb-12 text-white rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
       <div className="absolute top-0 right-0 p-4 opacity-10"><WalletIcon size={120} /></div>
       <p className="text-xs font-medium text-emerald-100 mb-2">ยอดเงินที่ถอนได้ (Available Balance)</p>
-      <h3 className="text-5xl font-bold mb-8 tracking-tight">{formatCurrency(balance)}</h3>
+      <h3 className={`text-5xl font-bold tracking-tight ${pendingWithdraw > 0 ? 'mb-2' : 'mb-8'}`}>{formatCurrency(balance)}</h3>
+      {pendingWithdraw > 0 && (
+        <p className="text-xs font-medium text-emerald-100 mb-6">
+          รอโอนตามคำขอถอน {formatCurrency(pendingWithdraw)}
+        </p>
+      )}
       <button
         onClick={onOpenWithdraw}
         className="w-full bg-white text-emerald-700 py-4 rounded-2xl font-bold text-sm shadow-md active:scale-95 transition-transform"

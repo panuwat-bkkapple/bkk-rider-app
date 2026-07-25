@@ -342,7 +342,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
 
       {activeTab === 'wallet' && (
         <WalletTab
-          balance={jobData.balance}
+          balance={jobData.availableBalance}
+          pendingWithdraw={jobData.pendingWithdraw}
           transactions={jobData.transactions}
           hasMoreTx={hasMoreTx}
           onLoadMoreTx={loadMoreTx}
@@ -453,7 +454,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           <WithdrawModal
             withdrawAmount={withdrawAmount}
             onAmountChange={setWithdrawAmount}
-            onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.balance, riderInfo, () => {
+            onConfirm={() => actions.handleRequestWithdraw(withdrawAmount, jobData.availableBalance, riderInfo, () => {
               setIsWithdrawModalOpen(false);
               setWithdrawAmount('');
             })}
