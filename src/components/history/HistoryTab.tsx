@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { Activity, MessageSquare } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import type { HistoryFilter } from '../../types';
+import { JOB_STATUS, normalizeStatus } from '../../types/job-statuses';
 
 interface HistoryTabProps {
   history: any[];
@@ -29,11 +30,17 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
       if (historyFilter === 'this_week') return time >= todayStart - (7 * 86400000);
       return true;
     });
+    // สรุปค่ารอบจากงานที่ทำสำเร็จและมี rider_fee ที่คำนวณแล้วเท่านั้น —
+    // งานที่ถูกยกเลิกไม่ใช่รายได้ และงานที่ค่ารอบยังไม่ถูกคำนวณห้ามเดาตัวเลข
+    // (ตัวเลขที่โอนจริงเข้ากระเป๋าดูที่แท็บ Wallet ซึ่งอ่านจาก ledger ตรงๆ)
+    const earning = filtered.filter(job =>
+      normalizeStatus(job.status, job.receive_method) !== JOB_STATUS.CANCELLED
+    );
     return {
       list: filtered,
       stats: {
-        income: filtered.reduce((acc, j) => acc + (Number(j.rider_fee) || 150), 0),
-        count: filtered.length
+        income: earning.reduce((acc, j) => acc + (Number(j.rider_fee) > 0 ? Number(j.rider_fee) : 0), 0),
+        count: earning.length
       }
     };
   }, [history, historyFilter]);
@@ -63,28 +70,33 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
       <div className="bg-emerald-500 rounded-[2rem] p-6 mb-8 text-white shadow-lg relative overflow-hidden transition-all duration-300">
         <div className="absolute top-0 right-0 p-4 opacity-20"><Activity size={80} /></div>
         <p className="text-xs font-medium text-emerald-100 mb-4">สรุปผลงาน</p>
-        <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-2 gap-6 mb-2">
           <div>
-            <p className="text-xs text-emerald-100 mb-1">รายได้รวม</p>
+            <p className="text-xs text-emerald-100 mb-1">ค่ารอบรวม</p>
             <p className="text-3xl font-bold">{formatCurrency(displayData.stats.income)}</p>
           </div>
           <div className="border-l border-emerald-400 pl-6">
-            <p className="text-xs text-emerald-100 mb-1">จำนวนงาน</p>
+            <p className="text-xs text-emerald-100 mb-1">งานสำเร็จ</p>
             <p className="text-3xl font-bold">{displayData.stats.count} <span className="text-sm font-normal">งาน</span></p>
           </div>
         </div>
+        <p className="text-[10px] text-emerald-100/80">
+          ยอดที่โอนเข้ากระเป๋าจริงดูที่แท็บ Wallet — ประวัติแสดงย้อนหลังประมาณ 90 วัน
+        </p>
       </div>
 
       {/* History list */}
       <div className="space-y-3">
         {displayData.list.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-gray-200">
-            <div className="text-4xl mb-3">📋</div>
             <p className="font-bold text-gray-600 mb-1">ยังไม่มีประวัติงาน</p>
             <p className="text-sm text-gray-400">ไม่มีประวัติการวิ่งงานในช่วงเวลานี้</p>
           </div>
         ) : (
-          displayData.list.map(job => (
+          displayData.list.map(job => {
+            const isCancelled = normalizeStatus(job.status, job.receive_method) === JOB_STATUS.CANCELLED;
+            const fee = Number(job.rider_fee);
+            return (
             <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm flex flex-col border border-gray-100">
               <div className="flex justify-between items-start">
                 <div>
@@ -98,9 +110,19 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
                   </div>
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
-                  <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
-                    +{formatCurrency(job.rider_fee || 150)}
-                  </div>
+                  {isCancelled ? (
+                    <div className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-xl">
+                      ยกเลิก
+                    </div>
+                  ) : fee > 0 ? (
+                    <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
+                      +{formatCurrency(fee)}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-3 py-1.5 rounded-xl">
+                      รอสรุปค่ารอบ
+                    </div>
+                  )}
                   {job.chats && (
                     <button
                       onClick={() => onOpenChat(job.id)}
@@ -112,7 +134,8 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
                 </div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
