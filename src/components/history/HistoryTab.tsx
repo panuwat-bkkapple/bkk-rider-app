@@ -101,7 +101,7 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
                   <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
                     +{formatCurrency(job.rider_fee || 150)}
                   </div>
-                  {job.chats && (
+                  {(job.chats || job.chat_flags) && (
                     <button
                       onClick={() => onOpenChat(job.id)}
                       className="text-[10px] flex items-center gap-1 text-purple-600 bg-purple-50 px-2 py-1 rounded-lg hover:bg-purple-100 transition-colors"

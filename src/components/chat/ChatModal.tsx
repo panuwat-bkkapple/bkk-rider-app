@@ -1,10 +1,9 @@
 // src/components/chat/ChatModal.tsx
 import { useState, useRef, useEffect } from 'react';
 import { X, MessageSquare, Send, Image as ImageIcon } from 'lucide-react';
-import { ref, push, update } from 'firebase/database';
-import { db } from '../../api/firebase';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { sendAdminNotification } from '../../utils/notifications';
+import { subscribeJobChats, sendJobChatMessage, markJobChatsReadByRider, type ChatMap } from '../../utils/jobChats';
 import type { RiderInfo } from '../../types';
 import { toast } from '../common/Toast';
 
@@ -19,12 +18,23 @@ const CLOSED_STATUSES = ['Pending QC', 'In Stock', 'Paid', 'PAID', 'Completed', 
 export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   const [chatText, setChatText] = useState('');
   const [isChatUploading, setIsChatUploading] = useState(false);
+  // Messages live at /job_chats/{id} (merged with the legacy embedded path
+  // during the transition) — the job row from the rider query no longer
+  // carries them, so the modal subscribes on its own.
+  const [chats, setChats] = useState<ChatMap>({});
+  const legacyChatsRef = useRef<ChatMap>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
 
-  const chatMessages = chatJob?.chats
-    ? Object.values(chatJob.chats).sort((a: any, b: any) => a.timestamp - b.timestamp)
-    : [];
+  useEffect(() => {
+    if (!chatJob?.id) return;
+    return subscribeJobChats(chatJob.id, (merged, legacy) => {
+      legacyChatsRef.current = legacy;
+      setChats(merged);
+    });
+  }, [chatJob?.id]);
+
+  const chatMessages = Object.values(chats).sort((a: any, b: any) => a.timestamp - b.timestamp);
 
   const orderIdDisplay = chatJob?.OID || chatJob?.ref_no || `#${chatJob?.id?.slice(-4)}`;
   const isClosed = CLOSED_STATUSES.includes(chatJob?.status);
@@ -35,22 +45,14 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
 
   // Mark unread messages from others as read when chat is opened
   useEffect(() => {
-    if (!chatJob?.chats) return;
-    const updates: Record<string, boolean> = {};
-    for (const [key, msg] of Object.entries(chatJob.chats) as [string, any][]) {
-      if (msg.sender !== 'rider' && !msg.read) {
-        updates[`jobs/${chatJob.id}/chats/${key}/read`] = true;
-      }
-    }
-    if (Object.keys(updates).length > 0) {
-      update(ref(db), updates).catch(() => {});
-    }
+    if (!chatJob?.id || Object.keys(chats).length === 0) return;
+    markJobChatsReadByRider(chatJob.id, chats, legacyChatsRef.current);
   }, [chatJob?.id, chatMessages.length]);
 
   const handleSendMessage = async () => {
     if (!chatJob || !chatText.trim()) return;
     try {
-      await push(ref(db, `jobs/${chatJob.id}/chats`), {
+      await sendJobChatMessage(chatJob.id, {
         sender: 'rider', senderName: riderInfo.name,
         text: chatText.trim(), timestamp: Date.now(), read: false
       });
@@ -67,7 +69,7 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
     setIsChatUploading(true);
     try {
       const imageUrl = await uploadImageToFirebase(file, `jobs/${chatJob.id}/chats/images`);
-      await push(ref(db, `jobs/${chatJob.id}/chats`), {
+      await sendJobChatMessage(chatJob.id, {
         sender: 'rider', senderName: riderInfo.name,
         text: 'ส่งรูปภาพ', imageUrl, timestamp: Date.now(), read: false
       });

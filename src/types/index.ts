@@ -50,6 +50,8 @@ export interface Job {
   photos?: string[];
   deductions?: string[];
   chats?: Record<string, ChatMessage>;
+  /** สรุปแชทแบบเบาบนตัว job — ข้อความจริงอยู่ที่ /job_chats/{id} (cloud function เป็นคนเซ็ต) */
+  chat_flags?: { unread_from_admin?: boolean; unread_from_rider?: boolean; unread_from_customer?: boolean; last_at?: number };
   qc_logs?: QCLog[];
   appointment_time?: number;
   pickup_schedule?: PickupSchedule | null;

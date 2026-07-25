@@ -268,16 +268,15 @@ export const onJobStatusChanged = onValueWritten(
 
 // ============================================================
 // 2. New Chat Message - notify rider when customer/admin sends
+// Messages now live at /job_chats/{jobId} (moved out of the job row to cut
+// RTDB download cost); the legacy embedded-path trigger stays alive for
+// stale clients during the transition. Both share this handler.
 // ============================================================
-export const onNewChatMessage = onValueCreated(
-  {
-    ref: "jobs/{jobId}/chats/{messageId}",
-    instance: "bkk-apple-tradein-default-rtdb",
-    region: "asia-southeast1",
-  },
-  async (event) => {
-    const message = event.data.val();
-    const jobId = event.params.jobId;
+const handleNewChatMessage = async (
+  message: any,
+  jobId: string,
+  messageId: string
+) => {
 
     logger.info("Chat onCreate triggered", { jobId, sender: message?.sender, text: message?.text?.slice(0, 50) });
 
@@ -312,11 +311,34 @@ export const onNewChatMessage = onValueCreated(
     await sendToRider(riderId, tokens, `💬 ${senderName}`, bodyText, {
       type: "chat",
       jobId,
-      messageId: event.params.messageId,
+      messageId,
     });
 
     logger.info("Chat notification sent!", { riderId, senderName });
-  }
+};
+
+// Legacy embedded path — stale (pre-/job_chats) clients only.
+export const onNewChatMessage = onValueCreated(
+  {
+    ref: "jobs/{jobId}/chats/{messageId}",
+    instance: "bkk-apple-tradein-default-rtdb",
+    region: "asia-southeast1",
+  },
+  async (event) =>
+    handleNewChatMessage(event.data.val(), event.params.jobId, event.params.messageId)
+);
+
+// Canonical path. Name must stay unique project-wide — the bkk-system
+// codebase has its own chat triggers (onChatMessageCreated /
+// onJobChatMessageV2); see the naming note in that repo's CLAUDE.md.
+export const onNewJobChatMessage = onValueCreated(
+  {
+    ref: "job_chats/{jobId}/{messageId}",
+    instance: "bkk-apple-tradein-default-rtdb",
+    region: "asia-southeast1",
+  },
+  async (event) =>
+    handleNewChatMessage(event.data.val(), event.params.jobId, event.params.messageId)
 );
 
 // ============================================================
