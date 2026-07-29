@@ -40,6 +40,10 @@ export const DIAGNOS_STEP_ORDER = [
   'gps',
   'motion',
   'haptic_guided',
+  // Native-only: the iOS app measures these, the web wizard cannot and
+  // never emits them. Listed so the monitor can label what it receives.
+  'buttons',
+  'charging_port',
   'battery_guided',
   'faceid_guided',
 ] as const;
@@ -55,6 +59,8 @@ export const DIAGNOS_STEP_LABEL: Record<string, string> = {
   gps: 'GPS',
   motion: 'เซ็นเซอร์',
   haptic_guided: 'ระบบสั่น',
+  buttons: 'ปุ่มกด',
+  charging_port: 'พอร์ตชาร์จ',
   battery_guided: 'แบตเตอรี่',
   faceid_guided: 'Face ID',
 };
