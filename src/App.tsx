@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { auth } from './api/firebase';
 import { RiderApp } from './pages/RiderApp';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Checkout } from './pages/Checkout';
+import { ClaimAssessment } from './pages/ClaimAssessment';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -32,6 +33,34 @@ const RegisterPage = () => {
 const CheckoutPage = () => {
   const navigate = useNavigate();
   return <Checkout onBack={() => navigate('/')} />;
+};
+
+// Login, but able to hand the rider back to where they were going. Scanning a
+// customer's diagnostics QR is the first deep link this app has: without the
+// `next` round-trip, a logged-out rider scans, logs in, and lands on the job
+// list with no idea what happened to the scan.
+const LoginRoute = ({
+  riderId,
+  onLoginSuccess,
+}: {
+  riderId: string | null;
+  onLoginSuccess: (id: string) => void;
+}) => {
+  const { search } = useLocation();
+  if (riderId) {
+    const next = new URLSearchParams(search).get('next');
+    return <Navigate to={next || '/'} replace />;
+  }
+  return <LoginPage onLoginSuccess={onLoginSuccess} />;
+};
+
+const ClaimRoute = ({ riderId }: { riderId: string | null }) => {
+  const location = useLocation();
+  if (!riderId) {
+    const next = encodeURIComponent(location.pathname + location.search + location.hash);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  return <ClaimAssessment riderId={riderId} />;
 };
 
 function App() {
@@ -98,10 +127,9 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={
-              riderId ? <Navigate to="/" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} />
-            }
+            element={<LoginRoute riderId={riderId} onLoginSuccess={handleLoginSuccess} />}
           />
+          <Route path="/claim/:assessmentId" element={<ClaimRoute riderId={riderId} />} />
           <Route
             path="/register"
             element={
