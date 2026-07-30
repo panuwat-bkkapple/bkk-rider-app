@@ -8,7 +8,7 @@ import {
   Maximize2, ExternalLink
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getAccessoryItems } from '../utils/jobHelpers';
+import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getAccessoryItems, getRiderPayout } from '../utils/jobHelpers';
 import { hasUnreadFromAdmin } from '../utils/jobChats';
 import { JOB_STATUS } from '../types/job-statuses';
 import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
@@ -87,6 +87,8 @@ const getCustomerConditions = (device: any, job: any): ParsedCondition[] => {
 interface JobDetailPageProps {
   job: any;
   riderInfoId: string;
+  // ยานพาหนะของไรเดอร์ — อัตราค่าวิ่งแยกตามยานพาหนะ เลขค่าจ้างที่โชว์ต้องตรงคน
+  riderVehicle?: 'motorcycle' | 'car' | null;
   mode: 'incoming' | 'active';
   onBack: () => void;
   onAccept: (jobId: string, extraData: any) => void;
@@ -103,7 +105,7 @@ interface JobDetailPageProps {
 }
 
 export const JobDetailPage = ({
-  job, riderInfoId, mode, onBack,
+  job, riderInfoId, riderVehicle, mode, onBack,
   onAccept, onReject, onUpdateStatus,
   onOpenChat, onCallCustomer, onOpenNavigation,
   onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy,
@@ -155,7 +157,7 @@ export const JobDetailPage = ({
           <div className="flex justify-between items-start gap-3 mb-3">
             <h2 className="text-xl font-bold text-gray-900 leading-tight flex-1">{job.model}</h2>
             <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5 shrink-0">
-              <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || job.rider_fee_estimate || 0)}
+              <WalletIcon size={16} /> +{formatCurrency(getRiderPayout(job, riderVehicle))}
             </div>
           </div>
           <div className="flex justify-between items-center text-sm border-t border-gray-100 pt-3">

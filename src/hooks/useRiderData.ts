@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
+import { normalizeVehicleType } from '../utils/jobHelpers';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
 import type { JobStatus } from '../types/job-statuses';
@@ -91,7 +92,10 @@ export const useRiderData = (currentRiderId: string) => {
         accountName: data.name || '-',
         idCardImg: data.documents?.idCard || null,
         licenseImg: data.documents?.license || null,
-        photoUrl: data.photo_url || data.photo || null
+        photoUrl: data.photo_url || data.photo || null,
+        // แอดมินเขียนไว้ 2 ที่ (flat + nested) จากหน้าจัดการไรเดอร์ — ยังไม่ได้
+        // ตั้งค่า = null ไม่เดาให้ เพราะเลขค่าจ้างที่โชว์จะผิดกลุ่มอัตรา
+        vehicleType: normalizeVehicleType(data.vehicle_type ?? data.vehicle?.type)
       }));
     });
     return () => unsubscribe();

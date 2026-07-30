@@ -9,6 +9,9 @@ export interface RiderInfo {
   idCardImg: string | null;
   licenseImg: string | null;
   photoUrl?: string | null;
+  // ยานพาหนะที่แอดมินตั้งให้ (riders/{id}/vehicle_type) — อัตราค่าวิ่งแยกตาม
+  // ยานพาหนะ จึงใช้เลือกว่าจะโชว์ค่าจ้างของการ์ดอัตราไหนในกองงาน
+  vehicleType?: 'motorcycle' | 'car' | null;
 }
 
 export interface Job {

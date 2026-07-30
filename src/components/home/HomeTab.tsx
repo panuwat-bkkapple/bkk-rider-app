@@ -147,6 +147,7 @@ export const HomeTab = ({
           key={job.id}
           job={job}
           riderInfoId={riderInfo.id}
+          riderVehicle={riderInfo.vehicleType}
           onAccept={onAcceptJob}
           onReject={onRejectJob}
           onOpenDetail={onOpenJobDetail}

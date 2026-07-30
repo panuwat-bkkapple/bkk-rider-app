@@ -312,6 +312,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         <JobDetailPage
           job={detailJob}
           riderInfoId={riderInfo.id}
+          riderVehicle={riderInfo.vehicleType}
           mode={detailMode}
           onBack={() => setDetailJobId(null)}
           onAccept={async (jobId) => {

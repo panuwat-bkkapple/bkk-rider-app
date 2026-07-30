@@ -1,17 +1,20 @@
 // src/components/home/IncomingJobCard.tsx
 import { MapPin, User, Clock, Wallet as WalletIcon } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
-import { getDisplayPrice, getCustomerName, getAppointmentDisplay } from '../../utils/jobHelpers';
+import { getDisplayPrice, getCustomerName, getAppointmentDisplay, getRiderPayout } from '../../utils/jobHelpers';
 
 interface IncomingJobCardProps {
   job: any;
   riderInfoId: string;
+  // ยานพาหนะของไรเดอร์ที่กำลังดูกองงาน — อัตราค่าวิ่งแยกตามยานพาหนะ เลขที่
+  // โชว์จึงต้องเป็นของเขา ไม่ใช่ค่าเริ่มต้นของกอง
+  riderVehicle?: 'motorcycle' | 'car' | null;
   onAccept: (jobId: string, extraData: any) => void;
   onReject: (job: any) => void;
   onOpenDetail: (jobId: string) => void;
 }
 
-export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject, onOpenDetail }: IncomingJobCardProps) => (
+export const IncomingJobCard = ({ job, riderInfoId, riderVehicle, onAccept, onReject, onOpenDetail }: IncomingJobCardProps) => (
   <div
     onClick={() => onOpenDetail(job.id)}
     className="bg-white rounded-[2rem] p-6 shadow-xl border-2 border-emerald-400 animate-in slide-in-from-bottom-4 cursor-pointer hover:shadow-2xl transition-shadow"
@@ -25,7 +28,7 @@ export const IncomingJobCard = ({ job, riderInfoId, onAccept, onReject, onOpenDe
         <span className="text-emerald-600 font-bold text-sm">งานใหม่เข้า!</span>
       </div>
       <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl text-sm font-bold flex gap-1.5">
-        <WalletIcon size={16} /> +{formatCurrency(job.rider_fee || job.rider_fee_estimate || 0)}
+        <WalletIcon size={16} /> +{formatCurrency(getRiderPayout(job, riderVehicle))}
       </div>
     </div>
 

@@ -72,3 +72,30 @@ export const getDevicesList = (job: any): Device[] => {
     customer_conditions: job.customer_conditions || []
   }];
 };
+
+// ─── ค่าจ้างไรเดอร์ที่ "คนนี้" จะได้ ────────────────────────────────────────
+// อัตราค่าวิ่งแยกตามยานพาหนะได้ (settings/logistics_rates/by_vehicle) เพราะ
+// ต้นทุนจริงคนละราคา แต่ตอนงานอยู่ในกองยังไม่มีใครถือ ค่า rider_fee_estimate
+// ที่เก็บไว้จึงเป็นของยานพาหนะเดียว (มอเตอร์ไซค์ = ค่าเริ่มต้น) — คนขับรถยนต์
+// จะเห็นเลขที่ไม่ใช่ของตัวเอง. bkk-system เก็บทั้งสองค่าไว้ที่
+// rider_fee_estimate_meta.fee_by_vehicle จากระยะทางชุดเดียวกัน ตัวนี้เลือกให้ตรงคน
+export const normalizeVehicleType = (value: unknown): 'motorcycle' | 'car' | null => {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (v === 'car') return 'car';
+  if (v === 'motorcycle') return 'motorcycle';
+  return null;
+};
+
+export const getRiderPayout = (job: any, vehicleType?: 'motorcycle' | 'car' | null): number => {
+  // จ่ายจริง/คิดปิดงานแล้ว = เลขนั้นคือคำตอบ ไม่ใช่ประมาณการอีกต่อไป
+  const settled = Number(job?.rider_fee);
+  if (Number.isFinite(settled) && settled > 0) return settled;
+
+  // ยังไม่รู้ยานพาหนะ (แอดมินไม่ได้ตั้ง) = ใช้ตัวเลขกลางที่เก็บไว้ ไม่เดา
+  const byVehicle = job?.rider_fee_estimate_meta?.fee_by_vehicle;
+  if (vehicleType && byVehicle) {
+    const mine = Number(byVehicle[vehicleType]);
+    if (Number.isFinite(mine) && mine > 0) return mine;
+  }
+  return Number(job?.rider_fee_estimate) || 0;
+};
