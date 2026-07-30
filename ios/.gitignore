@@ -1,0 +1,21 @@
+App/build
+App/Pods
+App/output
+App/App/public
+DerivedData
+xcuserdata
+
+# Cordova plugins for Capacitor
+capacitor-cordova-ios-plugins
+
+# Generated Config files
+App/App/capacitor.config.json
+App/App/config.xml
+
+# Firebase iOS config — ต้องดาวน์โหลดเองจาก Firebase Console (ดู docs/ios-app.md)
+# ไม่ commit เพราะผูกกับ App ID ของแต่ละ environment
+App/App/GoogleService-Info.plist
+
+# SPM symlinks ถูก generate ใหม่ทุกครั้งที่รัน `npx cap sync ios`
+# (เป็น absolute path ของเครื่องที่รัน จึงพกข้ามเครื่องไม่ได้)
+App/CapApp-SPM/symlinks

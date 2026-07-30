@@ -2,6 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --- Safe area (iOS app) ---
+   ในเปลือก native ของ Capacitor ตัว WKWebView คือ root view ของจอ
+   ขอบบนถูกจัดการฝั่ง native แล้ว (StatusBar.overlaysWebView = false ใน
+   capacitor.config.ts จะย่อ web view ลงมาใต้ status bar) เหลือแค่ขอบล่าง
+   ที่ต้องเผื่อ home indicator เอง
+
+   env(safe-area-inset-bottom) มีค่าเฉพาะเมื่อ viewport-fit=cover ซึ่ง
+   initNativeShell() ใส่ให้ตอนรัน native เท่านั้น — บนเว็บ/PWA ค่าจะเป็น 0
+   แล้ว max() จะคืน 2rem เท่าของเดิม (layout เว็บไม่เปลี่ยน) */
+.pb-safe {
+  padding-bottom: max(2rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+}
+
+/* ปุ่ม action bar ที่เดิมใช้ p-4 รอบด้าน — เพิ่มเฉพาะขอบล่าง */
+.pb-safe-compact {
+  padding-bottom: max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem));
+}
+
+/* ปิด callout ตอนกดค้าง + ไม่ให้เลือกข้อความ ให้รู้สึกเหมือนแอป native
+   (เฉพาะ native — บนเว็บยังต้อง copy ข้อความได้ตามปกติ) */
+.cap-native {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cap-native input,
+.cap-native textarea {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ซ่อน Scrollbar ให้ดูเหมือนแอปมือถือ */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;

@@ -11,6 +11,7 @@ import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 import { recordCheckpoint, STAGE_LABEL_TH } from '../utils/checkpoints';
 import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
+import { getCurrentPosition } from '../utils/geo';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -48,7 +49,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // นอกจากนั้นยังบันทึก check-in snapshot ลง jobs/{id}/checkpoints/{stage}
       // สำหรับ analytics + dispute audit (recordCheckpoint จะ no-op ถ้า
       // status นี้ไม่ใช่จุดที่ต้อง check-in)
-      navigator.geolocation.getCurrentPosition(async (pos) => {
+      getCurrentPosition(async (pos) => {
         try {
           await update(ref(db, `riders/${riderInfo.id}`), {
             lat: pos.coords.latitude,
@@ -198,7 +199,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // is correct. Fire-and-forget — non-fatal if it errors.
       markOfferAccepted(job.id, riderInfo.id);
 
-      navigator.geolocation.getCurrentPosition(
+      getCurrentPosition(
         async (pos) => {
           try {
             await update(ref(db, `riders/${riderInfo.id}`), {

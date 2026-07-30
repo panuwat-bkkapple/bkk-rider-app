@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# BKK Rider
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+แอปไรเดอร์ของ BKK APPLE — รับงาน, นำทางไปหาลูกค้า, ตรวจสภาพเครื่อง, KYC,
+จ่ายเงิน และปิดงาน
 
-Currently, two official plugins are available:
+Stack: Vite + React 18 + TypeScript + Tailwind + Firebase (RTDB, Auth, Storage, FCM)
+ปล่อยเป็น 2 ช่องทางจาก codebase เดียว:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **เว็บ / PWA** — Firebase Hosting (target `rider`), deploy อัตโนมัติเมื่อ push เข้า `main`
+- **iOS app** — Capacitor ห่อ bundle ก้อนเดิม ปล่อยผ่าน TestFlight / App Store
+  (ดู [`docs/ios-app.md`](docs/ios-app.md))
 
-## React Compiler
+## เริ่มพัฒนา
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+cp .env.example .env   # เติมค่า Firebase ของจริง
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+| คำสั่ง | ทำอะไร |
+| --- | --- |
+| `npm run dev` | dev server |
+| `npm run build` | typecheck + build ลง `dist/` |
+| `npm run test` | vitest |
+| `npm run lint` | eslint |
+| `npm run ios:sync` | build เว็บ แล้ว sync เข้า Xcode project |
+| `npm run ios:open` | เปิด Xcode |
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Deploy
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Hosting + Cloud Functions:** push เข้า `main` → GitHub Actions
+  (`.github/workflows/firebase-hosting-deploy.yml`) — ต้องเช็คว่า workflow ผ่าน
+  ก่อนบอกให้ทีมทดสอบ
+- **Preview channel:** รัน workflow `Preview Deploy (manual)` เอง
+- **iOS:** ต้อง archive + อัปโหลดจาก Xcode ทุกครั้งที่แก้โค้ดเว็บ
+  (bundle ฝังอยู่ในแอป) — ขั้นตอนเต็มอยู่ใน [`docs/ios-app.md`](docs/ios-app.md)
+
+## จุดที่ต้องระวัง
+
+- **Cloud Functions ชื่อห้ามชนกับ repo อื่น** — Firebase identify ด้วย
+  `{region}/{name}` ระดับ project ไม่ได้แยกตาม codebase ถ้าตั้งชื่อซ้ำกับ
+  `bkk-system` การ deploy ฝั่งหนึ่งจะทับอีกฝั่งแล้ว notification หายสลับกัน
+- **ห้าม subscribe `/jobs` ทั้งก้อน** — ใช้ `useRiderJobs` (query ตาม `rider_id`
+  + pool statuses) ทุกครั้ง ค่า download RTDB คิดตามจริง
+- **ข้อมูลงานใช้ร่วมกัน 3 repo** (`bkk-system`, `bkk-frontend-next`, repo นี้)
+  ก่อนแก้ฟิลด์ใน Firebase ต้องไล่ดูคนอ่าน/คนเขียนให้ครบทุก repo
+- **Push payload มี 2 แบบ** — web (data-only) กับ native (มี `notification`)
+  แยกด้วยฟิลด์ `platform` ของ token ดู `functions/src/index.ts`

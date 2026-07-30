@@ -2,3 +2,7 @@ node_modules/
 dist/
 .env
 .env.local
+
+# Capacitor / iOS
+ios/App/App/GoogleService-Info.plist
+ios/DerivedData/

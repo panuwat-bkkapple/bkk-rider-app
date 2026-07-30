@@ -7,9 +7,27 @@ admin.initializeApp();
 const db = admin.database();
 const messaging = admin.messaging();
 
+/**
+ * FCM token ของไรเดอร์ 1 ใบ
+ *
+ * `platform` แยกว่า token นี้มาจากไหน:
+ *   - "web"  = PWA/เบราว์เซอร์ (service worker เป็นคนวาด notification)
+ *   - "ios" / "android" = แอป native (Capacitor) — ระบบปฏิบัติการวาดให้จาก
+ *     `notification` payload
+ * token เก่าที่บันทึกไว้ก่อนมีแอป native จะไม่มีฟิลด์นี้ → ถือเป็น "web"
+ * เหมือนพฤติกรรมเดิมทุกประการ
+ */
+interface RiderToken {
+  token: string;
+  platform: "web" | "ios" | "android";
+}
+
+const normalizePlatform = (value: unknown): RiderToken["platform"] =>
+  value === "ios" || value === "android" ? value : "web";
+
 // Helper: Get all FCM tokens for a rider
-async function getRiderTokens(riderId: string): Promise<string[]> {
-  const tokens: string[] = [];
+async function getRiderTokens(riderId: string): Promise<RiderToken[]> {
+  const tokens: RiderToken[] = [];
 
   // Check fcm_tokens (multi-device)
   const tokensSnap = await db.ref(`riders/${riderId}/fcm_tokens`).get();
@@ -17,7 +35,10 @@ async function getRiderTokens(riderId: string): Promise<string[]> {
     const tokensData = tokensSnap.val();
     for (const key of Object.keys(tokensData)) {
       if (tokensData[key]?.token) {
-        tokens.push(tokensData[key].token);
+        tokens.push({
+          token: tokensData[key].token,
+          platform: normalizePlatform(tokensData[key].platform),
+        });
       }
     }
   }
@@ -26,80 +47,122 @@ async function getRiderTokens(riderId: string): Promise<string[]> {
   if (tokens.length === 0) {
     const tokenSnap = await db.ref(`riders/${riderId}/fcm_token`).get();
     if (tokenSnap.exists()) {
-      tokens.push(tokenSnap.val());
+      tokens.push({ token: tokenSnap.val(), platform: "web" });
     }
   }
 
   return tokens;
 }
 
-// Helper: Send notification to multiple tokens, clean up invalid ones
-async function sendToRider(
+// Helper: ลบ token ที่ FCM ตอบว่าใช้ไม่ได้แล้วออกจาก riders/{id}/fcm_tokens
+async function pruneInvalidTokens(
   riderId: string,
   tokens: string[],
+  response: admin.messaging.BatchResponse
+): Promise<void> {
+  if (response.failureCount === 0) return;
+
+  const tokensSnap = await db.ref(`riders/${riderId}/fcm_tokens`).get();
+  if (!tokensSnap.exists()) return;
+
+  const tokensData = tokensSnap.val();
+  const updates: Record<string, null> = {};
+
+  response.responses.forEach((resp, idx) => {
+    if (!resp.success) {
+      const errorCode = resp.error?.code;
+      if (
+        errorCode === "messaging/invalid-registration-token" ||
+        errorCode === "messaging/registration-token-not-registered"
+      ) {
+        // Find and remove this invalid token
+        for (const key of Object.keys(tokensData)) {
+          if (tokensData[key]?.token === tokens[idx]) {
+            updates[`riders/${riderId}/fcm_tokens/${key}`] = null;
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  if (Object.keys(updates).length > 0) {
+    await db.ref().update(updates);
+  }
+}
+
+// Helper: Send notification to multiple tokens, clean up invalid ones
+//
+// ต้องส่งแยก 2 ก้อนเพราะ payload คนละแบบ:
+//   - web  : data-only ให้ service worker วาดเอง — ถ้าใส่ `notification` ด้วย
+//            iOS PWA จะเด้ง 2 อันซ้อน (auto-display + showNotification)
+//   - native: ต้องมี `notification` + aps.alert ไม่งั้น iOS ไม่แสดงอะไรเลย
+//            ตอนแอปอยู่เบื้องหลัง (data-only = silent push)
+async function sendToRider(
+  riderId: string,
+  tokens: RiderToken[],
   title: string,
   body: string,
   data?: Record<string, string>
 ): Promise<void> {
   if (tokens.length === 0) return;
 
-  // Data-only message: SW builds the notification from `data`. Including a
-  // top-level `notification` field would cause iOS PWA to auto-display ON TOP
-  // of the SW's showNotification call, producing two identical alerts per push.
-  const message: admin.messaging.MulticastMessage = {
-    tokens,
-    data: { ...(data || {}), title, body },
-    apns: {
-      headers: {
-        "apns-priority": "10",
-        "apns-push-type": "alert",
-      },
-      payload: {
-        aps: {
-          "mutable-content": 1,
-          sound: "default",
+  const webTokens = tokens.filter((t) => t.platform === "web").map((t) => t.token);
+  const nativeTokens = tokens.filter((t) => t.platform !== "web").map((t) => t.token);
+
+  if (webTokens.length > 0) {
+    const message: admin.messaging.MulticastMessage = {
+      tokens: webTokens,
+      data: { ...(data || {}), title, body },
+      apns: {
+        headers: {
+          "apns-priority": "10",
+          "apns-push-type": "alert",
+        },
+        payload: {
+          aps: {
+            "mutable-content": 1,
+            sound: "default",
+          },
         },
       },
-    },
-    webpush: {
-      headers: {
-        Urgency: "high",
-        TTL: "86400",
+      webpush: {
+        headers: {
+          Urgency: "high",
+          TTL: "86400",
+        },
       },
-    },
-  };
+    };
 
-  const response = await messaging.sendEachForMulticast(message);
+    const response = await messaging.sendEachForMulticast(message);
+    await pruneInvalidTokens(riderId, webTokens, response);
+  }
 
-  // Clean up invalid tokens
-  if (response.failureCount > 0) {
-    const tokensSnap = await db.ref(`riders/${riderId}/fcm_tokens`).get();
-    if (!tokensSnap.exists()) return;
+  if (nativeTokens.length > 0) {
+    const message: admin.messaging.MulticastMessage = {
+      tokens: nativeTokens,
+      notification: { title, body },
+      data: { ...(data || {}), title, body },
+      apns: {
+        headers: {
+          "apns-priority": "10",
+          "apns-push-type": "alert",
+        },
+        payload: {
+          aps: {
+            alert: { title, body },
+            sound: "default",
+          },
+        },
+      },
+      android: {
+        priority: "high",
+        notification: { sound: "default" },
+      },
+    };
 
-    const tokensData = tokensSnap.val();
-    const updates: Record<string, null> = {};
-
-    response.responses.forEach((resp, idx) => {
-      if (!resp.success) {
-        const errorCode = resp.error?.code;
-        if (
-          errorCode === "messaging/invalid-registration-token" ||
-          errorCode === "messaging/registration-token-not-registered"
-        ) {
-          // Find and remove this invalid token
-          for (const key of Object.keys(tokensData)) {
-            if (tokensData[key]?.token === tokens[idx]) {
-              updates[`riders/${riderId}/fcm_tokens/${key}`] = null;
-              break;
-            }
-          }
-        }
-      }
-    });
-
-    if (Object.keys(updates).length > 0) {
-      await db.ref().update(updates);
-    }
+    const response = await messaging.sendEachForMulticast(message);
+    await pruneInvalidTokens(riderId, nativeTokens, response);
   }
 }
 

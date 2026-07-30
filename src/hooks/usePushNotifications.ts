@@ -4,6 +4,8 @@ import { getFirebaseMessaging } from '../api/firebase';
 import { getToken, onMessage, type Messaging } from 'firebase/messaging';
 import { ref, set, get, remove } from 'firebase/database';
 import { db } from '../api/firebase';
+import { isNativeApp, nativePlatform } from '../native';
+import { registerNativePush } from '../native/push';
 
 // Stable per-device identifier so token refreshes overwrite the same DB entry
 // instead of creating new ones. Without this each Service Worker reinstall left
@@ -24,41 +26,65 @@ const getDeviceId = (): string => {
 // visibility change (cheap) and every 12h while the app stays open.
 const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * เขียน FCM token ลง riders/{id}/fcm_tokens/{deviceId}
+ *
+ * `platform` สำคัญมาก: cloud function (sendToRider ใน functions/src/index.ts)
+ * ใช้ค่านี้แยกวิธีส่ง — 'web' ต้องเป็น data-only ให้ service worker วาด
+ * notification เอง (ไม่งั้น iOS PWA เด้งซ้ำ 2 อัน) ส่วน 'ios' ของแอป native
+ * ต้องมี notification payload ไม่งั้น iOS ไม่แสดงอะไรเลยตอนแอปปิด
+ */
+const saveToken = async (
+  riderId: string,
+  token: string,
+  platform: 'web' | 'ios' | 'android',
+) => {
+  const deviceId = getDeviceId();
+  const ua = navigator.userAgent;
+  const device =
+    platform !== 'web' ? platform : /iPhone|iPad/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : 'desktop';
+  const path = `riders/${riderId}/fcm_tokens/${deviceId}`;
+
+  const snap = await get(ref(db, path));
+  const existing = snap.val() as { token?: string; updated_at?: number; platform?: string } | null;
+
+  // Skip the write if token + platform + updated_at are still recent.
+  if (
+    existing?.token === token &&
+    existing?.platform === platform &&
+    existing?.updated_at &&
+    Date.now() - existing.updated_at < REFRESH_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  await set(ref(db, path), { token, device, platform, updated_at: Date.now() });
+  // Drop legacy single-token field once the multi-device entry is in place;
+  // the Cloud Function only falls back to it when fcm_tokens is empty.
+  await remove(ref(db, `riders/${riderId}/fcm_token`));
+  await set(ref(db, `riders/${riderId}/fcm_updated_at`), Date.now());
+  console.log(`FCM token saved (${device}/${platform}):`, token.slice(0, 20) + '...');
+};
+
 export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId: string) => void) => {
   useEffect(() => {
     if (!riderId) return;
 
+    // ---- iOS app (Capacitor): ใช้ APNs ผ่าน Firebase SDK ฝั่ง native ----
+    // ไม่มี service worker ใน WKWebView — token มาจาก FirebaseMessaging plugin
+    if (isNativeApp()) {
+      return registerNativePush({
+        onToken: (token) => saveToken(riderId, token, nativePlatform() === 'ios' ? 'ios' : 'android'),
+        onOpenChat,
+      });
+    }
+
+    // ---- เว็บ / PWA: ของเดิมทั้งหมด ----
     let messagingInstance: Messaging | null = null;
     let swRegistration: ServiceWorkerRegistration | undefined;
     let intervalId: ReturnType<typeof setInterval> | null = null;
     let visibilityHandler: (() => void) | null = null;
     let cancelled = false;
-
-    const saveToken = async (token: string) => {
-      const deviceId = getDeviceId();
-      const ua = navigator.userAgent;
-      const device = /iPhone|iPad/.test(ua) ? 'ios' : /Android/.test(ua) ? 'android' : 'desktop';
-      const path = `riders/${riderId}/fcm_tokens/${deviceId}`;
-
-      const snap = await get(ref(db, path));
-      const existing = snap.val() as { token?: string; updated_at?: number } | null;
-
-      // Skip the write if token + updated_at are still recent.
-      if (
-        existing?.token === token &&
-        existing?.updated_at &&
-        Date.now() - existing.updated_at < REFRESH_INTERVAL_MS
-      ) {
-        return;
-      }
-
-      await set(ref(db, path), { token, device, updated_at: Date.now() });
-      // Drop legacy single-token field once the multi-device entry is in place;
-      // the Cloud Function only falls back to it when fcm_tokens is empty.
-      await remove(ref(db, `riders/${riderId}/fcm_token`));
-      await set(ref(db, `riders/${riderId}/fcm_updated_at`), Date.now());
-      console.log(`FCM token saved (${device}):`, token.slice(0, 20) + '...');
-    };
 
     const fetchAndSaveToken = async () => {
       if (!messagingInstance || cancelled) return;
@@ -68,7 +94,7 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
           serviceWorkerRegistration: swRegistration,
         });
         if (token && !cancelled) {
-          await saveToken(token);
+          await saveToken(riderId, token, 'web');
         } else if (!token) {
           // getToken() can return null for transient reasons (SW not yet
           // activated, FCM endpoint hiccup). Don't delete the stored token —

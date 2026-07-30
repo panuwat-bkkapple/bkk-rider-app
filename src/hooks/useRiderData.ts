@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
+import { getCurrentPosition, watchPosition, type GeoPosition, type GeoError } from '../utils/geo';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
 import type { JobStatus } from '../types/job-statuses';
@@ -100,7 +101,7 @@ export const useRiderData = (currentRiderId: string) => {
   // Geolocation tracking
   useEffect(() => {
     if (!isOnline) return;
-    const updateLocationAndBattery = async (pos: GeolocationPosition) => {
+    const updateLocationAndBattery = async (pos: GeoPosition) => {
       let currentBattery = 99;
       try {
         if ('getBattery' in navigator) {
@@ -116,7 +117,7 @@ export const useRiderData = (currentRiderId: string) => {
       });
     };
 
-    const handleGeoError = (error: GeolocationPositionError) => {
+    const handleGeoError = (error: GeoError) => {
       const messages: Record<number, string> = {
         1: 'กรุณาอนุญาตการเข้าถึงตำแหน่ง (Location) เพื่อใช้งานระบบ',
         2: 'ไม่สามารถระบุตำแหน่งได้ กรุณาตรวจสอบ GPS',
@@ -129,14 +130,14 @@ export const useRiderData = (currentRiderId: string) => {
       }
     };
 
-    navigator.geolocation.getCurrentPosition(updateLocationAndBattery, handleGeoError, { enableHighAccuracy: true });
+    getCurrentPosition(updateLocationAndBattery, handleGeoError, { enableHighAccuracy: true });
     let lastUpdate = 0;
-    const watchId = navigator.geolocation.watchPosition((pos) => {
+    const stopWatch = watchPosition((pos) => {
       const now = Date.now();
       if (now - lastUpdate > 10000) { updateLocationAndBattery(pos); lastUpdate = now; }
     }, handleGeoError, { enableHighAccuracy: true, maximumAge: 10000 });
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    return stopWatch;
   }, [isOnline, riderInfo.id]);
 
   const jobData = useMemo(() => {
