@@ -114,7 +114,7 @@ export interface KYCRecord {
   // alongside the core KYC so admin can verify identity end-to-end without
   // re-reading the card photo. Schema synced with bkk-system/src/types/domain.ts
   // and validate rules in bkk-system/database.rules.json — change all 3 together.
-  id_name?: string;                  // ชื่อ-นามสกุลพร้อมคำนำหน้า ("นาย สมชาย ใจดี")
+  id_name?: string;                  // ชื่อ-นามสกุลพร้อมคำนำหน้า ("คำนำหน้า ชื่อจริง นามสกุล")
   id_dob?: string;                   // DD/MM/YYYY ตามที่ปรากฏบนบัตร
   id_issued_at?: string;             // วันออกบัตร
   id_expires_at?: string;            // วันบัตรหมดอายุ — display-only, ไม่ block submit

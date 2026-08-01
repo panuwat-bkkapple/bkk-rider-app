@@ -134,7 +134,7 @@ export const Checkout = ({ onBack }: CheckoutProps) => {
                     type="text"
                     value={fullname}
                     onChange={(e) => setFullname(e.target.value)}
-                    placeholder="กรอกชื่อ-นามสกุล"
+                    placeholder="ชื่อจริง นามสกุล"
                     className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-all"
                   />
                 </div>

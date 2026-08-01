@@ -429,7 +429,7 @@ export const KYCModal = ({ job, onClose, onSubmit }: KYCModalProps) => {
               value={idName}
               onChange={(e) => setIdName(e.target.value)}
               maxLength={200}
-              placeholder="นาย / นาง / นางสาว ..."
+              placeholder="คำนำหน้า ชื่อจริง นามสกุล"
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
             />
           </div>
