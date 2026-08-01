@@ -130,7 +130,7 @@ export const Register = ({ onBack }: { onBack: () => void }) => {
           {/* STEP 1: Personal info */}
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in">
-              <input type="text" placeholder="ชื่อ - นามสกุล (ตามบัตร ปชช.)" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 outline-none focus:border-emerald-500" />
+              <input type="text" placeholder="ชื่อจริง นามสกุล (ตามบัตร ปชช.)" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 outline-none focus:border-emerald-500" />
               <input type="tel" placeholder="เบอร์โทรศัพท์มือถือ (เช่น 0812345678)" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 outline-none focus:border-emerald-500" />
               <input type="email" placeholder="อีเมล (สำหรับเข้าสู่ระบบ)" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 outline-none focus:border-emerald-500" />
               <input type="password" placeholder="ตั้งรหัสผ่าน (6 ตัวขึ้นไป)" required minLength={6} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 outline-none focus:border-emerald-500" />
