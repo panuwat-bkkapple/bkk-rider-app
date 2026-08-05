@@ -459,6 +459,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
               setWithdrawAmount('');
             })}
             onClose={() => setIsWithdrawModalOpen(false)}
+            employmentType={riderInfo.employmentType}
           />
         </ModalErrorBoundary>
       )}

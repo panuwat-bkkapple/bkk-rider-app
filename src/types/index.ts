@@ -12,6 +12,9 @@ export interface RiderInfo {
   // ยานพาหนะที่แอดมินตั้งให้ (riders/{id}/vehicle_type) — อัตราค่าวิ่งแยกตาม
   // ยานพาหนะ จึงใช้เลือกว่าจะโชว์ค่าจ้างของการ์ดอัตราไหนในกองงาน
   vehicleType?: 'motorcycle' | 'car' | null;
+  // สถานะการจ้าง (riders/{id}/employment.type) — ตัดสินว่าเงินที่ถอนถูกหัก
+  // ภาษี ณ ที่จ่ายหรือไม่ ไรเดอร์ต้องเห็นยอดที่จะได้รับจริงก่อนกดถอน
+  employmentType?: 'employee' | 'freelance' | null;
 }
 
 export interface Job {

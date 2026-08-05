@@ -95,7 +95,10 @@ export const useRiderData = (currentRiderId: string) => {
         photoUrl: data.photo_url || data.photo || null,
         // แอดมินเขียนไว้ 2 ที่ (flat + nested) จากหน้าจัดการไรเดอร์ — ยังไม่ได้
         // ตั้งค่า = null ไม่เดาให้ เพราะเลขค่าจ้างที่โชว์จะผิดกลุ่มอัตรา
-        vehicleType: normalizeVehicleType(data.vehicle_type ?? data.vehicle?.type)
+        vehicleType: normalizeVehicleType(data.vehicle_type ?? data.vehicle?.type),
+        employmentType: data.employment?.type === 'employee' || data.employment?.type === 'freelance'
+          ? data.employment.type
+          : null
       }));
     });
     return () => unsubscribe();
