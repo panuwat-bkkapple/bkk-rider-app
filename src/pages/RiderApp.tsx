@@ -6,7 +6,7 @@ import { auth, db } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { toast } from '../components/common/Toast';
 import { getDevicesList, sumAccessoryItems } from '../utils/jobHelpers';
-import { sumAppliedAdjustments } from '../utils/adjustments';
+import { sumAppliedAdjustments, sumAppliedCoupons } from '../utils/adjustments';
 
 // Hooks
 import { useRiderData } from '../hooks/useRiderData';
@@ -182,7 +182,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
     const grossPickupFee = Number(job.pickup_fee || 0);
     const riderFeeDiscount = job.receive_method === 'Pickup' ? Number(job.rider_fee_discount || 0) : 0;
     const pickupFee = Math.max(0, grossPickupFee - riderFeeDiscount);
-    const couponValue = Number(job.applied_coupon?.value || job.applied_coupon?.actual_value || 0);
+    const couponValue = sumAppliedCoupons(job);
     // อุปกรณ์เสริมที่ขายพ่วง (accessory_items) ไม่อยู่ใน devices[] แต่มูลค่าอยู่ใน
     // price/final_price ของงาน — การ recompute จากราคาเครื่องล้วนๆ ต้องบวกกลับ
     // ไม่งั้นเงินอุปกรณ์เสริมหายจาก payout ตอนไรเดอร์ส่งผลตรวจ

@@ -48,7 +48,10 @@ export interface Job {
   pickup_fee?: number;
   /** ส่วนลดค่าไรเดอร์ที่บริษัทรับภาระ — หัก pickup_fee (ไม่แตะค่าจ้างไรเดอร์) */
   rider_fee_discount?: number;
-  applied_coupon?: { value?: number; actual_value?: number };
+  /** คูปองใบเดียว (งานเก่า / Manual Top-up) — อ่านผ่าน `sumAppliedCoupons()` */
+  applied_coupon?: { type?: string; value?: number; actual_value?: number };
+  /** คูปองหลายใบ (หนึ่งใบต่อ bucket) — **ห้ามบวกคู่กับ `applied_coupon`** */
+  applied_coupons?: { type?: string; value?: number; actual_value?: number }[];
   devices?: Device[];
   /** อุปกรณ์เสริม iPad ที่ขายพ่วง (Apple Pencil / Magic Keyboard) — มูลค่ารวมอยู่ใน
    *  price/final_price แล้ว (breakdown เท่านั้น). ไรเดอร์ต้องเก็บของตามรายการนี้ด้วย */
