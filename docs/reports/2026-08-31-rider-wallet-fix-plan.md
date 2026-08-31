@@ -49,7 +49,8 @@
 
 ## สถานะการลงมือ (31 ส.ค. 2569)
 
-- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3: **สคริปต์พร้อม** — bkk-system commit `2ac709a` (`scripts/backfill-logistics-revenue.cjs`, dry-run default, idempotent, ไม่แตะ amount เดิม; รอเจ้าของรัน dry-run → --apply → audit ซ้ำ) · เฟส 4: รอสั่ง
+- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3: **เสร็จและตรวจรับแล้ว** (31 ส.ค. 2569) — เจ้าของรัน dry-run (15 แถว Σ 3,776 ตรงเฟส 0 เป๊ะ; 12 แถว join งานได้และ `amount_customer_fee` เท่ากับ amount เดิมทุกแถว = rider_fee กับ pickup_fee ของข้อมูลชุดนี้บังเอิญเท่ากัน; 3 แถวเก่าสุด `job_not_found` ได้ null+reason ตามดีไซน์) → `--apply` เขียน 15 แถว/78 path → audit ซ้ำยืนยัน: เป้า retag = 0, ledger ทั้ง 253 แถวเป็น SYSTEM, LOGISTICS_REVENUE 39 แถวรวม 10,145 (6,369+3,776) — **กระเป๋าไรเดอร์บน production โชว์ถูกแล้วแม้ยังไม่ deploy เฟส 1** (ไม่มีแถวที่ rider_id ตรงเหลือ) · เฟส 4: รอสั่ง
+- งานถัดไปตามลำดับ: merge สอง branch เข้า main + deploy (กันแถวผิดใหม่จากโค้ดเก่า + ได้ allowlist ถาวร) → ค่อยกดอนุมัติค่ารอบค้าง 68,334 (190 ใบ) ใน RiderSettlements → เฟส 4
 - ระหว่างทำเฟส 2 พบว่า `pickup_fee` บนงานที่มีคูปองส่งฟรีถูก persist เป็นค่า gross (validateAndCreateOrder เขียน `pickup_fee: pickupFee` ดิบ — bkk-frontend-next/functions/src/index.ts:1863) helper จึงเช็คคูปอง `type: 'service'` เองจาก `applied_coupons` เพื่อให้ตรงเศรษฐศาสตร์ตอนสร้างงาน (`grossFee = 0` เมื่อ free delivery — index.ts:1643-1645)
 
 ## เฟส 1 — PR bkk-rider-app: กระเป๋าอ่านเฉพาะเงินไรเดอร์ (เห็นผลทันที ไม่รอ backfill)
