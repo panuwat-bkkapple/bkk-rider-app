@@ -7,7 +7,7 @@ import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import { normalizeVehicleType } from '../utils/jobHelpers';
-import { isRiderWalletTx, walletBalance } from '../utils/walletLedger';
+import { isRiderWalletTx, walletBalance, pendingWithdrawalHold } from '../utils/walletLedger';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
 import type { JobStatus } from '../types/job-statuses';
@@ -48,6 +48,9 @@ export const useRiderData = (currentRiderId: string) => {
   // from a rider device (bandwidth cost scales with total job count).
   const { data: jobs, loading: jobsLoading } = useRiderJobs(currentRiderId);
   const { data: transactions, loading: txLoading, hasMore: hasMoreTx, loadMore: loadMoreTx } = usePaginatedDatabase('transactions', 'timestamp', { field: 'rider_id', value: currentRiderId });
+  // คำขอถอนของตัวเอง (rules เปิด read เฉพาะ query rider_id ตัวเอง) — ใช้คิดยอด
+  // จองค้าง (status 'requested') และโชว์รายการรอโอนใน WalletTab
+  const { data: withdrawals } = usePaginatedDatabase('withdrawals', 'requested_at', { field: 'rider_id', value: currentRiderId });
   const { data: modelsData, loading: modelsLoading } = useDatabase('models');
   const { data: conditionSets, loading: conditionsLoading } = useDatabase('settings/condition_sets');
 
@@ -158,7 +161,13 @@ export const useRiderData = (currentRiderId: string) => {
     const myTx = tx
       .filter((t: any) => t.rider_id === currentRiderId && isRiderWalletTx(t))
       .sort((a: any, b: any) => b.timestamp - a.timestamp);
-    const balance = walletBalance(myTx);
+    const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w: any) => w.rider_id === currentRiderId);
+    const pendingWithdrawals = wd
+      .filter((w: any) => w.status === 'requested')
+      .sort((a: any, b: any) => (b.requested_at || 0) - (a.requested_at || 0));
+    // balance ที่โชว์/ใช้เช็คก่อนขอถอน = ledger ลบยอดจองค้าง (server ตรวจซ้ำ
+    // ด้วยสูตรเดียวกันใน riderRequestWithdraw — client เป็นแค่ UX)
+    const balance = walletBalance(myTx) - pendingWithdrawalHold(pendingWithdrawals);
 
     const incomingList = list.filter((j: any) => {
       if (j.receive_method !== RECEIVE_METHOD.PICKUP) return false;
@@ -184,9 +193,10 @@ export const useRiderData = (currentRiderId: string) => {
         return canonical && HISTORY_LIST_STATUSES.has(canonical) && j.completed_at;
       }).sort((a: any, b: any) => (b.completed_at || 0) - (a.completed_at || 0)),
       balance,
+      pendingWithdrawals,
       transactions: myTx
     };
-  }, [jobs, transactions, currentRiderId, dispatchMode]);
+  }, [jobs, transactions, withdrawals, currentRiderId, dispatchMode]);
 
   return {
     jobData, riderInfo, setRiderInfo,

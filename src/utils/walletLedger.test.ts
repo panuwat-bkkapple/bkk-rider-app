@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   RIDER_WALLET_CATEGORIES,
   isRiderWalletTx,
+  pendingWithdrawalHold,
   walletBalance,
   walletCategoryLabel,
 } from './walletLedger';
@@ -87,5 +88,19 @@ describe('walletCategoryLabel — ป้ายบนจอ', () => {
     expect(walletCategoryLabel('LOGISTICS_REVENUE')).toBe('LOGISTICS_REVENUE');
     expect(walletCategoryLabel('')).toBe('รายการอื่น');
     expect(walletCategoryLabel(undefined)).toBe('รายการอื่น');
+  });
+});
+
+describe('pendingWithdrawalHold — ยอดจองค้างจากคำขอถอน', () => {
+  it('นับเฉพาะ status requested และ amount เป็นเลขบวกจริง', () => {
+    expect(pendingWithdrawalHold([
+      { status: 'requested', withdraw_amount: 500 },
+      { status: 'requested', withdraw_amount: 300 },
+      { status: 'paid', withdraw_amount: 999 },      // จ่ายแล้ว = ไม่จอง
+      { status: 'rejected', withdraw_amount: 999 },  // ปฏิเสธ = คืนจอง
+      { status: 'requested', withdraw_amount: 'x' }, // เลขเสีย = ข้าม
+      { status: 'requested' },                       // ไม่มี amount = ข้าม
+    ])).toBe(800);
+    expect(pendingWithdrawalHold([])).toBe(0);
   });
 });

@@ -344,6 +344,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
       {activeTab === 'wallet' && (
         <WalletTab
           balance={jobData.balance}
+          pendingWithdrawals={jobData.pendingWithdrawals}
           transactions={jobData.transactions}
           hasMoreTx={hasMoreTx}
           onLoadMoreTx={loadMoreTx}
