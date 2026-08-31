@@ -49,7 +49,7 @@
 
 ## สถานะการลงมือ (31 ส.ค. 2569)
 
-- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3-4: รอสั่ง
+- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3: **สคริปต์พร้อม** — bkk-system commit `2ac709a` (`scripts/backfill-logistics-revenue.cjs`, dry-run default, idempotent, ไม่แตะ amount เดิม; รอเจ้าของรัน dry-run → --apply → audit ซ้ำ) · เฟส 4: รอสั่ง
 - ระหว่างทำเฟส 2 พบว่า `pickup_fee` บนงานที่มีคูปองส่งฟรีถูก persist เป็นค่า gross (validateAndCreateOrder เขียน `pickup_fee: pickupFee` ดิบ — bkk-frontend-next/functions/src/index.ts:1863) helper จึงเช็คคูปอง `type: 'service'` เองจาก `applied_coupons` เพื่อให้ตรงเศรษฐศาสตร์ตอนสร้างงาน (`grossFee = 0` เมื่อ free delivery — index.ts:1643-1645)
 
 ## เฟส 1 — PR bkk-rider-app: กระเป๋าอ่านเฉพาะเงินไรเดอร์ (เห็นผลทันที ไม่รอ backfill)
