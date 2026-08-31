@@ -1,6 +1,7 @@
 // src/hooks/useJobActions.ts
 import { ref, update, push, set, runTransaction } from 'firebase/database';
-import { db } from '../api/firebase';
+import { db, functions } from '../api/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { sendAdminNotification } from '../utils/notifications';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
@@ -394,24 +395,23 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     window.location.href = `tel:${phone}`;
   };
 
+  // คำขอถอนผ่าน callable เท่านั้น — server เป็นคนตรวจยอดจริงจาก ledger
+  // (client เช็คก่อนแค่เพื่อ UX) และ rules ปิด client write ที่ /withdrawals
+  // สนิท ท่อเดิมที่ push ตรงถูกปฏิเสธเงียบมาตลอด (ดูแผนเฟส 4 ใน docs/reports)
   const handleRequestWithdraw = async (
-    withdrawAmount: string, balance: number, riderInfoData: RiderInfo, onDone: () => void
+    withdrawAmount: string, availableBalance: number, riderInfoData: RiderInfo, onDone: () => void
   ) => {
     const amount = Number(withdrawAmount);
-    if (!amount || amount < 100) return toast.error('ระบุขั้นต่ำ 100 บาท');
-    if (amount > balance) return toast.error('ยอดเงินไม่เพียงพอ');
+    if (!Number.isInteger(amount) || amount < 100) return toast.error('ระบุยอดถอนเป็นจำนวนเต็ม ขั้นต่ำ 100 บาท');
+    if (amount > availableBalance) return toast.error('ยอดเงินไม่เพียงพอ');
     try {
-      await push(ref(db, 'withdrawals'), {
-        rider_id: riderInfoData.id, rider_name: riderInfoData.name,
-        withdraw_amount: amount, status: 'Withdrawal Requested',
-        requested_at: Date.now(), type: 'Withdrawal',
-        bank_name: riderInfoData.bankName, bank_account: riderInfoData.accountNo
-      });
+      await httpsCallable(functions, 'riderRequestWithdraw')({ amount });
       sendAdminNotification('คำขอถอนเงิน', `ไรเดอร์ ${riderInfoData.name} ขอเบิกเงิน ${formatCurrency(amount)}`);
-      toast.success('ส่งคำขอถอนเงินสำเร็จ!');
+      toast.success('ส่งคำขอถอนเงินสำเร็จ! รอฝ่ายการเงินโอนเข้าบัญชี');
       onDone();
-    } catch (e) {
-      toast.error('เกิดข้อผิดพลาด: ' + e);
+    } catch (e: any) {
+      // HttpsError จาก server มีข้อความไทยพร้อมใช้ (ยอดไม่พอ/มีคำขอค้าง)
+      toast.error(e?.message || 'เกิดข้อผิดพลาดในการส่งคำขอถอนเงิน');
     }
   };
 

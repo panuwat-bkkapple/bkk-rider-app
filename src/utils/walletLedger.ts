@@ -58,6 +58,18 @@ export function isRiderWalletTx(t: WalletTxLike | null | undefined): boolean {
   return Number.isFinite(Number(raw));
 }
 
+/** ยอดจองค้างจากคำขอถอนที่ยังไม่ถูกจ่าย/ปฏิเสธ (/withdrawals status 'requested')
+ *  — ยอดที่ถอนได้จริงต้องหักก้อนนี้ออกจาก balance ไม่งั้นกดขอแล้วเลขบนจอ
+ *  ไม่ขยับ และขอซ้ำได้เต็มยอดจนกว่า finance จะจ่าย. MIRROR ฝั่ง server อยู่ใน
+ *  functions/src/index.ts (riderRequestWithdraw) */
+export function pendingWithdrawalHold(rows: readonly { status?: unknown; withdraw_amount?: unknown }[]): number {
+  return rows.reduce<number>((acc, w) => {
+    if (!w || w.status !== 'requested') return acc;
+    const amt = Number(w.withdraw_amount);
+    return Number.isFinite(amt) && amt > 0 ? acc + amt : acc;
+  }, 0);
+}
+
 /** balance จากแถวที่ "ผ่าน isRiderWalletTx แล้ว" — CREDIT บวก DEBIT ลบ */
 export function walletBalance(rows: readonly WalletTxLike[]): number {
   return rows.reduce<number>((acc, t) => {

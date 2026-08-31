@@ -4,14 +4,17 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { walletCategoryLabel } from '../../utils/walletLedger';
 
 interface WalletTabProps {
+  /** ยอดที่ถอนได้จริง = ledger ลบคำขอถอนที่ค้างอยู่ (คิดใน useRiderData) */
   balance: number;
+  /** คำขอถอนสถานะ requested — โชว์เป็นแถบรอโอนเหนือประวัติ */
+  pendingWithdrawals?: any[];
   transactions: any[];
   hasMoreTx?: boolean;
   onLoadMoreTx?: () => void;
   onOpenWithdraw: () => void;
 }
 
-export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
+export const WalletTab = ({ balance, pendingWithdrawals = [], transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
   <div className="h-full bg-[#F9FAFB] overflow-y-auto pb-32 animate-in fade-in">
     {/* Header */}
     <div className="bg-emerald-600 p-8 pt-16 pb-12 text-white rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
@@ -25,6 +28,22 @@ export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOp
         ขอถอนเงินเข้าบัญชี
       </button>
     </div>
+
+    {/* คำขอถอนที่รอฝ่ายการเงินโอน — ยอดถูกกันออกจาก balance ข้างบนแล้ว */}
+    {pendingWithdrawals.length > 0 && (
+      <div className="px-6 pt-6 space-y-3">
+        <h4 className="font-bold text-gray-800 text-sm">คำขอถอนเงิน (รอโอน)</h4>
+        {pendingWithdrawals.map((w: any) => (
+          <div key={w.id} className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-amber-900">รอฝ่ายการเงินโอนเข้าบัญชี</div>
+              <div className="text-[10px] text-amber-700 mt-0.5">{formatDate(w.requested_at)}{w.bank_name ? ` · ${w.bank_name} (${w.bank_account})` : ''}</div>
+            </div>
+            <div className="text-base font-bold text-amber-900 shrink-0">{formatCurrency(w.withdraw_amount)}</div>
+          </div>
+        ))}
+      </div>
+    )}
 
     {/* Transactions */}
     <div className="p-6 space-y-4">

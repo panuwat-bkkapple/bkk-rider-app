@@ -402,3 +402,128 @@ export const onBroadcastJob = onValueWritten(
     await Promise.all(promises);
   }
 );
+
+// ============================================================
+// 4. Rider withdrawal request — คำขอถอนเงินจากกระเป๋าไรเดอร์
+// ============================================================
+//
+// ทำไมต้องเป็น callable ไม่ใช่ให้แอปเขียน /withdrawals ตรง: RTDB rules รวมยอด
+// ข้าม node ไม่ได้ การตรวจ "ยอดขอถอน <= ยอดในกระเป๋า" จึงต้องเกิดฝั่ง server
+// ก่อนสร้างคำขอ ไม่งั้นใครยิงตรงก็ขอเกินได้ (ช่องเดิม: เช็คแค่ client)
+// rules ของ /withdrawals จึงปิด client write สนิท — ดู
+// bkk-frontend-next/database.rules.json และแผนเฟส 4 ใน
+// docs/reports/2026-08-31-rider-wallet-fix-plan.md
+//
+// State machine ของแถว /withdrawals/{id} (DEBIT เขียนตอน paid เท่านั้น):
+//   requested  = จองยอดไว้ ยังไม่แตะ ledger (คำขอที่ถูกปฏิเสธไม่กินยอดถาวร)
+//   paid       = finance กดโอน → เขียน transactions DEBIT + เคลียร์ lock
+//   rejected   = finance ปฏิเสธ → เคลียร์ lock ไม่มีรอย ledger
+// ฝั่งจ่าย/ปฏิเสธอยู่ bkk-system RiderWithdrawals (admin-gated ตาม rules)
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+
+// หมวดเงินไรเดอร์ — MIRROR ของ src/utils/walletLedger.ts (functions มี rootDir
+// ของตัวเอง import จาก src/ ไม่ได้) แก้ฝั่งไหนต้องแก้ทั้งคู่
+const RIDER_WALLET_CATEGORIES = new Set(["JOB_PAYOUT", "WITHDRAWAL", "PENALTY", "BONUS"]);
+
+function walletTxAmount(t: Record<string, unknown> | null): number | null {
+  if (!t) return null;
+  if (t.type !== "CREDIT" && t.type !== "DEBIT") return null;
+  if (!RIDER_WALLET_CATEGORIES.has(String(t.category ?? ""))) return null;
+  const raw = t.amount;
+  if (typeof raw !== "number" && typeof raw !== "string") return null;
+  if (typeof raw === "string" && raw.trim() === "") return null;
+  const amt = Number(raw);
+  if (!Number.isFinite(amt)) return null;
+  return t.type === "CREDIT" ? amt : -amt;
+}
+
+export const riderRequestWithdraw = onCall(
+  { region: "asia-southeast1" },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "กรุณาเข้าสู่ระบบใหม่");
+
+    const riderSnap = await db.ref(`riders/${uid}`).get();
+    if (!riderSnap.exists()) {
+      throw new HttpsError("permission-denied", "ไม่พบบัญชีไรเดอร์");
+    }
+    const rider = riderSnap.val() || {};
+
+    const amount = Number(request.data?.amount);
+    if (!Number.isInteger(amount) || amount < 100) {
+      throw new HttpsError("invalid-argument", "ระบุยอดถอนเป็นจำนวนเต็ม ขั้นต่ำ 100 บาท");
+    }
+
+    const lockRef = db.ref(`withdrawal_locks/${uid}`);
+
+    // lock ค้างจากคำขอที่จบไปแล้ว (paid/rejected ที่ฝั่ง finance ลืมเคลียร์ หรือ
+    // callable ตายกลางทาง) = ปลดได้ — เช็คจากแถวจริงก่อน ไม่เชื่อ lock ลอยๆ
+    const staleLock = (await lockRef.get()).val();
+    if (staleLock && staleLock.request_id) {
+      const rowStatus = (
+        await db.ref(`withdrawals/${staleLock.request_id}/status`).get()
+      ).val();
+      if (rowStatus !== "requested") await lockRef.set(null);
+    }
+
+    // จุด serialize: หนึ่งคำขอเปิดได้ครั้งละหนึ่งใบต่อไรเดอร์ — transaction
+    // สร้าง lock ได้เฉพาะเมื่อว่าง สองคำขอพร้อมกันจะมีคนแพ้เสมอ
+    const wid = db.ref("withdrawals").push().key as string;
+    const now = Date.now();
+    const lockResult = await lockRef.transaction((cur) =>
+      cur === null ? { request_id: wid, amount, at: now } : undefined
+    );
+    if (!lockResult.committed) {
+      throw new HttpsError(
+        "failed-precondition",
+        "มีคำขอถอนเงินค้างอยู่แล้ว รอฝ่ายการเงินดำเนินการก่อนจึงขอใหม่ได้"
+      );
+    }
+
+    try {
+      // ยอดที่ถอนได้ = ledger (เฉพาะหมวดเงินไรเดอร์) − คำขอที่ยังค้าง
+      // scan ตาม query rider_id (index มีแล้ว) — ข้อมูลยังหลักร้อยแถว ยอมรับได้
+      // ตามที่เคาะไว้ อย่าเพิ่ง denormalize balance จนกว่าจะช้าจริง
+      const [txSnap, pendingSnap] = await Promise.all([
+        db.ref("transactions").orderByChild("rider_id").equalTo(uid).get(),
+        db.ref("withdrawals").orderByChild("rider_id").equalTo(uid).get(),
+      ]);
+      let available = 0;
+      txSnap.forEach((child) => {
+        const v = walletTxAmount(child.val());
+        if (v !== null) available += v;
+        return false;
+      });
+      pendingSnap.forEach((child) => {
+        const w = child.val() || {};
+        if (w.status === "requested") available -= Number(w.withdraw_amount) || 0;
+        return false;
+      });
+
+      if (amount > available) {
+        throw new HttpsError(
+          "failed-precondition",
+          `ยอดเงินไม่เพียงพอ (ถอนได้ ${available.toLocaleString("th-TH")} บาท)`
+        );
+      }
+
+      // field names คงรูปที่หน้า finance ใช้อยู่ (withdraw_amount ฯลฯ) — ตัวอ่าน
+      // คือ bkk-system RiderWithdrawals ซึ่งย้าย source มาที่ node นี้
+      await db.ref(`withdrawals/${wid}`).set({
+        rider_id: uid,
+        rider_name: rider.name || "",
+        withdraw_amount: amount,
+        status: "requested",
+        requested_at: now,
+        bank_name: rider.bank?.name || "",
+        bank_account: rider.bank?.account || "",
+      });
+
+      return { id: wid, amount, available_after: available - amount };
+    } catch (err) {
+      // สร้างคำขอไม่สำเร็จ = คืนการจอง ไม่ทิ้ง lock ค้าง
+      await lockRef.set(null).catch(() => undefined);
+      throw err;
+    }
+  }
+);
