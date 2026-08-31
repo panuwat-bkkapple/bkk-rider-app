@@ -1,6 +1,7 @@
 // src/components/wallet/WalletTab.tsx
 import { Bike, Landmark, Wallet as WalletIcon } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { walletCategoryLabel } from '../../utils/walletLedger';
 
 interface WalletTabProps {
   balance: number;
@@ -36,17 +37,22 @@ export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOp
         </div>
       ) : (
         transactions.map((t: any) => (
-          <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${t.type === 'CREDIT' ? 'bg-emerald-50 text-emerald-500' : 'bg-orange-50 text-orange-500'}`}>
+          <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center ${t.type === 'CREDIT' ? 'bg-emerald-50 text-emerald-500' : 'bg-orange-50 text-orange-500'}`}>
                 {t.type === 'CREDIT' ? <Bike size={20} /> : <Landmark size={20} />}
               </div>
-              <div>
-                <div className="text-sm font-bold text-gray-800">{t.category}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-gray-800">{walletCategoryLabel(t.category)}</div>
+                {/* description จาก finance มีชื่อรุ่น + เลขงาน (ref_no) — คือคำตอบว่า
+                    เงินก้อนนี้เป็นของงานไหน โดยไม่ต้อง join อะไรเพิ่ม */}
+                {t.description && (
+                  <div className="text-xs text-gray-500 mt-0.5 leading-snug break-words">{t.description}</div>
+                )}
                 <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(t.timestamp)}</div>
               </div>
             </div>
-            <div className={`text-base font-bold ${t.type === 'CREDIT' ? 'text-emerald-500' : 'text-gray-900'}`}>
+            <div className={`text-base font-bold shrink-0 ${t.type === 'CREDIT' ? 'text-emerald-500' : 'text-gray-900'}`}>
               {t.type === 'CREDIT' ? '+' : '-'}{formatCurrency(t.amount)}
             </div>
           </div>
