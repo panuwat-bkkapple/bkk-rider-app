@@ -1,81 +1,103 @@
-# แผนแก้: กระเป๋าเงินไรเดอร์ + ท่อถอนเงิน (31 ส.ค. 2569 — ข้อเสนอ ยังไม่แตะโค้ด)
+# แผนแก้: กระเป๋าเงินไรเดอร์ + ท่อถอนเงิน (31 ส.ค. 2569 — เคาะแล้ว, ยังไม่แตะโค้ด)
 
-> ต่อจาก survey `2026-08-31-rider-money-distance-survey.md` ((ค)#1, #2) และคำตอบเจ้าของงาน 2 ข้อ:
-> (1) ไรเดอร์ยังไม่เคยกดถอนจริงในระบบใหม่ · (2) "รายได้ค่าไรเดอร์ของบริษัท" (`pickup_fee` ที่เก็บจากลูกค้า)
-> กับ "ค่าวิ่งของไรเดอร์" (`rider_fee`) เป็นคนละก้อนโดยนิยาม
+> ต่อจาก survey `2026-08-31-rider-money-distance-survey.md` ((ค)#1, #2). ฉบับนี้รวมผลการเคาะของ
+> เจ้าของงาน (31 ส.ค.) ครบทั้ง 3 คำถามเปิด + 2 เรื่องที่แผนร่างแรกยังไม่ครอบ
 
 ## หลักการของแผน
 
-1. **wallet ไรเดอร์ต้องอ่านเฉพาะหมวดที่เป็นเงินไรเดอร์** — ไม่ใช่ทุกแถวที่ `rider_id` ตรง. หมวดเงินไรเดอร์มีประกาศอยู่แล้วในโค้ด: `JOB_PAYOUT | WITHDRAWAL | PENALTY | BONUS` (bkk-rider-app/src/utils/transactionLogger.ts:11)
+1. **wallet ไรเดอร์ต้องอ่านเฉพาะหมวดที่เป็นเงินไรเดอร์** — ไม่ใช่ทุกแถวที่ `rider_id` ตรง. หมวดเงินไรเดอร์มีประกาศอยู่แล้ว: `JOB_PAYOUT | WITHDRAWAL | PENALTY | BONUS` (bkk-rider-app/src/utils/transactionLogger.ts:11)
 2. **แถวรายได้บริษัทต้องไม่ถือ `rider_id` ของไรเดอร์** และยอดต้องเป็นเงินที่เก็บจากลูกค้าจริง ไม่ใช่ต้นทุนที่จ่ายไรเดอร์
-3. **แก้ทั้งฝั่งอ่านและฝั่งเขียน** — ฝั่งอ่านคือด่านโครงสร้าง (หมวดบัญชีใหม่ในอนาคตจะไม่ทะลุเข้ากระเป๋าอีก) ฝั่งเขียนคือความถูกต้องของ ledger. ตามบทเรียน "กฎมีกี่คนอ่าน" ใน CLAUDE.md — แก้ที่เดียวคือแก้ครึ่งเดียว
-4. ทุกเฟสมี dry-run/เทสก่อน และ **เฟสเรียงให้หยุดเลือดก่อน แล้วค่อยล้างของเก่า**
+3. **แก้ทั้งฝั่งอ่านและฝั่งเขียน** — ฝั่งอ่านคือด่านโครงสร้าง ฝั่งเขียนคือความถูกต้องของ ledger (บทเรียน "กฎมีกี่คนอ่าน")
+4. `amount` ในแถว ledger เก่าคือบันทึกประวัติ **ห้ามแก้ย้อนหลัง** — เก็บเลขที่ถูกไว้เป็นฟิลด์ใหม่ข้าง ๆ แทน
+5. ทุกเฟสมี dry-run/เทสก่อน และเฟสเรียงให้หยุดเลือดก่อน แล้วค่อยล้างของเก่า
 
-ข้อเท็จจริงที่แผนพิง (ตรวจแล้ว):
-- `LOGISTICS_REVENUE` ไม่มีผู้อ่านที่ไหนเลยทั้ง 3 repo นอกจาก 3 จุดเขียน (grep 31 ส.ค. 2569: TradeInPayouts.tsx:177, MobileFinancePage.tsx:192, TransactionRepair.tsx:108) → เปลี่ยน semantics ได้โดยไม่มีรายงานไหนพัง (P&L/ภ.พ.30 อ่าน `/sales` + `/accounting_documents` ไม่ใช่ `/transactions`)
-- `onNewTicketCreated` กรองเฉพาะ status งานใหม่ (bkk-system/functions/index.js:1670) แต่ `onJobCreatedSendEmails` ยิงทุก create บน `/jobs` → เหตุผลหนึ่งที่ไม่ควรใช้ `/jobs` เป็นทางเดินคำขอถอนต่อ
-- ใบ 50 ทวิเขียนสำเนาลง `jobs/{ref_job_id}/wht_certificate` (bkk-system/functions/rider-wht-issue.js:113,159) — ต้องย้ายปลายทางถ้าแถวถอนย้าย node
+## ข้อเท็จจริงที่แผนพิง (ตรวจจากโค้ดแล้ว 31 ส.ค. 2569)
+
+1. `LOGISTICS_REVENUE` ไม่มีผู้อ่าน**แบบเจาะหมวด**ที่ไหนเลยทั้ง 3 repo (grep เจอแค่ 3 จุดเขียน: TradeInPayouts.tsx:177, MobileFinancePage.tsx:192, TransactionRepair.tsx:108)
+2. **แต่มีผู้อ่านแบบทั้งตาราง — ข้อนี้แก้คำในแผนร่างแรกที่เขียนว่า "ไม่มีผู้อ่านเลย":** `FinanceAuditLog.tsx` subscribe `/transactions` ทั้งก้อน (บรรทัด 11) แล้วรวม รายรับ = Σ CREDIT / รายจ่าย = Σ DEBIT **ข้ามทุกหมวด** (บรรทัด 45-48) + export CSV — `/transactions` จึงเป็นสมุดเงินสดของร้านที่ finance เปิดดูจริงอยู่แล้ว ไม่ใช่ node ที่ไม่มีอนาคต. หมายเหตุพ่วง: การ์ดสถิติหน้านี้ปน "เงินสดบริษัท" กับ "ยอดตั้งหนี้เข้ากระเป๋าไรเดอร์ (JOB_PAYOUT)" ในเลขเดียว — เป็นข้อจำกัดเดิมที่มีอยู่ก่อนแผนนี้ จดไว้ ไม่แก้ในรอบนี้
+3. trigger บน `/jobs` ยิงทุก create (`onJobCreatedSendEmails`) แม้ `onNewTicketCreated` จะกรอง status (bkk-system/functions/index.js:1670) → เหตุผลที่ไม่ใช้ `/jobs` เป็นทางเดินคำขอถอน · ใบ 50 ทวิเขียนสำเนาลง `jobs/{ref_job_id}/wht_certificate` (rider-wht-issue.js:113,159) — ต้องย้ายปลายทางเมื่อแถวถอนย้าย node
+4. **rules ของ `/transactions` ปิด client write แล้ว** (เรื่องที่เจ้าของให้ตรวจ): `.write` = admin เท่านั้น, `.read` = admin หรือ query `orderByChild('rider_id').equalTo(auth.uid)` (bkk-frontend-next/database.rules.json:848-856) — ไรเดอร์ push แถว `BONUS` เข้ากระเป๋าตัวเองไม่ได้ ด่านความปลอดภัยมีอยู่แล้ว allowlist ในเฟส 1 จึงเป็นเรื่องความถูกต้องของการแสดงผล ไม่ใช่ด่านเดียวที่กันเงินปลอม
+5. P&L/ภ.พ.30 อ่าน `/sales` + `/accounting_documents` ไม่แตะ `/transactions` — การเปลี่ยนนิยาม amount ของหมวดนี้ไม่กระทบรายงานภาษี (กระทบแค่การ์ดรวมของ FinanceAuditLog ตามข้อ 2 ซึ่งเปลี่ยนไปทาง**ถูกขึ้น**)
+
+## ผลการเคาะ (เจ้าของงาน 31 ส.ค. 2569)
+
+- **ข้อ 1 — retag อย่างเดียว ไม่ restate `amount`**: เคาะแล้ว. และคำถามใหญ่กว่า "หมวดนี้มีอนาคตไหม" ตัดสินด้วยข้อเท็จจริงข้อ 2: **มีอนาคต — เก็บหมวดไว้ แก้ semantics ตามเฟส 2 เต็มรูป** (`/transactions` เป็นสมุดเงินสดร้านที่มีคนอ่านจริง และแถว DEBIT ฝั่งบริษัท `TRADE_IN_PAYOUT`/`B2B_PURCHASE` อยู่ในนั้นอยู่แล้ว — ถอด LOGISTICS_REVENUE ทิ้ง = เหตุการณ์จ่ายลูกค้าเหลือครึ่งเดียวในสมุด) → เฟส 3 พ่วงเขียน `amount_customer_fee` ตามข้อเสนอเจ้าของงาน (รายละเอียดในเฟส 3)
+- **ข้อ 2 — ทาง A (callable)**: เคาะแล้ว + spec เพิ่มตามที่เจ้าของงานให้ (state machine / atomicity / ยังไม่ denormalize balance) — รายละเอียดในเฟส 4
+- **ข้อ 3 — สื่อสารไรเดอร์**: มีผลเฉพาะเมื่อมีไรเดอร์คนอื่นนอกจากเจ้าของ ถ้ายังวิ่งคนเดียว deploy เฟส 1 ได้เลย — template อยู่ในเฟส 5
 
 ---
 
 ## เฟส 0 — วัดความเสียหายจริง (read-only, ทำได้ทันที)
 
-สคริปต์ dry-run (pattern เดียวกับ `bkk-system/scripts/strip-ledger-emails.cjs`) อ่าน `/transactions` ทั้งก้อนครั้งเดียว แล้วรายงาน:
-- ต่อ rider: Σ แยกตาม `category` + balance ตามสูตรปัจจุบัน (ทุกแถว) เทียบสูตรใหม่ (allowlist) → คอลัมน์ "ส่วนที่บวม"
-- นับแถว `LOGISTICS_REVENUE` ที่ `rider_id !== 'SYSTEM'` (เป้าของ backfill เฟส 3)
-- จับความผิดปกติอื่นที่ survey ชี้ไว้: แถว `amount` ไม่ใช่ตัวเลข (ทำ balance เป็น NaN ได้ — useRiderData.ts:154 ไม่มี guard), แถว JOB_PAYOUT ที่ amount = 150 เป๊ะ (ร่องรอย fallback)
+สคริปต์ dry-run (pattern `bkk-system/scripts/strip-ledger-emails.cjs`) อ่าน `/transactions` ครั้งเดียว รายงาน:
 
-ผลลัพธ์ = ตารางยืนยันสาเหตุด้วยข้อมูลจริง ก่อนแตะโค้ดแม้แต่บรรทัดเดียว
+1. ต่อ rider: Σ แยกตาม `category` + balance สูตรเดิม (ทุกแถว) เทียบสูตรใหม่ (allowlist) → คอลัมน์ "ส่วนที่บวม" — เลขนี้คือ X−Y ในข้อความสื่อสารเฟส 5
+2. นับแถว `LOGISTICS_REVENUE` ที่ `rider_id !== 'SYSTEM'` (เป้า backfill เฟส 3)
+3. แถวผิดปกติ: `amount` ไม่ใช่ตัวเลข (ทำ balance เป็น NaN ได้) และแถวที่ขาดฟิลด์บังคับ
+4. **ความถูกต้องเชิงตัวเลขของ JOB_PAYOUT (เพิ่มตามรอบเคาะ):** แยกรายงาน (ก) แถว `amount === 150` เป๊ะ (ร่องรอย fallback hardcode ตอน settle — RiderSettlements.tsx:50,77) และ (ข) join ผ่าน `ref_job_id` → อ่าน `jobs/{id}/rider_fee_meta.reason` (fallback `jobs_archived`) — **`reason !== 'calculated'` คือตัวชี้แม่นกว่า time window**: มันบอกตรง ๆ ว่าค่ารอบใบนั้นคิดจาก `min_fee` fallback ไม่ใช่ระยะจริง (bkk-system/functions/index.js:614-635) ครอบคลุมช่วง Routes API พังโดยไม่ต้องเดาวันที่ (หมายเหตุความแม่น: ฝั่งค่ารอบไรเดอร์ fallback คือ `min_fee` คงที่ — ส่วน haversine×1.3 เป็น fallback ของ*ค่าส่งลูกค้า*ฝั่งเว็บ คนละก้อน ไม่เข้ากระเป๋าไรเดอร์). ถ้าพบใบที่คิดจาก fallback ในช่วงที่ควรคิดได้จริง → ต้องเคลียร์ก่อนหรือรวมในข้อความสื่อสารทีเดียว — **ห้ามประกาศ "ยอดใหม่ถูกแล้ว" ทั้งที่ฐานตัวเลขบางใบยังผิด**
+5. **ยืนยันสมมุติฐานของเฟส 4 จากข้อมูลจริง (เพิ่มตามรอบเคาะ):** นับ (ก) แถว `/transactions` category `WITHDRAWAL` (ข) เนื้อใน node `/withdrawals` (ค) แถว `/jobs` ที่ `type === 'Withdrawal'` — ทั้งสามต้องเป็นศูนย์ตามที่จำกันไว้ ถ้าไม่ศูนย์ เฟส 4 ต้องมี migration ที่ตอนนี้ไม่ได้วางไว้
 
-## เฟส 1 — PR bkk-rider-app: กระเป๋าอ่านเฉพาะเงินไรเดอร์ (เห็นผลทันที ไม่ต้องรอ backfill)
+## เฟส 1 — PR bkk-rider-app: กระเป๋าอ่านเฉพาะเงินไรเดอร์ (เห็นผลทันที ไม่รอ backfill)
 
-- `useRiderData.ts:153-154`: กรอง `myTx` ด้วย allowlist หมวดเงินไรเดอร์ + `Number.isFinite(amount)` ก่อนเข้า balance (กัน NaN ทั้งก้อน) — ประกาศ allowlist ที่เดียว (เช่นใน `transactionLogger.ts` ซึ่งมี type อยู่แล้ว) ให้ WalletTab ใช้ร่วม
-- `WalletTab.tsx:45`: แสดง label ไทยต่อหมวด แทนชื่อ category ดิบ
-- เก็บกวาด: `logTransaction` (transactionLogger.ts:16-26) เป็นโค้ดตายที่เขียนไม่ได้ตาม rules — ลบทิ้ง เหลือแต่ type/allowlist
-- เทส (vitest มีอยู่แล้วใน repo): fixture มีแถว LOGISTICS_REVENUE + แถว amount เพี้ยน → balance ต้องไม่รวม; ทำ injection test ตามระเบียบ CLAUDE.md (ถอด filter แล้วเทสต้องแดง)
-- **ผลข้างเคียงที่ต้องสื่อสาร: ตัวเลขบนจอไรเดอร์จะ "ลดลง"** เท่ากับเงินที่ไม่เคยเป็นของเขา — ต้องแจ้งไรเดอร์ก่อน deploy (ดูเฟส 5)
+- `useRiderData.ts:153-154`: กรอง `myTx` ด้วย allowlist หมวดเงินไรเดอร์ + `Number.isFinite(amount)` (กัน NaN ทั้งก้อน) — allowlist ประกาศที่เดียวใน `transactionLogger.ts` ให้ WalletTab ใช้ร่วม
+- `WalletTab.tsx:45`: label ไทยต่อหมวด แทน category ดิบ
+- ลบ `logTransaction` ที่เป็นโค้ดตาย (transactionLogger.ts:16-26 — ไม่มีผู้เรียก และ rules ก็ไม่ให้เขียนอยู่แล้วตามข้อเท็จจริง 4) เหลือ type/allowlist
+- เทส vitest: fixture มีแถว LOGISTICS_REVENUE + แถว amount เพี้ยน → balance ต้องไม่รวม + injection test (ถอด filter แล้วเทสต้องแดง)
+- ขอบเขตชัด: เฟสนี้ทำให้ยอด**ถูกเชิงหมวด** — ความถูก**เชิงตัวเลข**ของ JOB_PAYOUT รายแถวเป็นของเฟส 0 ข้อ 4 (ตรวจ) + งานแก้แยกถ้าพบจริง
 
 ## เฟส 2 — PR bkk-system: หยุดสร้างข้อมูลผิดเพิ่ม (3 จุดเขียน)
 
-- helper กลางตัวเดียว (ทั้งสามไฟล์อยู่ repo เดียว import ร่วมได้จริง — ไม่เกิด mirror ใหม่) ใช้แทนก้อน inline ทั้ง 3 ที่:
-  - `rider_id: 'SYSTEM'` (รายได้บริษัท — TradeInPayouts.tsx:174, MobileFinancePage.tsx:189, TransactionRepair.tsx:105)
-  - `amount` = ค่าบริการที่เก็บจากลูกค้าจริง = `max(0, pickup_fee − rider_fee_discount)` (นิยามเดียวกับ effective fee ในสูตร net ทุกจุด); คูปอง free-delivery ทำให้เป็น 0 → ไม่เขียนแถว
-  - เก็บ `ref_job_id` เดิมไว้ join ได้ตามปกติ
+- helper กลางตัวเดียว (สามไฟล์อยู่ repo เดียว import ร่วมได้จริง) แทนก้อน inline ทั้ง 3 ที่:
+  - `rider_id: 'SYSTEM'` (TradeInPayouts.tsx:174, MobileFinancePage.tsx:189, TransactionRepair.tsx:105)
+  - `amount` = ค่าบริการที่เก็บจากลูกค้าจริง = `max(0, pickup_fee − rider_fee_discount)`; คูปอง free-delivery → 0 → ไม่เขียนแถว; เก็บ `ref_job_id` เดิม
 - เงื่อนไข `if (riderFee > 0)` ที่ครอบการเขียน (TradeInPayouts.tsx:171, MobileFinancePage.tsx:187) เปลี่ยนเป็นอิง fee ใหม่
-- ตรวจก่อน merge: grep ซ้ำทั้ง 3 repo ว่ายังไม่มีใครอ่าน category นี้เพิ่ม (กติกา "กฎมีกี่คนอ่าน")
+- **ผลข้างเคียงที่ประกาศไว้ล่วงหน้า:** การ์ดรายรับของ `FinanceAuditLog` จะเปลี่ยนฐานจาก "ต้นทุนไรเดอร์" เป็น "ค่าบริการที่เก็บจริง" ตั้งแต่แถวใหม่เป็นต้นไป — เป็นทิศที่ถูกขึ้น แต่ต้องบอก finance ไม่ให้งงว่าทำไมเลขไม่ต่อเนื่อง
 
-## เฟส 3 — backfill ข้อมูลเก่าบน production (สคริปต์ + dry-run บังคับ)
+## เฟส 3 — backfill ข้อมูลเก่า (สคริปต์ + dry-run บังคับ)
 
-- เป้า: แถว `LOGISTICS_REVENUE` ที่ `rider_id !== 'SYSTEM'` → เขียน `rider_id: 'SYSTEM'` + ประทับ `retagged_at`
-- **แนะนำ retag อย่างเดียว ไม่ restate `amount` ย้อนหลัง**: ไม่มีรายงานไหนอ่านหมวดนี้ จึงไม่มีเลขที่แสดงผิดค้างอยู่ และการแก้ยอดย้อนหลังใน ledger เสี่ยงกว่าประโยชน์ — แต่ประทับหมายเหตุ `amount_basis: 'legacy_rider_fee'` ต่อแถวไว้ให้บัญชีอ่านออก (เจ้าของเคาะข้อนี้ — คำถามเปิด #1)
-- ลำดับ: รันหลังเฟส 1 deploy แล้ว (กระเป๋าถูกก่อนแล้ว backfill เป็นการล้าง ledger ไม่ใช่ตัวแก้อาการ) และหลังเฟส 2 merge (ไม่งั้นล้างแล้วมีของใหม่ไหลเข้า)
-- ตรวจรับ: รันสคริปต์เฟส 0 ซ้ำ → คอลัมน์ "ส่วนที่บวม" ต้องเป็น 0 ทุก rider
+- เป้า: แถว `LOGISTICS_REVENUE` ที่ `rider_id !== 'SYSTEM'` ในลูปเดียวเขียน:
+  - `rider_id: 'SYSTEM'` + `retagged_at`
+  - `amount_basis: 'legacy_rider_fee'` (บอกคนอ่านย้อนหลังว่ายอดแถวนี้คือต้นทุนไรเดอร์ ไม่ใช่ค่าบริการ)
+  - **`amount_customer_fee` (เพิ่มตามรอบเคาะ):** เลขที่ถูกตามนิยามใหม่ คำนวณจาก job ผ่าน `ref_job_id` (`max(0, pickup_fee − rider_fee_discount)` อ่านจาก `jobs/{id}` แล้ว fallback `jobs_archived/{id}`; หาไม่เจอทั้งคู่ = `null` + `amount_customer_fee_missing_reason`) — **ไม่แตะ `amount` เดิม** (หลักการข้อ 4: audit trail) แต่เก็บเลขถูกไว้ข้าง ๆ เพราะรอบที่ join ครบแบบนี้คือรอบนี้รอบเดียว
+- ลำดับ: หลังเฟส 1 deploy (กระเป๋าถูกก่อน ไม่พึ่ง backfill) และหลังเฟส 2 merge (กันของใหม่ไหลเข้าหลังล้าง)
+- ตรวจรับ: rerun เฟส 0 → "ส่วนที่บวม" = 0 ทุก rider และทุกแถวเป้ามี `amount_customer_fee` หรือ reason
 
-## เฟส 4 — ท่อถอนเงิน (อิสระจากเฟส 1-3; คำตอบข้อ 1 = ไม่มีข้อมูลเก่าต้อง migrate)
+## เฟส 4 — ท่อถอนเงิน: callable `riderRequestWithdraw` (เคาะทาง A แล้ว)
 
-ทางเลือก 2 ทาง — **แนะนำทาง A**:
+> คำตอบข้อ 1 ของ survey (ยังไม่เคยมีคำขอจริง) + เฟส 0 ข้อ 5 ยืนยันซ้ำจากข้อมูล → ไม่มี migration
 
-- **ทาง A (แนะนำ): callable `riderRequestWithdraw`** ใน `bkk-rider-app/functions` (codebase มีอยู่แล้ว มีท่อ deploy แล้ว; ชื่อต้อง unique ระดับ project ตามกฎ `{region}/{name}`)
-  - server ตรวจของจริงก่อนสร้างคำขอ: balance คิดจาก `/transactions` ฝั่ง server (ช่องโหว่ปัจจุบัน: เช็คแค่ client ที่ useJobActions.ts:400-402 และหน้า finance ก็ไม่เช็คซ้ำ — ใครยิงตรงก็ขอเกินได้), ขั้นต่ำ 100, กันคำขอค้างซ้ำ
-  - เขียน `/withdrawals/{id}` ผ่าน Admin SDK; rules: read = admin + เจ้าของ (`rider_id === auth.uid`), client write ปิดสนิท
-- **ทาง B (เร็วกว่า):** เพิ่ม rule ให้ rider push `/withdrawals` เอง (create-only + `.validate` ฟิลด์บังคับ + `rider_id === auth.uid`) — แลกกับการตรวจ balance ใน rules ไม่ได้ (อ่านข้าม node เพื่อรวมยอดไม่ได้) จึงเหลือด่านเดียวคือคนกดโอน
-- ฝั่งอ่าน (ทำทั้งสองทาง): `RiderWithdrawals.tsx` เปลี่ยน source จาก `/jobs` (:16,45-53) → `/withdrawals` และย้ายการเขียนตอบกลับ (status/paid_at/slip — ปัจจุบันเขียน `jobs/{selectedTx.id}` :98-101,118-121) ไปที่แถว `/withdrawals` เดียวกัน
-- ผลพ่วงที่ต้องแก้ในชุดเดียวกัน: `rider-wht-issue.js:113,159` เขียนสำเนา 50 ทวิลง `jobs/{ref_job_id}/wht_certificate` — เมื่อแถวถอนอยู่ `/withdrawals` ต้องย้ายปลายทางเป็น `withdrawals/{id}/wht_certificate` + rule ให้เจ้าของอ่าน (ไม่งั้นเขียน node ผีลง `/jobs`)
-- เหตุผลที่ไม่กลับไปใช้ `/jobs` แบบ legacy: trigger บน `/jobs` ยิงทุก create (`onJobCreatedSendEmails`) และแถวถอนจะปนกับงานจริงในทุกหน้าที่ subscribe jobs — จ่ายค่ากรอง `type !== 'Withdrawal'` ไปตลอด
-- rules ทั้งหมดแก้ที่ `bkk-frontend-next/database.rules.json` (canonical) + deploy จาก repo นั้น + **ดู deploy-rules run ให้เขียวหลัง merge** (บทเรียน CI เขียว ≠ deploy ขึ้น)
+**spec ของ callable (รวมข้อกำหนดจากรอบเคาะ):**
+
+- **State machine ชัด — DEBIT เขียนตอน `paid` เท่านั้น:**
+  - `requested` = จองยอด **ไม่แตะ ledger** (คำขอที่ถูกปฏิเสธต้องไม่กินยอดถาวร)
+  - `paid` = finance กดจ่าย → เขียน `transactions` DEBIT `WITHDRAWAL` (+`wht_amount`/`net_paid` ตามเดิม) + ปิดการจอง — ใน multi-path update เดียว
+  - `rejected` = คืนการจอง ไม่มีรอย ledger
+- **สูตร balance ต้องหักยอดจองค้าง:** `available = Σ(ledger allowlist) − Σ(คำขอ status='requested')` — ใช้ทั้งใน callable และ**จอแอปไรเดอร์** (ไม่งั้นกดขอแล้วยอดบนจอไม่ขยับ ขอซ้ำได้เต็มยอดจนกว่า finance จะจ่าย)
+- **Atomicity:** เช็ค-แล้ว-สร้างต้องอยู่ใน `runTransaction` บน guard node ต่อ rider (เช่น `withdrawal_locks/{riderId}` ถือ id คำขอที่เปิดอยู่) — เสนอกติกา **หนึ่งคำขอเปิดได้ครั้งละหนึ่งใบต่อ rider** ซึ่งทำให้ guard เป็น "สร้างได้เมื่อ node ว่าง" ตัดปัญหายิงพร้อมกันทั้งชนิด; finance จ่าย/ปฏิเสธแล้วเคลียร์ guard ใน update ก้อนเดียวกัน
+- **balance ฝั่ง server = scan `/transactions` ตาม query rider_id** — ยอมรับแล้วว่าทำแบบนี้ก่อน (ข้อมูลยังน้อย) **ยังไม่ทำ denormalized `wallet/{riderId}/balance`** จนกว่าจะช้าจริง และถ้าวันนั้นมาถึง client ต้องเขียนไม่ได้เด็ดขาด
+- ตรวจใน callable: ขั้นต่ำ 100 (ย้ายจาก client useJobActions.ts:401), available พอ, ไม่มีคำขอเปิดค้าง
+- **โครงรอบข้าง:** เขียน `/withdrawals/{id}` ผ่าน Admin SDK; rules: read = admin + เจ้าของ (`rider_id === auth.uid`), client write ปิดสนิท · `RiderWithdrawals.tsx` เปลี่ยน source `/jobs` → `/withdrawals` (:16,45-53) และเขียนตอบกลับลงแถวเดียวกัน (แทน `jobs/{id}` ที่ :98-101,118-121) · ย้ายปลายทางสำเนา 50 ทวิ (rider-wht-issue.js:113,159) → `withdrawals/{id}/wht_certificate` + rule ให้เจ้าของอ่าน · ชื่อ function unique ระดับ project · rules แก้ที่ `bkk-frontend-next/database.rules.json` + deploy จาก repo นั้น + ดู deploy-rules run เขียวหลัง merge
 
 ## เฟส 5 — ตรวจรับรวม + สื่อสาร
 
-- ก่อน deploy เฟส 1: แจ้งไรเดอร์ (ผ่านช่องทางที่ใช้ประจำ) ว่ายอดในกระเป๋าจะแสดงลดลง เพราะระบบเดิมนับรายได้บริษัทปนเข้ามา — เงินที่ถอนได้จริงไม่เปลี่ยน
-- ต่อเฟส: `tsc --noEmit` + เทสเขียว + (เฟส 4) เทสยิง callable จริงบน preview ก่อนเปิดปุ่มในแอป
-- ปิดงานเมื่อ: เฟส 0 rerun = บวมศูนย์ · ไรเดอร์ทดสอบกดถอน 1 รายการไหลถึง finance และได้ DEBIT + (ถ้าเปิด WHT) 50 ทวิครบวง
+- **เงื่อนไขการสื่อสาร (เคาะแล้ว):** ยังวิ่งคนเดียว = ข้ามข้อนี้ deploy เฟส 1 ได้เลย · มีไรเดอร์คนอื่น = ส่งข้อความ**หลังเฟส 0** (มีเลข X/Y จริงใส่) และ**ก่อน deploy เฟส 1** ตาม template ของเจ้าของงาน:
+  > พรุ่งนี้จะอัปเดตแอปนะครับ ยอดในกระเป๋าจะแสดงลดลงจาก X เหลือ Y
+  > สาเหตุคือระบบเดิมนับค่าบริการที่บริษัทเก็บจากลูกค้าปนเข้ามาในกระเป๋าด้วย ซึ่งไม่ใช่เงินของเรา ยอดใหม่คือค่ารอบที่ได้จริงล้วน ๆ
+  > ไม่มีการหักเงินใครทั้งนั้น และเงินที่ถอนได้จริงเท่าเดิม เพราะยอดเดิมไม่เคยถูกใช้จ่ายจริง อยากดูว่าแต่ละงานได้เท่าไหร่ บอกได้ ส่งให้ดูทั้งหมด
+  หลัก: บอกก่อน · ให้ตัวเลขทั้งสองตัว · บอกว่าไม่มีใครโดนหัก · เสนอ breakdown ให้ตรวจเอง — และถ้าเฟส 0 ข้อ 4 พบใบที่ค่ารอบคิดจาก fallback จริง ให้แก้/ชี้แจงรวมในข้อความเดียวกัน ไม่แยกสองรอบ
+- ต่อเฟส: `tsc --noEmit` + เทสเขียว · เฟส 4 เทสยิง callable จริงก่อนเปิดปุ่มในแอป
+- ปิดงานเมื่อ: เฟส 0 rerun = บวมศูนย์ · คำขอถอนทดสอบ 1 รายการไหลครบวง requested → paid → DEBIT (+50 ทวิถ้าเปิด WHT) และ guard ถูกเคลียร์
 
 ## นอกขอบเขตแผนนี้ (รอคำตอบข้อ 3-7 ของ survey)
 
-fallback 150 ตอน settle · นโยบาย one-way · การยืนเลข estimate ตอนกดรับ · หน้า `/checkout` demo · gate `receive_method` ในสูตร net ของ RiderApp.tsx:182 ((ค)#5 — เป็น one-liner ที่พ่วงเฟส 1 ได้ถ้าต้องการ แต่แยกเคาะ)
+fallback 150 ตอน settle (แต่**การตรวจว่ามีแถว 150 กี่แถวอยู่ในเฟส 0 แล้ว**) · นโยบาย one-way · การยืนเลข estimate ตอนกดรับ · หน้า `/checkout` demo · gate `receive_method` ใน RiderApp.tsx:182 · การแยกสมุด "เงินสดบริษัท" ออกจาก "กระเป๋าไรเดอร์" ใน FinanceAuditLog (ข้อเท็จจริง 2 — จดไว้เป็นงานอนาคต)
 
-## คำถามเปิดให้เคาะก่อนลงมือ
+## สถานะการเคาะ
 
-1. เฟส 3: retag `rider_id` อย่างเดียว (แนะนำ) หรือ restate `amount` ย้อนหลังด้วย
-2. เฟส 4: ทาง A (callable — แนะนำ) หรือทาง B (rules อย่างเดียว)
-3. ข้อความ/ช่องทางแจ้งไรเดอร์เรื่องยอดที่แสดงจะลดลง (ก่อน deploy เฟส 1)
+| ข้อ | สถานะ |
+|---|---|
+| 1. retag เฉย ๆ + เก็บหมวดไว้ + พ่วง `amount_customer_fee` ตอน backfill | **เคาะแล้ว** |
+| 2. ทาง A callable + state machine + guard transaction + ยังไม่ denormalize | **เคาะแล้ว** |
+| 3. สื่อสารไรเดอร์ | **เคาะแล้ว** (เงื่อนไข: ข้ามได้ถ้ายังวิ่งคนเดียว — เจ้าของยืนยันตอนสั่งลงมือ) |
+| ข้อเท็จจริง 4 (rules /transactions) | **ตรวจแล้ว — ปิดอยู่** ไม่มีงานเพิ่ม |
+| ความถูกเชิงตัวเลข JOB_PAYOUT + ยืนยันศูนย์แถว Withdrawal | **เข้าเฟส 0 แล้ว** (ข้อ 4, 5) |
