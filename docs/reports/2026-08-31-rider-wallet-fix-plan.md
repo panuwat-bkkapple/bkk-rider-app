@@ -49,8 +49,11 @@
 
 ## สถานะการลงมือ (31 ส.ค. 2569)
 
-- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3: **เสร็จและตรวจรับแล้ว** (31 ส.ค. 2569) — เจ้าของรัน dry-run (15 แถว Σ 3,776 ตรงเฟส 0 เป๊ะ; 12 แถว join งานได้และ `amount_customer_fee` เท่ากับ amount เดิมทุกแถว = rider_fee กับ pickup_fee ของข้อมูลชุดนี้บังเอิญเท่ากัน; 3 แถวเก่าสุด `job_not_found` ได้ null+reason ตามดีไซน์) → `--apply` เขียน 15 แถว/78 path → audit ซ้ำยืนยัน: เป้า retag = 0, ledger ทั้ง 253 แถวเป็น SYSTEM, LOGISTICS_REVENUE 39 แถวรวม 10,145 (6,369+3,776) — **กระเป๋าไรเดอร์บน production โชว์ถูกแล้วแม้ยังไม่ deploy เฟส 1** (ไม่มีแถวที่ rider_id ตรงเหลือ) · เฟส 4: รอสั่ง
-- งานถัดไปตามลำดับ: merge สอง branch เข้า main + deploy (กันแถวผิดใหม่จากโค้ดเก่า + ได้ allowlist ถาวร) → ค่อยกดอนุมัติค่ารอบค้าง 68,334 (190 ใบ) ใน RiderSettlements → เฟส 4
+- เฟส 0: **เสร็จ** (ผลด้านบน) · เฟส 1: **เสร็จ** — bkk-rider-app commit `6a22c8a` (walletLedger allowlist + เทส 12 เคส) · เฟส 2: **เสร็จ** — bkk-system commit `52524e6` (helper `src/utils/logisticsRevenue.ts` + แก้ 3 จุดเขียน + เทส 9 เคส; rebase ทับ #603 แล้วรันเทสใหม่ทั้งชุด 211 ผ่าน) · เฟส 3: **เสร็จและตรวจรับแล้ว** (31 ส.ค. 2569) — เจ้าของรัน dry-run (15 แถว Σ 3,776 ตรงเฟส 0 เป๊ะ; 12 แถว join งานได้และ `amount_customer_fee` เท่ากับ amount เดิมทุกแถว = rider_fee กับ pickup_fee ของข้อมูลชุดนี้บังเอิญเท่ากัน; 3 แถวเก่าสุด `job_not_found` ได้ null+reason ตามดีไซน์) → `--apply` เขียน 15 แถว/78 path → audit ซ้ำยืนยัน: เป้า retag = 0, ledger ทั้ง 253 แถวเป็น SYSTEM, LOGISTICS_REVENUE 39 แถวรวม 10,145 (6,369+3,776) — **กระเป๋าไรเดอร์บน production โชว์ถูกแล้วแม้ยังไม่ deploy เฟส 1** (ไม่มีแถวที่ rider_id ตรงเหลือ) · เฟส 4: **เสร็จ** (รายละเอียดด้านล่าง)
+- **Merge + deploy ครบทั้งสองรอบแล้ว (31 ส.ค. 2569):** รอบแรก — เฟส 1 = bkk-rider-app #111 (`cda77fd`, deploy เขียว), เฟส 2 = bkk-system #604 (`d8b8ddd`, deploy เขียว) · รอบสอง (เฟส 4) — rules = bkk-frontend-next #916 (`0afde1c`), rider app = #112 (`0ddf450`), finance = bkk-system #606 (`6ee0c79`) — CI ตัวเทสที่มีชื่อเขียวครบก่อน merge ทุกใบ
+- **เหตุการณ์ระหว่างทาง (31 ส.ค. 2569): เจ้าของเผลอกด "อนุมัติทั้งหมด" ใน RiderSettlements ก่อนเฟส 4 merge** — จ่าย 121 ใบ Σ 44,200 เข้ากระเป๋า. audit ยืนยัน: ทุกแถวตรง `rider_fee` ของงานจริง (6 แถว @150 มี `fee_on_job=150` จริงจากข้อมูลยุคเก่า ~900 บาท ไม่ใช่ fallback ที่ยิงผิด — รับไว้ตามนั้น). เหลือค้าง `Pending` 69 ใบ Σ 24,134 (สถานะงานอยู่นอก filter ของปุ่ม) + 34 ใบไม่มี `rider_fee` เลย
+- **สคริปต์เก็บตก: `bkk-system/scripts/settle-pending-rider-fees.cjs`** (merge ไปกับ #606) — จ่ายเฉพาะใบที่ `rider_fee` เป็นเลขจริง > 0 ไม่สน status, **ไม่มี fallback 150**, ใบไม่มี fee = รายงานแยกให้เจ้าของตัดสินฐานเงินเอง. เจ้าของต้องรันเอง: dry-run → `--apply` → audit ตรวจรับ (ดูหัวเรื่องในไฟล์สคริปต์)
+- **จอแอปไรเดอร์บอกที่มาของเงินแล้ว** — WalletTab โชว์ `description` (ชื่อรุ่น + เลขงาน) ใต้ป้ายหมวด แก้ปัญหา "เห็นแค่ JOB_PAYOUT ไม่รู้ของงานไหน" (แถวที่ finance เขียนมี description อยู่แล้วทุกแถว จอเดิมแค่ไม่แสดง)
 - ระหว่างทำเฟส 2 พบว่า `pickup_fee` บนงานที่มีคูปองส่งฟรีถูก persist เป็นค่า gross (validateAndCreateOrder เขียน `pickup_fee: pickupFee` ดิบ — bkk-frontend-next/functions/src/index.ts:1863) helper จึงเช็คคูปอง `type: 'service'` เองจาก `applied_coupons` เพื่อให้ตรงเศรษฐศาสตร์ตอนสร้างงาน (`grossFee = 0` เมื่อ free delivery — index.ts:1643-1645)
 
 ## เฟส 1 — PR bkk-rider-app: กระเป๋าอ่านเฉพาะเงินไรเดอร์ (เห็นผลทันที ไม่รอ backfill)
@@ -78,9 +81,11 @@
 - ลำดับ: หลังเฟส 1 deploy (กระเป๋าถูกก่อน ไม่พึ่ง backfill) และหลังเฟส 2 merge (กันของใหม่ไหลเข้าหลังล้าง)
 - ตรวจรับ: rerun เฟส 0 → "ส่วนที่บวม" = 0 ทุก rider และทุกแถวเป้ามี `amount_customer_fee` หรือ reason
 
-## เฟส 4 — ท่อถอนเงิน: callable `riderRequestWithdraw` (เคาะทาง A แล้ว)
+## เฟส 4 — ท่อถอนเงิน: callable `riderRequestWithdraw` (เคาะทาง A แล้ว — **ทำเสร็จและ merge แล้ว 31 ส.ค. 2569**)
 
 > คำตอบข้อ 1 ของ survey (ยังไม่เคยมีคำขอจริง) + เฟส 0 ข้อ 5 ยืนยันซ้ำจากข้อมูล → ไม่มี migration
+
+**สิ่งที่ลงจริง (ตรง spec ด้านล่างทุกข้อ):** rules `/withdrawals` + `/withdrawal_locks` ที่ bkk-frontend-next #916 · callable `riderRequestWithdraw` (functions/src/index.ts — lock transaction ต่อ rider + เคลียร์ lock ค้างที่คำขอปิดไปแล้ว + ตรวจ available ฝั่ง server ด้วยสูตร MIRROR ของ walletLedger) + UI (`useRiderData` หัก `pendingWithdrawalHold`, WalletTab แถบ "คำขอถอนเงิน (รอโอน)", WithdrawModal เรียก callable) ที่ #112 · ฝั่ง finance `RiderWithdrawals` อ่าน `/withdrawals` + จ่าย (เขียน DEBIT + ปิด lock ใน update ก้อนเดียว) + ปุ่มปฏิเสธ + ย้ายสำเนา 50 ทวิไป `withdrawals/{id}/wht_certificate` ที่ bkk-system #606
 
 **spec ของ callable (รวมข้อกำหนดจากรอบเคาะ):**
 
