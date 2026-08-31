@@ -7,7 +7,7 @@ import {
 import { formatCurrency } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
 import { hasUnreadFromAdmin } from '../../utils/jobChats';
-import { JOB_STATUS } from '../../types/job-statuses';
+import { JOB_STATUS, CANCEL_CATEGORY } from '../../types/job-statuses';
 
 interface ActiveJobCardProps {
   job: any;
@@ -121,7 +121,9 @@ export const ActiveJobCard = ({
     )}
 
     {/* Report discrepancy button */}
-    {!hasPendingDiscrepancy && !['In-Transit', 'Pending QC', 'Completed'].includes(job.status) && (
+    {/* Legacy 'In-Transit' and canonical 'Rider Returning' are the same
+        return-to-store leg — hide the discrepancy button on both spellings. */}
+    {!hasPendingDiscrepancy && !['In-Transit', JOB_STATUS.RIDER_RETURNING, 'Pending QC', 'Completed'].includes(job.status) && (
       <button
         onClick={(e) => { e.stopPropagation(); onReportDiscrepancy(job); }}
         className="w-full text-xs font-bold text-amber-500 hover:text-amber-600 underline py-1 flex items-center justify-center gap-1"
@@ -253,7 +255,17 @@ export const ActiveJobCard = ({
       <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100 mt-2" onClick={stop}>
         <h3 className="font-bold text-purple-700 mb-2">มีการปรับราคาใหม่: {formatCurrency(getDisplayPrice(job))}</h3>
         <div className="flex gap-2">
-          <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, JOB_STATUS.CANCELLED, 'ลูกค้ายกเลิก', { cancel_reason: 'ลูกค้ายกเลิก' }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">
+          <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, JOB_STATUS.CANCELLED, 'ลูกค้ายกเลิก', {
+            cancel_reason: 'ลูกค้ายกเลิก',
+            // Full cancel taxonomy: without cancelled_at the 7-day reopen
+            // window (getReopenDeadline) can never be computed and the
+            // finalize scheduler skips the job, leaving it soft-cancelled
+            // forever. cancelled_by 'customer' — the rider taps, but the
+            // decision is the customer's (drives the admin push label).
+            cancel_category: CANCEL_CATEGORY.PRICE_DISAGREEMENT,
+            cancelled_by: 'customer',
+            cancelled_at: Date.now(),
+          }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">
             {loadingAction === 'cancel' ? 'กำลังดำเนินการ...' : 'ยกเลิก'}
           </button>
           <button onClick={() => handleAction('accept', () => onUpdateStatus(job.id, JOB_STATUS.PAYOUT_PROCESSING, 'ลูกค้ายอมรับ', { customer_accepted_at: Date.now() }))} disabled={!!loadingAction} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-bold shadow disabled:opacity-50">
