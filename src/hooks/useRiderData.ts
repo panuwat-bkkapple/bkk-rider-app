@@ -7,6 +7,7 @@ import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import { normalizeVehicleType } from '../utils/jobHelpers';
+import { isRiderWalletTx, walletBalance } from '../utils/walletLedger';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
 import type { JobStatus } from '../types/job-statuses';
@@ -150,8 +151,14 @@ export const useRiderData = (currentRiderId: string) => {
     const list = Array.isArray(jobs) ? jobs : [];
     const tx = Array.isArray(transactions) ? transactions : [];
     const myJobs = list.filter((j: any) => j.rider_id === currentRiderId);
-    const myTx = tx.filter((t: any) => t.rider_id === currentRiderId).sort((a: any, b: any) => b.timestamp - a.timestamp);
-    const balance = myTx.reduce((acc: number, t: any) => t.type === 'CREDIT' ? acc + Number(t.amount) : acc - Number(t.amount), 0);
+    // กระเป๋านับเฉพาะหมวดเงินไรเดอร์ (allowlist ใน walletLedger) — /transactions
+    // เป็นสมุดเงินสดของร้าน มีแถวฝั่งบริษัท (เช่น LOGISTICS_REVENUE) ที่เคยติด
+    // rider_id มาด้วย สูตรเดิมที่รวมทุกแถวทำให้ balance บวมเกินจริง และ NaN
+    // จากแถว amount เสียทะลุมาพังทั้งก้อนได้ — ห้ามถอด filter นี้ออก
+    const myTx = tx
+      .filter((t: any) => t.rider_id === currentRiderId && isRiderWalletTx(t))
+      .sort((a: any, b: any) => b.timestamp - a.timestamp);
+    const balance = walletBalance(myTx);
 
     const incomingList = list.filter((j: any) => {
       if (j.receive_method !== RECEIVE_METHOD.PICKUP) return false;

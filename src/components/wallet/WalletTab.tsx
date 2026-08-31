@@ -1,6 +1,7 @@
 // src/components/wallet/WalletTab.tsx
 import { Bike, Landmark, Wallet as WalletIcon } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import { walletCategoryLabel } from '../../utils/walletLedger';
 
 interface WalletTabProps {
   balance: number;
@@ -42,7 +43,7 @@ export const WalletTab = ({ balance, transactions, hasMoreTx, onLoadMoreTx, onOp
                 {t.type === 'CREDIT' ? <Bike size={20} /> : <Landmark size={20} />}
               </div>
               <div>
-                <div className="text-sm font-bold text-gray-800">{t.category}</div>
+                <div className="text-sm font-bold text-gray-800">{walletCategoryLabel(t.category)}</div>
                 <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(t.timestamp)}</div>
               </div>
             </div>
