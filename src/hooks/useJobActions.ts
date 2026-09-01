@@ -20,6 +20,16 @@ import { EVENT_CHECKPOINT_STAGE, RIDER_EVENT, engineErrorCode, transitionErrorMe
 import type { RiderEvent } from '../utils/riderTransitions';
 import type { CheckpointStage } from '../utils/jobTimeline';
 
+/**
+ * รูปงานเท่าที่เส้นทาง event ต้องรู้จัก
+ *
+ * ไฟล์นี้ใช้ `any` อยู่ทั่วไปตามยุคที่เขียน — โค้ดใหม่ไม่ควรเพิ่มจำนวนนั้น
+ * (ขั้น Lint ใน CI เป็น advisory เพื่อให้ไล่ตัวเลขลง ไม่ใช่เพื่อให้เติมเข้าไป)
+ * ที่ต้องรู้จริงๆ มีแค่ id กับพิกัดลูกค้าสำหรับเทียบระยะ ที่เหลือส่งผ่านเฉยๆ
+ */
+type JobRow = { id: string; cust_lat?: number; cust_lng?: number; [key: string]: unknown };
+type JobLists = { activeList: JobRow[]; incomingList: JobRow[] };
+
 export const useJobActions = (riderInfo: RiderInfo) => {
 
   const sendCustomerNotification = async (job: any, title: string, message: string) => {
@@ -118,7 +128,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
    * กลับมาจาก engine — ปล่อยให้ก๊อปสองชุดเมื่อไหร่ ลูกค้าจะได้ push จากทางหนึ่ง
    * แต่ไม่ได้จากอีกทาง โดยไม่มีใครเห็น
    */
-  const notifyStatusChange = (nextStatus: string, jobId: string, job: any) => {
+  const notifyStatusChange = (nextStatus: string, jobId: string, job: unknown) => {
     const shortJobId = jobId.slice(-4).toUpperCase();
 
     // Notifications match the canonical status names from
@@ -251,8 +261,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     jobId: string,
     event: RiderEvent,
     logMsg: string,
-    extraData: Record<string, any> = {},
-    jobLists: { activeList: any[]; incomingList: any[] }
+    extraData: Record<string, unknown> = {},
+    jobLists: JobLists
   ): Promise<boolean> => {
     const job = jobLists.activeList.find(j => j.id === jobId) || jobLists.incomingList.find(j => j.id === jobId);
 
@@ -300,8 +310,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
     try {
       const call = httpsCallable(functions, 'transitionJob');
-      const res: any = await call({ jobId, event, reason: logMsg, patch: extraData });
-      const to: string = res?.data?.to;
+      const res = await call({ jobId, event, reason: logMsg, patch: extraData });
+      const to = (res?.data as { to?: string } | null)?.to;
 
       // checkpoint เขียนหลัง transition สำเร็จ และเขียนด้วย stage ที่รู้ตั้งแต่ต้น
       // ไม่ใช่สถานะที่ server คืนมา — ถ้าวันหนึ่ง engine เปลี่ยนปลายทางของ event
@@ -310,12 +320,13 @@ export const useJobActions = (riderInfo: RiderInfo) => {
 
       if (to) notifyStatusChange(to, jobId, job);
       return true;
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as { code?: string; message?: string } | null;
       const code = engineErrorCode(error);
       // log ให้ครบทั้งรหัสของ engine และของ callable — เวลาไรเดอร์โทรมาแจ้ง
       // "กดแล้วไม่ไป" สิ่งที่ต้องรู้คือ engine ปฏิเสธด้วยเหตุอะไร
-      console.error(`runTransition ${event} failed:`, code || error?.code, error?.message);
-      toast.error(transitionErrorMessage(code, error?.message));
+      console.error(`runTransition ${event} failed:`, code || err?.code, err?.message);
+      toast.error(transitionErrorMessage(code, err?.message));
       return false;
     }
   };
