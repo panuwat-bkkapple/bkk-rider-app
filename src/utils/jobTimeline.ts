@@ -121,7 +121,7 @@ export function formatDurationTh(ms: number): string {
   if (totalMin < 60) return `${totalMin} นาที`;
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  return m === 0 ? `${h} ชม.` : `${h} ชม. ${m} นาที`;
+  return m === 0 ? `${h} ชม.` : `${h} ชม. ${m} น.`;
 }
 
 /** "20:41" — เวลาสั้นสำหรับไทม์ไลน์/การ์ด */
