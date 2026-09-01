@@ -9,6 +9,7 @@ import {
   jobDistanceKm,
   totalJobMs,
 } from '../../utils/jobTimeline';
+import { getRiderPayout, sumRiderPayout } from '../../utils/jobHelpers';
 import { JOB_STATUS, normalizeStatus } from '../../types/job-statuses';
 import { HistoryJobSheet } from './HistoryJobSheet';
 import type { HistoryFilter } from '../../types';
@@ -18,6 +19,10 @@ interface HistoryTabProps {
   historyFilter: HistoryFilter;
   onFilterChange: (filter: HistoryFilter) => void;
   onOpenChat: (jobId: string) => void;
+  // ยานพาหนะของไรเดอร์ที่กำลังดูอยู่ (riders/{id}/vehicle_type) — อัตราค่าวิ่ง
+  // แยกตามยานพาหนะ ค่ารอบที่โชว์จึงต้องเป็นของการ์ดอัตราที่ตรงคน ไม่ใช่ตัวเลข
+  // กลางของมอเตอร์ไซค์ที่เก็บไว้ตอนงานยังไม่มีใครถือ
+  vehicleType?: 'motorcycle' | 'car' | null;
 }
 
 const filters = [
@@ -27,7 +32,7 @@ const filters = [
   { id: 'all' as HistoryFilter, label: 'ทั้งหมด' },
 ];
 
-export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat }: HistoryTabProps) => {
+export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat, vehicleType }: HistoryTabProps) => {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const displayData = useMemo(() => {
@@ -43,11 +48,11 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
     return {
       list: filtered,
       stats: {
-        income: filtered.reduce((acc, j) => acc + (Number(j.rider_fee) || 150), 0),
+        income: sumRiderPayout(filtered, vehicleType),
         count: filtered.length
       }
     };
-  }, [history, historyFilter]);
+  }, [history, historyFilter, vehicleType]);
 
   // Sheet อ่านงานสดจาก list เสมอ (ไม่ freeze snapshot ตอนกด) — ค่ารอบ/รีวิว
   // ที่เพิ่งเปลี่ยนจะสะท้อนทันทีระหว่างเปิดค้าง
@@ -133,7 +138,7 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
-                      +{formatCurrency(job.rider_fee || 150)}
+                      +{formatCurrency(getRiderPayout(job, vehicleType))}
                     </div>
                     <ChevronRight size={16} className="text-gray-300" />
                   </div>
