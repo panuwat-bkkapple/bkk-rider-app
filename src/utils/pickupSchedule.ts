@@ -65,8 +65,14 @@ export function parseAppointmentWindow(job: any): AppointmentWindow | null {
   const ps = job?.pickup_schedule as PickupScheduleLike | undefined | null;
   if (!ps) return null;
 
-  const instant = ps.type === 'instant' || ps.date === 'Instant';
+  // `type: 'instant'` **ไม่ได้แปลว่าไม่มีช่วงเวลา** — คิวเช้า (ลูกค้ากดก่อน
+  // ร้านเปิด/หลังร้านปิด) ถูกเขียนเป็น instant พร้อม date จริงและ
+  // `"HH:00 - HH:00"` จริง โดยตั้งใจให้แอดมินกับไรเดอร์เห็นช่วงเวลาจริง
+  // ไม่ใช่คำว่า Instant (bkk-frontend-next/functions/src/index.ts —
+  // validateAndCreateOrder). ถ้าดู type อย่างเดียวจะทิ้งช่วงเวลานั้นแล้ว
+  // ขึ้นว่า "รับด่วน" ซึ่งคือการลบข้อมูลที่ฝั่งโน้นตั้งใจส่งมาให้
   const date = ps.date && ps.date !== 'Instant' ? ps.date : null;
+  const instant = date === null && (ps.type === 'instant' || ps.date === 'Instant');
   const rescheduled = typeof ps.rescheduled_at === 'number' && ps.rescheduled_at > 0;
 
   // structured ก่อน
@@ -97,7 +103,10 @@ export function parseAppointmentWindow(job: any): AppointmentWindow | null {
  */
 export function appointmentStartAt(job: any): number | null {
   const w = parseAppointmentWindow(job);
-  if (!w || w.instant || !w.date || !w.start) return null;
+  // งานรับด่วนไม่มี `date` ตามนิยามข้างบน จึงตกที่ `!w.date` อยู่แล้ว
+  // (เคยมี guard `w.instant` ซ้ำตรงนี้ — injection พิสูจน์ว่าถอดออกแล้วเทส
+  // ยังเขียวเพราะไม่มีทางไปถึงมัน จึงลบทิ้งตามกฎ "ด่านที่ไปไม่ถึงให้ลบ")
+  if (!w || !w.date || !w.start) return null;
   const [y, m, d] = w.date.split('-').map(Number);
   const hm = HHMM.exec(w.start);
   if (!y || !m || !d || !hm) return null;
@@ -129,6 +138,12 @@ export function compareByAppointment(a: any, b: any): number {
   const ra = rank(a);
   const rb = rank(b);
   if (ra !== rb) return ra - rb;
-  if (ra !== 1) return 0;
-  return (appointmentStartAt(a) as number) - (appointmentStartAt(b) as number);
+  const sa = appointmentStartAt(a);
+  const sb = appointmentStartAt(b);
+  // ห้ามลบกันเมื่อมีข้างใดเป็น null — `null - 5` คือ `-5` ไม่ใช่ NaN
+  // (Number(null) === 0) แปลว่างานที่ไม่มีเวลานัดจะถูกอ่านเป็นเวลาต้นยุค
+  // แล้วขึ้นหัวแถวเงียบๆ. เคยมี `as number` คาไว้ตรงนี้ซึ่งกลบเคสนั้นจาก
+  // compiler ด้วย — injection จับได้เพราะกฎ rank ถูกถอดแล้วเทสยังเขียว
+  if (sa === null || sb === null) return 0;
+  return sa - sb;
 }

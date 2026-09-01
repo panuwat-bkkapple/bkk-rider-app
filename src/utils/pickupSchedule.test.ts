@@ -83,6 +83,27 @@ describe('parseAppointmentWindow — สามรูปจากผู้เข�
   });
 });
 
+describe('คิวเช้า — type instant ที่มีช่วงเวลาจริง', () => {
+  // เขียนจากผู้เขียนจริง: ลูกค้ากดก่อนร้านเปิด/หลังร้านปิด checkout เขียน
+  // type 'instant' พร้อม date + "HH:00 - HH:00" จริง
+  // (bkk-frontend-next/functions/src/index.ts — validateAndCreateOrder)
+  const express = { id: 'express', pickup_schedule: { type: 'instant', date: '2026-09-10', time: '08:00 - 09:00' } };
+
+  it('ต้องไม่ถูกกลืนเป็น "รับด่วน" — ช่วงเวลาที่ฝั่งโน้นส่งมาต้องถึงไรเดอร์', () => {
+    const w = parseAppointmentWindow(express);
+    expect(w?.instant).toBe(false);
+    expect(w?.date).toBe('2026-09-10');
+    expect(w?.start).toBe('08:00');
+    expect(getAppointmentDisplay(express)).toContain('08:00 - 09:00');
+    expect(getAppointmentDisplay(express)).not.toContain('รับด่วน');
+  });
+
+  it('เรียงตามเวลาจริงของมัน ไม่ใช่ถูกดันขึ้นหัวแถวเพราะชื่อ type', () => {
+    const dawn = { id: 'dawn', pickup_schedule: { type: 'scheduled', date: '2026-09-10', time_start: '07:00' } };
+    expect(compareByAppointment(express, dawn)).toBeGreaterThan(0);
+  });
+});
+
 describe('appointmentStartAt', () => {
   it('คืน epoch ของเวลาเริ่มนัด', () => {
     expect(appointmentStartAt(adminJob)).toBe(new Date(2026, 8, 10, 9, 0, 0, 0).getTime());
@@ -116,7 +137,12 @@ describe('compareByAppointment — ลำดับกองงาน', () => {
   const noTime = { id: 'noTime' };
 
   it('รับด่วนขึ้นก่อนนัดที่ระบุเวลา', () => {
-    expect([soon, instantJob].slice().sort(compareByAppointment)[0]).toBe(instantJob);
+    // ถามตัวเปรียบเทียบตรงๆ ไม่ผ่าน .sort — เมื่อกฎนี้ถูกทำลาย ทั้งคู่จะได้
+    // อันดับเท่ากันแล้วผลลัพธ์ไปขึ้นกับพฤติกรรมการเรียงของ engine กับ NaN
+    // ซึ่งบังเอิญออกด้านที่ถูก (พิสูจน์แล้วด้วย injection: เทสที่ผ่าน .sort
+    // เขียวทั้งตอนกฎทำงานและตอนกฎถูกถอด)
+    expect(compareByAppointment(instantJob, soon)).toBeLessThan(0);
+    expect(compareByAppointment(soon, instantJob)).toBeGreaterThan(0);
   });
 
   it('นัดใกล้กว่าขึ้นก่อน', () => {
