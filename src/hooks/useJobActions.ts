@@ -10,12 +10,15 @@ import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
-import { getCheckpointForStatus, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
+import { getCheckpointForStatus, getCheckpointForStage, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
 import { capturePosition } from '../utils/geolocation';
 import { distanceMeters, GPS_STATUS_LABEL_TH } from '../utils/checkpointPayload';
 import type { CheckpointTarget } from '../utils/checkpointPayload';
 import type { GpsFix, GpsStatus } from '../utils/geolocation';
 import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
+import { EVENT_CHECKPOINT_STAGE, RIDER_EVENT, engineErrorCode, transitionErrorMessage } from '../utils/riderTransitions';
+import type { RiderEvent } from '../utils/riderTransitions';
+import type { CheckpointStage } from '../utils/jobTimeline';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
 
@@ -41,7 +44,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
    */
   const recordStatusCheckpoint = async (
     jobId: string,
-    nextStatus: string,
+    where: { status?: string; stage?: CheckpointStage },
     job: any,
     prefetched?: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean },
   ) => {
@@ -78,7 +81,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       const result = await recordCheckpoint({
         jobId,
         riderId: riderInfo.id,
-        status: nextStatus,
+        status: where.status,
+        stage: where.stage,
         gps,
         gpsStatus,
         job: job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
@@ -103,6 +107,44 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       }
     } catch (e) {
       console.error('Failed to record checkpoint:', e);
+    }
+  };
+
+  /**
+   * แจ้งเตือนแอดมิน/ลูกค้าตามสถานะที่งานไปถึง
+   *
+   * แยกออกมาเพราะตอนนี้มีสองเส้นทางที่พางานไปถึงสถานะเดียวกัน: เส้นเดิมที่เขียน
+   * status ตรง กับเส้นใหม่ที่ยิง event ผ่าน transitionJob แล้วรับสถานะปลายทาง
+   * กลับมาจาก engine — ปล่อยให้ก๊อปสองชุดเมื่อไหร่ ลูกค้าจะได้ push จากทางหนึ่ง
+   * แต่ไม่ได้จากอีกทาง โดยไม่มีใครเห็น
+   */
+  const notifyStatusChange = (nextStatus: string, jobId: string, job: any) => {
+    const shortJobId = jobId.slice(-4).toUpperCase();
+
+    // Notifications match the canonical status names from
+    // ../types/job-statuses (Rider Accepted, Rider En Route, ...).
+    // Legacy spellings ("Accepted", "Heading to Customer", ...) are
+    // accepted too so a stale call site doesn't drop a notification
+    // during the writer-rename rollout.
+    if (nextStatus === JOB_STATUS.RIDER_ACCEPTED || nextStatus === 'Accepted') {
+      sendAdminNotification('ไรเดอร์รับงาน', `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`);
+      sendCustomerNotification(job, 'จัดสรรไรเดอร์สำเร็จ!', `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`);
+    } else if (nextStatus === JOB_STATUS.RIDER_EN_ROUTE || nextStatus === 'Heading to Customer') {
+      sendAdminNotification('ไรเดอร์ออกเดินทาง', `${riderInfo.name} กำลังมุ่งหน้าไปหาลูกค้า งาน #${shortJobId}`);
+      sendCustomerNotification(job, 'ไรเดอร์กำลังเดินทาง!', `ไรเดอร์ ${riderInfo.name} กำลังมุ่งหน้าไปยังจุดนัดรับเครื่องของคุณแล้ว`);
+    } else if (nextStatus === JOB_STATUS.RIDER_ARRIVED || nextStatus === 'Arrived') {
+      sendAdminNotification('ถึงจุดหมาย', `${riderInfo.name} เดินทางถึงจุดหมายแล้ว งาน #${shortJobId}`);
+      sendCustomerNotification(job, 'ไรเดอร์มาถึงแล้ว!', `ไรเดอร์เดินทางถึงจุดนัดหมายแล้ว กรุณาเตรียมตัวเครื่องให้พร้อมครับ`);
+    } else if (nextStatus === JOB_STATUS.BEING_INSPECTED) {
+      sendAdminNotification('เริ่มตรวจสภาพ', `${riderInfo.name} เริ่มตรวจสภาพเครื่อง งาน #${shortJobId}`);
+      sendCustomerNotification(job, 'กำลังตรวจสภาพเครื่อง', `ไรเดอร์กำลังดำเนินการตรวจสอบสภาพเครื่องของคุณอย่างละเอียด`);
+    } else if (nextStatus === JOB_STATUS.QC_REVIEW) {
+      sendAdminNotification('ด่วน! รออนุมัติ QC', `${riderInfo.name} ส่งรูปตรวจเครื่อง #${shortJobId} เข้ามาแล้ว`);
+      sendCustomerNotification(job, 'รออนุมัติราคา', `ช่างเทคนิคกำลังประเมินภาพถ่ายตัวเครื่องของคุณ กรุณารอสักครู่ครับ`);
+    } else if (nextStatus === JOB_STATUS.RIDER_RETURNING || nextStatus === 'In-Transit') {
+      sendAdminNotification('กำลังกลับสาขา', `${riderInfo.name} กำลังนำเครื่อง #${shortJobId} กลับมาส่ง`);
+    } else if (nextStatus === JOB_STATUS.PENDING_QC) {
+      sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
     }
   };
 
@@ -177,41 +219,104 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // ตำแหน่ง, GPS หาสัญญาณไม่เจอ, หรือผู้ใช้ปล่อย prompt ค้าง = ไม่มีแถว
       // checkpoint เลยทั้งที่ status เปลี่ยนสำเร็จ ทำให้ไทม์ไลน์งานขาดเป็นช่วงๆ
       // โดยไม่มี error ให้ใครเห็น พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก
-      void recordStatusCheckpoint(jobId, nextStatus, job, prefetched);
+      void recordStatusCheckpoint(jobId, { status: nextStatus }, job, prefetched);
 
-      const shortJobId = jobId.slice(-4).toUpperCase();
-
-      // Notifications match the canonical status names from
-      // ../types/job-statuses (Rider Accepted, Rider En Route, ...).
-      // Legacy spellings ("Accepted", "Heading to Customer", ...) are
-      // accepted too so a stale call site doesn't drop a notification
-      // during the writer-rename rollout.
-      if (nextStatus === JOB_STATUS.RIDER_ACCEPTED || nextStatus === 'Accepted') {
-        sendAdminNotification('ไรเดอร์รับงาน', `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`);
-        sendCustomerNotification(job, 'จัดสรรไรเดอร์สำเร็จ!', `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`);
-      } else if (nextStatus === JOB_STATUS.RIDER_EN_ROUTE || nextStatus === 'Heading to Customer') {
-        sendAdminNotification('ไรเดอร์ออกเดินทาง', `${riderInfo.name} กำลังมุ่งหน้าไปหาลูกค้า งาน #${shortJobId}`);
-        sendCustomerNotification(job, 'ไรเดอร์กำลังเดินทาง!', `ไรเดอร์ ${riderInfo.name} กำลังมุ่งหน้าไปยังจุดนัดรับเครื่องของคุณแล้ว`);
-      } else if (nextStatus === JOB_STATUS.RIDER_ARRIVED || nextStatus === 'Arrived') {
-        sendAdminNotification('ถึงจุดหมาย', `${riderInfo.name} เดินทางถึงจุดหมายแล้ว งาน #${shortJobId}`);
-        sendCustomerNotification(job, 'ไรเดอร์มาถึงแล้ว!', `ไรเดอร์เดินทางถึงจุดนัดหมายแล้ว กรุณาเตรียมตัวเครื่องให้พร้อมครับ`);
-      } else if (nextStatus === JOB_STATUS.BEING_INSPECTED) {
-        sendAdminNotification('เริ่มตรวจสภาพ', `${riderInfo.name} เริ่มตรวจสภาพเครื่อง งาน #${shortJobId}`);
-        sendCustomerNotification(job, 'กำลังตรวจสภาพเครื่อง', `ไรเดอร์กำลังดำเนินการตรวจสอบสภาพเครื่องของคุณอย่างละเอียด`);
-      } else if (nextStatus === JOB_STATUS.QC_REVIEW) {
-        sendAdminNotification('ด่วน! รออนุมัติ QC', `${riderInfo.name} ส่งรูปตรวจเครื่อง #${shortJobId} เข้ามาแล้ว`);
-        sendCustomerNotification(job, 'รออนุมัติราคา', `ช่างเทคนิคกำลังประเมินภาพถ่ายตัวเครื่องของคุณ กรุณารอสักครู่ครับ`);
-      } else if (nextStatus === JOB_STATUS.RIDER_RETURNING || nextStatus === 'In-Transit') {
-        sendAdminNotification('กำลังกลับสาขา', `${riderInfo.name} กำลังนำเครื่อง #${shortJobId} กลับมาส่ง`);
-      } else if (nextStatus === JOB_STATUS.PENDING_QC) {
-        sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
-      }
+      notifyStatusChange(nextStatus, jobId, job);
     } catch (error: any) {
       console.error('updateStatus error:', error);
       const msg = error?.code === 'PERMISSION_DENIED'
         ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
         : `เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ${error?.message || error}`;
       toast.error(msg);
+    }
+  };
+
+  /**
+   * ยิง **event** ให้ engine ตัดสินสถานะปลายทาง — เส้นทางเดียวที่ไรเดอร์ใช้เปลี่ยน
+   * สถานะงานได้แล้ว (ไม่มี fallback กลับไปเขียน jobs/{id}/status ตรงโดยตั้งใจ)
+   *
+   * ต่างจาก `updateStatus` สามข้อ:
+   *   1. ผู้เรียกบอกว่า "เกิดอะไรขึ้น" ไม่ใช่ "อยากให้สถานะเป็นอะไร" — กติกาว่า
+   *      สถานะไหนไปสถานะไหนได้อยู่ที่ตาราง TRANSITIONS ที่เดียว
+   *   2. การเขียนอยู่ใน transaction ฝั่ง server พร้อม `status_version` + แถว
+   *      `status_history` — แอดมินกับไรเดอร์กดพร้อมกันแล้วไม่มีใครถูกทับเงียบๆ
+   *   3. **การปฏิเสธเป็นเรื่องปกติ ไม่ใช่ error** เช่นแอดมินเพิ่งเลื่อนสถานะไปแล้ว
+   *      ไรเดอร์จะได้ข้อความบอกให้รีเฟรช แทนที่จะเขียนทับงานที่เดินไปข้างหน้าแล้ว
+   *
+   * ไม่ทำ optimistic update ฝั่ง client โดยตั้งใจ: การ์ดงานอ่านจาก onValue ของ
+   * /jobs อยู่แล้ว สถานะใหม่จึงเด้งกลับมาเองภายในหลักร้อยมิลลิวินาที และการเดา
+   * สถานะไว้ก่อนคือการเดาสิ่งที่เพิ่งย้ายไปให้ server ตัดสิน
+   */
+  const runTransition = async (
+    jobId: string,
+    event: RiderEvent,
+    logMsg: string,
+    extraData: Record<string, any> = {},
+    jobLists: { activeList: any[]; incomingList: any[] }
+  ): Promise<boolean> => {
+    const job = jobLists.activeList.find(j => j.id === jobId) || jobLists.incomingList.find(j => j.id === jobId);
+
+    // อ่านพิกัด **ก่อน** เขียน แล้วถ้าอยู่นอกโซนให้ถามยืนยัน — เหตุผลเดียวกับ
+    // `updateStatus` (ดูคอมเมนต์ยาวที่นั่น): พิกัดที่บันทึกคือที่ที่ "กดปุ่ม"
+    // และมันถูกใช้เป็นหลักฐานคิดค่าวิ่งใหม่ได้
+    //
+    // ต่างกันตรงที่ตอนนี้หา stage จาก **event** ไม่ใช่จากสถานะปลายทาง — แอปไม่รู้
+    // ปลายทางล่วงหน้าอีกแล้ว และไม่ควรรู้
+    const stage = EVENT_CHECKPOINT_STAGE[event];
+    let prefetched: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean } | undefined;
+    if (stage) {
+      const cpConfig = getCheckpointForStage(stage);
+      if (cpConfig.verify.target !== 'none') {
+        const { gps, status: gpsStatus } = await capturePosition();
+        let target: CheckpointTarget | null = null;
+        try {
+          target = await resolveCheckpointTarget(
+            cpConfig.verify, gps, job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
+          );
+        } catch (e) {
+          console.error('Failed to resolve checkpoint target:', e);
+        }
+        let selfConfirmed = false;
+        if (gps && target) {
+          const away = distanceMeters(gps.lat, gps.lng, target.lat, target.lng);
+          if (away > cpConfig.verify.thresholdM) {
+            const shown = away >= 1000 ? `${(away / 1000).toFixed(1)} กม.` : `${away} ม.`;
+            const ok = window.confirm(
+              `ตอนนี้คุณอยู่ห่างจาก${target.label} ${shown}\n\n` +
+              `ยืนยันว่า "${STAGE_LABEL_TH[cpConfig.stage]}" แล้วจริงไหม?\n\n` +
+              'OK = ใช่ ถึงแล้ว (บันทึกพร้อมหมายเหตุว่าคุณยืนยันเอง)\n' +
+              'Cancel = ยังไม่ถึง กดพลาด (ไม่บันทึกอะไรเลย)'
+            );
+            if (!ok) {
+              toast.info('ยกเลิกแล้ว — ยังไม่เปลี่ยนสถานะ กดใหม่อีกครั้งเมื่อถึงจุดหมาย');
+              return false;
+            }
+            selfConfirmed = true;
+          }
+        }
+        prefetched = { gps, gpsStatus, target, selfConfirmed };
+      }
+    }
+
+    try {
+      const call = httpsCallable(functions, 'transitionJob');
+      const res: any = await call({ jobId, event, reason: logMsg, patch: extraData });
+      const to: string = res?.data?.to;
+
+      // checkpoint เขียนหลัง transition สำเร็จ และเขียนด้วย stage ที่รู้ตั้งแต่ต้น
+      // ไม่ใช่สถานะที่ server คืนมา — ถ้าวันหนึ่ง engine เปลี่ยนปลายทางของ event
+      // ไทม์ไลน์ต้องยังบันทึกว่า "ไรเดอร์ทำอะไร" ที่เดิม
+      if (stage) void recordStatusCheckpoint(jobId, { stage }, job, prefetched);
+
+      if (to) notifyStatusChange(to, jobId, job);
+      return true;
+    } catch (error: any) {
+      const code = engineErrorCode(error);
+      // log ให้ครบทั้งรหัสของ engine และของ callable — เวลาไรเดอร์โทรมาแจ้ง
+      // "กดแล้วไม่ไป" สิ่งที่ต้องรู้คือ engine ปฏิเสธด้วยเหตุอะไร
+      console.error(`runTransition ${event} failed:`, code || error?.code, error?.message);
+      toast.error(transitionErrorMessage(code, error?.message));
+      return false;
     }
   };
 
@@ -302,7 +407,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // นับจาก rider_accepted เสมอ เมื่อจุดนั้นไม่มีอยู่จริง มันคืน null ทุกใบ
       // แถว "รวม X นาที" ในหน้าประวัติจึงไม่เคยขึ้นให้ใครเห็นเลย และไทม์ไลน์ใน
       // หน้า /rider-performance ของแอดมินขาดขั้นแรกทุกงาน
-      void recordStatusCheckpoint(job.id, JOB_STATUS.RIDER_ACCEPTED, job);
+      void recordStatusCheckpoint(job.id, { status: JOB_STATUS.RIDER_ACCEPTED }, job);
 
       return { success: true };
     } catch (error: any) {
@@ -448,9 +553,15 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // job fall back to that fixed amount and starved the wallet.
       // Just mark the job ready for settlement and let the function
       // compute the actual fee.
-      await updateStatus(job.id, 'Pending QC', 'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว', {
-        completed_at: Date.now(), rider_fee_status: 'Pending'
-      }, jobLists);
+      const ok = await runTransition(
+        job.id,
+        RIDER_EVENT.RETURN_ARRIVED,
+        'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว',
+        { completed_at: Date.now(), rider_fee_status: 'Pending' },
+        jobLists
+      );
+      // engine ปฏิเสธ = แจ้งไปแล้วใน runTransition ห้ามขึ้น "ปิดจ๊อบสำเร็จ" ทับ
+      if (!ok) return;
       toast.success('ปิดจ๊อบสำเร็จ! ส่งมอบเครื่องเรียบร้อย');
     } catch (e) {
       toast.error('เกิดข้อผิดพลาด: ' + e);
@@ -599,7 +710,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   return {
-    updateStatus, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
+    updateStatus, runTransition, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
     handleRevertInspection, submitKYC,
     handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
     reportDiscrepancy

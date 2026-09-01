@@ -8,12 +8,15 @@ import { formatCurrency } from '../../utils/formatters';
 import { getDisplayPrice, getCustomerName, getPaymentSlip, getAppointmentDisplay } from '../../utils/jobHelpers';
 import { hasUnreadFromAdmin } from '../../utils/jobChats';
 import { JOB_STATUS, CANCEL_CATEGORY } from '../../types/job-statuses';
+import { RIDER_EVENT } from '../../utils/riderTransitions';
+import type { RiderEvent } from '../../utils/riderTransitions';
 
 interface ActiveJobCardProps {
   job: any;
   index: number;
   totalJobs: number;
   onUpdateStatus: (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => void;
+  onJobEvent: (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => void;
   onOpenChat: (jobId: string) => void;
   onCallCustomer: (job: any) => void;
   onOpenNavigation: (job: any) => void;
@@ -28,7 +31,7 @@ interface ActiveJobCardProps {
 
 export const ActiveJobCard = ({
   job, index, totalJobs,
-  onUpdateStatus, onOpenChat, onCallCustomer, onOpenNavigation,
+  onUpdateStatus, onJobEvent, onOpenChat, onCallCustomer, onOpenNavigation,
   onReject, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy, onOpenDetail
 }: ActiveJobCardProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -138,14 +141,14 @@ export const ActiveJobCard = ({
         <button onClick={() => onReject(job)} disabled={!!loadingAction} className="w-14 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors disabled:opacity-50">
           <X size={20} />
         </button>
-        <button onClick={() => handleAction('start', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_EN_ROUTE, 'ไรเดอร์กำลังเดินทางไปหาลูกค้า'))} disabled={!!loadingAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
+        <button onClick={() => handleAction('start', () => onJobEvent(job.id, RIDER_EVENT.DEPARTED, 'ไรเดอร์กำลังเดินทางไปหาลูกค้า'))} disabled={!!loadingAction} className="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
           {loadingAction === 'start' ? <Loader2 size={20} className="animate-spin" /> : <Bike size={20} />} เริ่มออกเดินทาง (Start Journey)
         </button>
       </div>
     )}
 
     {(job.status === 'Heading to Customer' || job.status === JOB_STATUS.RIDER_EN_ROUTE) && (
-      <button onClick={(e) => { e.stopPropagation(); handleAction('arrived', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_ARRIVED, 'ถึงจุดหมายแล้ว')); }} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
+      <button onClick={(e) => { e.stopPropagation(); handleAction('arrived', () => onJobEvent(job.id, RIDER_EVENT.ARRIVED, 'ถึงจุดหมายแล้ว')); }} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 mt-2 flex justify-center items-center gap-2 disabled:opacity-50">
         {loadingAction === 'arrived' ? <Loader2 size={20} className="animate-spin" /> : <MapPin size={20} />} ถึงจุดหมายแล้ว (Arrived)
       </button>
     )}
@@ -156,7 +159,7 @@ export const ActiveJobCard = ({
       <div className="space-y-2 mt-2" onClick={stop}>
         <button
           onClick={() => {
-            if (arrived) onUpdateStatus(job.id, JOB_STATUS.BEING_INSPECTED, 'เริ่มตรวจสภาพ');
+            if (arrived) onJobEvent(job.id, RIDER_EVENT.INSPECTION_STARTED, 'เริ่มตรวจสภาพ');
             onInspect(job);
           }}
           className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex justify-center gap-2 shadow-md active:scale-95"
@@ -239,7 +242,7 @@ export const ActiveJobCard = ({
             <img src={getPaymentSlip(job)} className="w-full h-auto max-h-48 object-contain mt-2 rounded-xl" />
           )}
         </div>
-        <button onClick={() => handleAction('transit', () => onUpdateStatus(job.id, JOB_STATUS.RIDER_RETURNING, 'เดินทางกลับ'))} disabled={!!loadingAction} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
+        <button onClick={() => handleAction('transit', () => onJobEvent(job.id, RIDER_EVENT.RETURN_STARTED, 'เดินทางกลับ'))} disabled={!!loadingAction} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
           {loadingAction === 'transit' ? <Loader2 size={20} className="animate-spin" /> : <Bike size={20} />} เดินทางกลับสาขา
         </button>
       </div>
