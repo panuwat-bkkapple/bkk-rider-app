@@ -61,6 +61,48 @@ jobs:
       - name: Type check
         run: npx tsc -b
 
+      # ─── ด่านข้ามรีโป ────────────────────────────────────────────────────
+      # `src/utils/riderTransitions.test.ts` เทียบชื่อ event ที่ปุ่มของไรเดอร์
+      # ยิง กับตาราง TRANSITIONS ใน `bkk-system/functions/status-engine.js`
+      # ถ้าสองฝั่งหลุดกัน ไรเดอร์กดปุ่มแล้วโดน "unknown_event" กลับมา ทุกใบ
+      # ทุกคน โดยไม่มีเทสฝั่งไหนแดงเพราะมันอยู่คนละ repo
+      #
+      # เทสตัวนั้น **skip ตัวเองเมื่อหา bkk-system ไม่เจอ** ซึ่งคือทุกครั้งที่
+      # CI รัน (checkout มารีโปเดียว) ด่านจึงว่างมาตลอด — ขั้นนี้เอามาวางข้างกัน
+      # ให้มันรันจริง เทสอ่านจาก `<workspace>/../bkk-system` (สามชั้นขึ้นจาก
+      # src/utils) ซึ่ง actions/checkout เขียนออกนอก workspace ไม่ได้ จึงต้อง
+      # checkout ลงในนี้ก่อนแล้ว mv ขึ้นไป
+      #
+      # sparse-checkout เอาเฉพาะไฟล์ engine ไฟล์เดียว ไม่ต้องลากทั้งรีโป
+      - name: Checkout bkk-system (สำหรับด่านข้ามรีโป)
+        id: sibling
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: panuwat-bkkapple/bkk-system
+          path: bkk-system-src
+          sparse-checkout: functions/status-engine.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # continue-on-error ข้างบนเป็นของจำเป็น ไม่ใช่ความหละหลวม: วันที่ bkk-system
+      # ถูกเปลี่ยนเป็น private ขั้นนี้จะล้ม และ CI ของ repo นี้ต้องไม่แดงยกแผง
+      # เพราะรีโปข้างๆ เปลี่ยน visibility
+      #
+      # แต่ห้ามให้มันกลับไปเงียบแบบเดิม — ถ้าวางไม่สำเร็จ ขั้นนี้เขียน warning
+      # annotation + บรรทัดใน job summary ให้เห็นบนหน้า PR ว่าด่านนี้ไม่ได้รัน
+      # (แก้ตอนนั้น = เพิ่ม PAT ที่อ่าน bkk-system ได้เป็น secret แล้วส่งเข้า
+      # `token:` ของขั้นข้างบน)
+      - name: วาง bkk-system ไว้ข้างกัน
+        run: |
+          if [ -f bkk-system-src/functions/status-engine.js ]; then
+            mv bkk-system-src ../bkk-system
+            echo "ด่านข้ามรีโป: พร้อมรัน (เจอ status-engine.js)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::ด่านข้ามรีโปไม่ได้รัน — checkout bkk-system ไม่สำเร็จ (outcome=${{ steps.sibling.outcome }}) riderTransitions.test.ts จะ skip ตัวเอง ชื่อ event สองฝั่งจึงไม่ถูกตรวจในรอบนี้"
+            echo "ด่านข้ามรีโป: **ไม่ได้รัน** — riderTransitions.test.ts skip ตัวเอง" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Test
         run: npm test
 

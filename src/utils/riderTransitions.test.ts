@@ -15,8 +15,15 @@ describe('RIDER_EVENT', () => {
   // ฝั่งไหนแดงเลยเพราะสองฝั่งอยู่คนละ repo
   //
   // เทสนี้อ่านไฟล์จริงของ bkk-system เมื่อมันถูก checkout ไว้ข้างกัน และ SKIP
-  // เมื่อไม่มี (แบบเดียวกับ scripts/mirror-parity.mjs) — CI ของ repo นี้จึงไม่
-  // ได้รับการคุ้มครองจากมัน **ด่านจริงของ CI คือ deploy ที่ต้องขึ้นก่อน merge**
+  // เมื่อไม่มี (แบบเดียวกับ scripts/mirror-parity.mjs)
+  //
+  // **CI วาง bkk-system ไว้ข้างกันให้แล้ว** (ขั้น "Checkout bkk-system" ใน
+  // .github/workflows/ci.yml) ด่านนี้จึงรันจริงบนทุก PR ไม่ใช่เฉพาะตอนรันใน
+  // เครื่องที่บังเอิญ clone สองรีโปไว้ข้างกัน — ก่อนหน้านั้นมันว่างมาตลอด
+  //
+  // ถ้าวันไหน checkout ล้ม (เช่น bkk-system เปลี่ยนเป็น private) CI จะไม่แดง
+  // ยกแผง แต่จะขึ้น warning annotation + บรรทัดใน job summary บอกว่ารอบนั้น
+  // ด่านนี้ไม่ได้รัน — ห้ามแก้ให้มันเงียบ
   const enginePath = resolve(__dirname, '../../../bkk-system/functions/status-engine.js');
 
   it.skipIf(!existsSync(enginePath))('ทุก event มีอยู่จริงในตาราง TRANSITIONS ของ engine', () => {
