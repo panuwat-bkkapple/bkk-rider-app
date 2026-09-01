@@ -15,7 +15,6 @@ interface ActiveJobCardProps {
   job: any;
   index: number;
   totalJobs: number;
-  onUpdateStatus: (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => void;
   onJobEvent: (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => void;
   onOpenChat: (jobId: string) => void;
   onCallCustomer: (job: any) => void;
@@ -31,7 +30,7 @@ interface ActiveJobCardProps {
 
 export const ActiveJobCard = ({
   job, index, totalJobs,
-  onUpdateStatus, onJobEvent, onOpenChat, onCallCustomer, onOpenNavigation,
+  onJobEvent, onOpenChat, onCallCustomer, onOpenNavigation,
   onReject, onStartKYC, onInspect, onCompleteJob, onRevertInspection, onReportDiscrepancy, onOpenDetail
 }: ActiveJobCardProps) => {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -258,7 +257,7 @@ export const ActiveJobCard = ({
       <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100 mt-2" onClick={stop}>
         <h3 className="font-bold text-purple-700 mb-2">มีการปรับราคาใหม่: {formatCurrency(getDisplayPrice(job))}</h3>
         <div className="flex gap-2">
-          <button onClick={() => handleAction('cancel', () => onUpdateStatus(job.id, JOB_STATUS.CANCELLED, 'ลูกค้ายกเลิก', {
+          <button onClick={() => handleAction('cancel', () => onJobEvent(job.id, RIDER_EVENT.CANCELLED, 'ลูกค้ายกเลิก', {
             cancel_reason: 'ลูกค้ายกเลิก',
             // Full cancel taxonomy: without cancelled_at the 7-day reopen
             // window (getReopenDeadline) can never be computed and the
@@ -271,7 +270,7 @@ export const ActiveJobCard = ({
           }))} disabled={!!loadingAction} className="flex-1 bg-white text-red-500 py-2 rounded-xl text-sm font-bold border border-red-200 disabled:opacity-50">
             {loadingAction === 'cancel' ? 'กำลังดำเนินการ...' : 'ยกเลิก'}
           </button>
-          <button onClick={() => handleAction('accept', () => onUpdateStatus(job.id, JOB_STATUS.PAYOUT_PROCESSING, 'ลูกค้ายอมรับ', { customer_accepted_at: Date.now() }))} disabled={!!loadingAction} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-bold shadow disabled:opacity-50">
+          <button onClick={() => handleAction('accept', () => onJobEvent(job.id, RIDER_EVENT.REVISED_OFFER_ACCEPTED, 'ลูกค้ายอมรับ', { customer_accepted_at: Date.now() }))} disabled={!!loadingAction} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-bold shadow disabled:opacity-50">
             {loadingAction === 'accept' ? 'กำลังดำเนินการ...' : 'ยอมรับ'}
           </button>
         </div>

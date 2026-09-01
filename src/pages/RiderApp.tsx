@@ -119,16 +119,13 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   const detailMode: 'incoming' | 'active' = detailIncoming ? 'incoming' : 'active';
 
   // Handlers
-  const handleUpdateStatus = async (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => {
-    await actions.updateStatus(jobId, nextStatus, logMsg, extraData || {}, {
-      activeList: jobData.activeList,
-      incomingList: jobData.incomingList
-    });
-  };
-
   // เส้นทาง event — ปุ่มบอกว่า "เกิดอะไรขึ้น" แล้ว engine ตัดสินสถานะปลายทาง
-  // (ดู runTransition ใน useJobActions). ปุ่มที่ยังไม่ย้ายใช้ handleUpdateStatus
-  // ต่อไปก่อน และจะทยอยย้ายทีละกลุ่ม
+  // (ดู runTransition ใน useJobActions)
+  //
+  // ปุ่มบนการ์ดงานย้ายมาทางนี้ครบแล้ว prop `onUpdateStatus` จึงถูกลบทิ้งทั้งสาย
+  // (การ์ด → HomeTab → หน้านี้) — ทางลัดที่ไม่มีใครเรียกแล้วคือหนี้ที่คนอ่าน
+  // รอบหน้าต้องจ่าย. `actions.updateStatus` ยังอยู่เพราะเส้นส่งผลตรวจกับ
+  // ย้อนกลับยังใช้ และยังไม่ถึงคิวย้าย
   const handleJobEvent = async (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => {
     await actions.runTransition(jobId, event, logMsg, extraData || {}, {
       activeList: jobData.activeList,
@@ -304,7 +301,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           jobDateFilter={jobDateFilter}
           onJobDateFilterChange={setJobDateFilter}
           onAcceptJob={handleAcceptJob}
-          onUpdateStatus={handleUpdateStatus}
           onJobEvent={handleJobEvent}
           onRejectJob={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
           onOpenChat={setChatJobId}
@@ -332,7 +328,6 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
             setDetailJobId(null);
           }}
           onReject={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
-          onUpdateStatus={handleUpdateStatus}
           onJobEvent={handleJobEvent}
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
