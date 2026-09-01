@@ -99,3 +99,25 @@ export const getRiderPayout = (job: any, vehicleType?: 'motorcycle' | 'car' | nu
   }
   return Number(job?.rider_fee_estimate) || 0;
 };
+
+// ยอดรวมค่ารอบของงานหลายใบ — ต้องเดินผ่าน getRiderPayout ทุกใบ ห้ามอ่าน
+// `rider_fee` ตรงๆ และห้ามมีค่า default ของตัวเอง
+//
+// เดิมสรุป "รายได้" ในหน้าประวัติคำนวณด้วย `Number(j.rider_fee) || 150` ซึ่ง
+// ผิดสองชั้น: (1) เลข 150 ไม่มีที่มาจากที่ไหนในระบบเลย — ไม่ใช่ `min_fee`
+// (ค่าเริ่มต้น 100 ที่ settings/logistics_rates) ไม่ใช่ค่าเฉลี่ย มันคือเลขที่
+// เคยถูกฮาร์ดโค้ดในเส้นทาง "เขียน" ค่ารอบแล้วถูกถอดออกไปแล้วเพราะทำให้ทุกงาน
+// ได้ 150 เท่ากันหมด (ดูคอมเมนต์ใน useJobActions.handleCompleteJob) —
+// เหลือค้างเฉพาะเส้นทางแสดงผล (2) มันข้าม `fee_by_vehicle` ทำให้ยอดรวมไม่ตรง
+// กับเลขบนการ์ดของงานใบเดียวกัน
+//
+// งานที่ยังไม่มีทั้ง `rider_fee` และ `rider_fee_estimate` ให้เป็น 0 —
+// ศูนย์แปลว่า "ยังไม่มีตัวเลข" ซึ่งเป็นความจริง ส่วน 150 คือคำตอบที่แต่งขึ้น
+export const sumRiderPayout = (
+  jobs: any[],
+  vehicleType?: 'motorcycle' | 'car' | null,
+): number =>
+  (Array.isArray(jobs) ? jobs : []).reduce(
+    (sum, job) => sum + getRiderPayout(job, vehicleType),
+    0,
+  );

@@ -338,6 +338,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           historyFilter={historyFilter}
           onFilterChange={setHistoryFilter}
           onOpenChat={setChatJobId}
+          vehicleType={riderInfo.vehicleType}
         />
       )}
 
