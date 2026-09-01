@@ -119,3 +119,42 @@ describe('distanceMeters', () => {
     expect(d).toBeGreaterThan(10_000);
   });
 });
+
+// --- ธง self_confirmed (เพิ่มพร้อมการถามยืนยันก่อนบันทึก, 1 ก.ย. 2569) ---
+//
+// ที่มา: เคส OID-MTHBWFJJ-384 ไรเดอร์กดสามสถานะรวดเดียวตอนขี่กลับ พิกัดกลางทาง
+// ถูกใช้เป็นหลักฐานคิดค่าวิ่งใหม่ ตอนนี้นอกโซนต้องถามก่อน และถ้ายืนยันต้องติดธง
+// ให้แอดมินอ่านออกว่า "ระบบวัดได้ว่านอกโซน แต่คนยืนยันเอง"
+describe('self_confirmed', () => {
+  const gps = { lat: 13.7987, lng: 100.4961 };
+  const target = { lat: 13.7128, lng: 100.4315, label: 'พิกัดลูกค้า' };
+
+  it('นอกโซน + ยืนยันเอง = ติดธง', () => {
+    const { row } = buildCheckpointRow({
+      riderId: 'R1', at: 1, gps, gpsStatus: 'ok', target, thresholdM: 200, selfConfirmed: true,
+    });
+    expect(row.self_confirmed).toBe(true);
+    expect(row.is_within_zone).toBe(false);
+  });
+
+  it('อยู่ในโซนอยู่แล้ว = ไม่ติดธง แม้ส่ง flag มา (ธงที่ไม่มีความหมายคือ noise)', () => {
+    const { row } = buildCheckpointRow({
+      riderId: 'R1', at: 1, gps: { lat: 13.7128, lng: 100.4315 }, gpsStatus: 'ok', target, thresholdM: 200, selfConfirmed: true,
+    });
+    expect(row.self_confirmed).toBeUndefined();
+  });
+
+  it('ไม่มีพิกัด = ไม่ติดธง (วัดไม่ได้ ก็ยืนยันอะไรไม่ได้)', () => {
+    const { row } = buildCheckpointRow({
+      riderId: 'R1', at: 1, gps: null, gpsStatus: 'denied', target, thresholdM: 200, selfConfirmed: true,
+    });
+    expect(row.self_confirmed).toBeUndefined();
+  });
+
+  it('ไม่ส่ง flag = ไม่มีคีย์นี้เลย (แถวปกติต้องไม่เปลี่ยนรูป)', () => {
+    const { row } = buildCheckpointRow({
+      riderId: 'R1', at: 1, gps, gpsStatus: 'ok', target, thresholdM: 200,
+    });
+    expect(row.self_confirmed).toBeUndefined();
+  });
+});
