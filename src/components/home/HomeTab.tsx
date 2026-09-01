@@ -8,6 +8,7 @@ import { ActiveJobCard } from './ActiveJobCard';
 import { getAppointmentDateKey } from '../../utils/jobHelpers';
 import { logOffer } from '../../utils/offerLog';
 import type { RiderInfo, JobDateFilter } from '../../types';
+import type { RiderEvent } from '../../utils/riderTransitions';
 
 interface HomeTabProps {
   riderInfo: RiderInfo;
@@ -20,6 +21,7 @@ interface HomeTabProps {
   onJobDateFilterChange: (filter: JobDateFilter) => void;
   onAcceptJob: (jobId: string, extraData: any) => void;
   onUpdateStatus: (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => void;
+  onJobEvent: (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => void;
   onRejectJob: (job: any) => void;
   onOpenChat: (jobId: string) => void;
   onCallCustomer: (job: any) => void;
@@ -62,7 +64,7 @@ const filterByDate = (list: any[], filter: JobDateFilter): any[] => {
 export const HomeTab = ({
   riderInfo, isOnline, onToggleOnline, balance,
   incomingList, activeList, jobDateFilter, onJobDateFilterChange,
-  onAcceptJob, onUpdateStatus, onRejectJob,
+  onAcceptJob, onUpdateStatus, onJobEvent, onRejectJob,
   onOpenChat, onCallCustomer, onOpenNavigation,
   onStartKYC, onInspectJob, onCompleteJob, onRevertInspection, onReportDiscrepancy,
   onOpenJobDetail, onGoToProfile
@@ -161,6 +163,7 @@ export const HomeTab = ({
           index={index}
           totalJobs={activeList.length}
           onUpdateStatus={onUpdateStatus}
+          onJobEvent={onJobEvent}
           onOpenChat={onOpenChat}
           onCallCustomer={onCallCustomer}
           onOpenNavigation={onOpenNavigation}

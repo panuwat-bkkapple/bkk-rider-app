@@ -38,23 +38,41 @@ interface VerifyConfig {
   thresholdM: number;
 }
 
-const STATUS_TO_STAGE: Record<string, { stage: CheckpointStage; verify: VerifyConfig }> = {
+// เกณฑ์การเทียบพิกัดของแต่ละจุดเช็คอิน — **แหล่งเดียว**
+//
+// ทั้งชื่อสถานะ (เส้นทางเดิม) และ event (เส้นทางใหม่ผ่าน transitionJob) ชี้มาที่
+// ตารางนี้ ถ้าแยกกันเก็บ วันหนึ่งเกณฑ์ 200/250/300 ม. จะไม่ตรงกันตามทางที่เข้ามา
+const STAGE_VERIFY: Record<CheckpointStage, VerifyConfig> = {
+  rider_accepted:  { target: 'none',     thresholdM: 0   },
+  rider_en_route:  { target: 'none',     thresholdM: 0   },
+  rider_arrived:   { target: 'customer', thresholdM: 200 },
+  // ไรเดอร์ออกจากจุดลูกค้า (จ่ายเงินแล้ว กำลังกลับสาขา)
+  customer_left:   { target: 'customer', thresholdM: 250 },
+  // ส่งมอบที่สาขา (สาขาที่ใกล้ตำแหน่งไรเดอร์ที่สุด)
+  branch_handover: { target: 'branch',   thresholdM: 300 },
+};
+
+const STATUS_TO_STAGE: Record<string, CheckpointStage> = {
   // Pickup flow
-  [JOB_STATUS.RIDER_ACCEPTED]: { stage: 'rider_accepted',  verify: { target: 'none',     thresholdM: 0   } },
-  'Accepted':                  { stage: 'rider_accepted',  verify: { target: 'none',     thresholdM: 0   } }, // legacy
-  [JOB_STATUS.RIDER_EN_ROUTE]: { stage: 'rider_en_route',  verify: { target: 'none',     thresholdM: 0   } },
-  'Heading to Customer':       { stage: 'rider_en_route',  verify: { target: 'none',     thresholdM: 0   } }, // legacy
-  [JOB_STATUS.RIDER_ARRIVED]:  { stage: 'rider_arrived',   verify: { target: 'customer', thresholdM: 200 } },
-  'Arrived':                   { stage: 'rider_arrived',   verify: { target: 'customer', thresholdM: 200 } }, // legacy
-  // Rider leaves customer site (post-payment, returning to branch)
-  [JOB_STATUS.RIDER_RETURNING]: { stage: 'customer_left',  verify: { target: 'customer', thresholdM: 250 } },
-  'In-Transit':                { stage: 'customer_left',   verify: { target: 'customer', thresholdM: 250 } }, // legacy
-  // Branch hand-over (rider arrives at any active branch with the device)
-  [JOB_STATUS.PENDING_QC]:     { stage: 'branch_handover', verify: { target: 'branch',   thresholdM: 300 } },
+  [JOB_STATUS.RIDER_ACCEPTED]:  'rider_accepted',
+  'Accepted':                   'rider_accepted', // legacy
+  [JOB_STATUS.RIDER_EN_ROUTE]:  'rider_en_route',
+  'Heading to Customer':        'rider_en_route', // legacy
+  [JOB_STATUS.RIDER_ARRIVED]:   'rider_arrived',
+  'Arrived':                    'rider_arrived',  // legacy
+  [JOB_STATUS.RIDER_RETURNING]: 'customer_left',
+  'In-Transit':                 'customer_left',  // legacy
+  [JOB_STATUS.PENDING_QC]:      'branch_handover',
 };
 
 export function getCheckpointForStatus(status: string): { stage: CheckpointStage; verify: VerifyConfig } | null {
-  return STATUS_TO_STAGE[status] ?? null;
+  const stage = STATUS_TO_STAGE[status];
+  return stage ? { stage, verify: STAGE_VERIFY[stage] } : null;
+}
+
+/** เกณฑ์ของ stage ที่รู้ชื่ออยู่แล้ว — ใช้โดยเส้นทาง event (ดู riderTransitions.ts) */
+export function getCheckpointForStage(stage: CheckpointStage): { stage: CheckpointStage; verify: VerifyConfig } {
+  return { stage, verify: STAGE_VERIFY[stage] };
 }
 
 // Haversine ย้ายไปอยู่ checkpointPayload.ts (pure, เทสได้) — re-export ไว้ให้
@@ -100,7 +118,10 @@ export interface CheckpointResult {
 interface RecordArgs {
   jobId: string;
   riderId: string;
-  status: string;
+  /** เส้นทางเดิม: หา stage จากชื่อสถานะปลายทาง (ส่ง stage มาแทนได้) */
+  status?: string;
+  /** เส้นทาง event: ผู้เรียกรู้ stage อยู่แล้ว ไม่ต้องเดาจากสถานะ */
+  stage?: CheckpointStage;
   /** null = ขอพิกัดไม่ได้ — แถวยังต้องถูกเขียน (ดูหัวไฟล์) */
   gps: GpsFix | null;
   /** เหตุผลเมื่อ gps เป็น null ('ok' เมื่อมีพิกัด) */
@@ -140,7 +161,11 @@ export async function resolveCheckpointTarget(
 }
 
 export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResult | null> {
-  const config = getCheckpointForStatus(args.status);
+  const config = args.stage
+    ? getCheckpointForStage(args.stage)
+    : args.status
+      ? getCheckpointForStatus(args.status)
+      : null;
   if (!config) return null;
 
   const { stage, verify } = config;

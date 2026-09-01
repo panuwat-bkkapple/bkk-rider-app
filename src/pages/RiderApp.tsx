@@ -11,6 +11,7 @@ import { sumAppliedAdjustments, sumAppliedCoupons } from '../utils/adjustments';
 // Hooks
 import { useRiderData } from '../hooks/useRiderData';
 import { useJobActions } from '../hooks/useJobActions';
+import type { RiderEvent } from '../utils/riderTransitions';
 
 // Components
 import { BottomNav } from '../components/layout/BottomNav';
@@ -120,6 +121,16 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   // Handlers
   const handleUpdateStatus = async (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => {
     await actions.updateStatus(jobId, nextStatus, logMsg, extraData || {}, {
+      activeList: jobData.activeList,
+      incomingList: jobData.incomingList
+    });
+  };
+
+  // เส้นทาง event — ปุ่มบอกว่า "เกิดอะไรขึ้น" แล้ว engine ตัดสินสถานะปลายทาง
+  // (ดู runTransition ใน useJobActions). ปุ่มที่ยังไม่ย้ายใช้ handleUpdateStatus
+  // ต่อไปก่อน และจะทยอยย้ายทีละกลุ่ม
+  const handleJobEvent = async (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => {
+    await actions.runTransition(jobId, event, logMsg, extraData || {}, {
       activeList: jobData.activeList,
       incomingList: jobData.incomingList
     });
@@ -294,6 +305,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onJobDateFilterChange={setJobDateFilter}
           onAcceptJob={handleAcceptJob}
           onUpdateStatus={handleUpdateStatus}
+          onJobEvent={handleJobEvent}
           onRejectJob={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
@@ -321,6 +333,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           }}
           onReject={(job) => { setRejectingJob(job); setIsRejectModalOpen(true); }}
           onUpdateStatus={handleUpdateStatus}
+          onJobEvent={handleJobEvent}
           onOpenChat={setChatJobId}
           onCallCustomer={actions.handleCallCustomer}
           onOpenNavigation={actions.handleOpenNavigation}
