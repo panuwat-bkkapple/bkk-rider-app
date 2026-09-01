@@ -1,0 +1,99 @@
+name: CI
+
+# repo นี้ไม่เคยมีด่านอัตโนมัติบน pull request มาก่อนเลย
+#
+# มีแค่ `firebase-hosting-deploy.yml` ที่รันตอน push เข้า main (คือ **หลัง**
+# merge ไปแล้ว) กับ `preview-deploy.yml` ที่เป็น workflow_dispatch ต้องกดเอง
+# ผลคือ PR ทุกใบขึ้น "ไม่มี check" ซึ่งอ่านง่ายว่าเป็นเขียว ทั้งที่ความจริงคือ
+# **ไม่มีใครตรวจอะไรเลย** — ถ้า tsc พังหรือเทสแดง จะรู้ตอน deploy หลัง merge
+# ซึ่งเป็น run ที่ไม่มีใครเปิดดู (ดูหัวข้อ "CI เขียว ไม่ได้แปลว่า deploy ขึ้น"
+# ใน CLAUDE.md ของ bkk-frontend-next)
+#
+# รันบน pull_request เพราะ GitHub checkout **ผลลัพธ์หลัง merge** ไม่ใช่ปลาย
+# branch ตัวเลขจากที่นี่จึงเป็นของต้นไม้ที่จะมีอยู่จริงหลัง merge เสมอ ซึ่งเป็น
+# สิ่งที่การรันในเครื่องบนฐานเก่าสัญญาไม่ได้
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rider-app:
+    name: Rider app (types, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # ตรงกับ node ที่ `firebase-hosting-deploy.yml` ใช้ build จริง
+          # ด่านที่รันคนละเวอร์ชันกับตัว deploy คือด่านที่ทำนายผล deploy ไม่ได้
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+
+      # ADVISORY ไม่ใช่ด่าน — และนี่คือการตัดสินใจ ไม่ใช่ความหละหลวม
+      #
+      # ตอนต่อ toolchain กลับมา (`npm run lint` เคยรันไม่ได้เลยเพราะ eslint กับ
+      # อีก 5 แพ็กเกจไม่อยู่ใน devDependencies) รอบแรกรายงาน **250 ปัญหา
+      # (244 error)** ซึ่ง **221 ตัวเป็น `@typescript-eslint/no-explicit-any`**
+      # กระจายทั่วแอปและมีมาก่อนทั้งหมด ไม่มีตัวไหนมาจากการแก้ที่กำลังทดสอบ
+      #
+      # ตั้งเป็นด่านตอนนี้ = แดงทุก PR ตั้งแต่วันแรก ซึ่งแย่กว่าไม่มีด่าน เพราะ
+      # ด่านที่แดงตลอดสอนให้ทุกคน merge ผ่านสีแดง แล้ววันที่ type หรือเทสพังจริง
+      # จะไม่มีใครมอง (เหตุผลและตัวเลขชุดเดียวกับที่ bkk-system บันทึกไว้ตอน
+      # เจอ 1,109 ปัญหา — `eslint.config.js` ของสอง repo เหมือนกันเป๊ะ)
+      #
+      # ยังรันเพราะผลของมันมีค่าให้อ่าน และตัวเลขคือสิ่งที่ควรไล่ให้ลดลง
+      # **เปลี่ยนเป็นด่านเมื่อถึงศูนย์ ไม่ใช่ก่อนหน้านั้น**
+      #
+      # ในนั้นมี 21 ตัวที่ไม่ใช่เรื่องสไตล์และควรดูแยกต่างหาก:
+      # react-hooks/set-state-in-effect (8) · exhaustive-deps (8) · purity (3) ·
+      # preserve-manual-memoization (1) · immutability (1)
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: npm run lint
+
+      # `tsc -b` ไม่ใช่ `tsc --noEmit` — เป็นคำสั่งเดียวกับที่ `npm run build`
+      # ใช้. --noEmit อ่าน tsconfig ตัว root ซึ่ง **ไม่ครอบ** `vite.config.ts`
+      # กับไฟล์ฝั่ง node ตัวอื่น ส่วน -b build ทุก project ที่ถูก reference
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Test
+        run: npm test
+
+      # ซ้ำกับ tsc ข้างบนหนึ่งรอบโดยตั้งใจ (`build` = `tsc -b && vite build`)
+      # เพราะขั้นบนแยกไว้ให้ชื่อขั้นที่แดงบอกได้ว่าพังเพราะ type หรือเพราะ vite
+      #
+      # ไม่ส่ง VITE_* เข้ามา: ตัว deploy ส่ง secret จริงเข้าไป แต่ vite แค่ inline
+      # ค่าที่ไม่มีเป็น undefined ไม่ทำให้ build ล้ม — build ที่นี่จึงพิสูจน์ว่า
+      # โค้ด compile และ bundle ได้ ไม่ได้พิสูจน์ว่า config ครบ (ซึ่งเป็นคนละเรื่อง
+      # และตรวจที่นี่ไม่ได้อยู่แล้วเพราะ PR จาก fork อ่าน secret ไม่ได้)
+      - name: Build
+        run: npm run build
+
+  functions:
+    name: Cloud Functions (rider-notifications build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # เท่ากับ job deploy-functions ใน firebase-hosting-deploy.yml
+          # หมายเหตุ: `functions/package.json` ประกาศ engines node 22 ซึ่งเป็น
+          # เวอร์ชัน **runtime** บน Cloud Run ส่วนตัว build ทั้งที่นี่และที่ deploy
+          # ใช้ 20 — ถ้าจะขยับ ต้องขยับพร้อมกันทั้งสองไฟล์ ไม่ใช่แค่ที่นี่
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+
+      # `firebase deploy` compile ก่อนเป็นอย่างแรก — TS ที่ compile ไม่ผ่านทำให้
+      # deploy ล้มทั้ง codebase ไม่ใช่แค่ function ที่พัง และตอนนี้เรารู้เรื่องนั้น
+      # ก็ต่อเมื่อ merge ไปแล้ว
+      - name: Build Functions
+        run: npm run build --prefix functions
