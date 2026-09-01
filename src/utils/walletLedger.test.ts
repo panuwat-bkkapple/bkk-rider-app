@@ -79,10 +79,23 @@ describe('walletBalance — สูตรหลังกรอง', () => {
   });
 });
 
+describe('ADJUSTMENT — แถวแก้ยอดที่คิดผิด', () => {
+  it('นับเข้ากระเป๋าทั้งทิศบวกและทิศลบ (ถ้าไม่นับ balance บนจอจะไม่ตรงกับงาน)', () => {
+    const credit = { type: 'CREDIT', category: 'ADJUSTMENT', amount: 104 };
+    const debit = { type: 'DEBIT', category: 'ADJUSTMENT', amount: 104 };
+    expect(isRiderWalletTx(credit)).toBe(true);
+    expect(isRiderWalletTx(debit)).toBe(true);
+    expect(walletBalance([credit, debit])).toBe(0);
+  });
+});
+
 describe('walletCategoryLabel — ป้ายบนจอ', () => {
   it('หมวดใน allowlist ได้ป้ายไทย', () => {
     expect(walletCategoryLabel('JOB_PAYOUT')).toBe('ค่ารอบงาน');
     expect(walletCategoryLabel('WITHDRAWAL')).toBe('ถอนเงินเข้าบัญชี');
+    // การแก้ยอดที่คิดผิดต้องไม่อ่านว่า "รายการหัก" — นั่นคือป้ายของ PENALTY
+    expect(walletCategoryLabel('ADJUSTMENT')).toBe('ปรับปรุงค่ารอบ');
+    expect(walletCategoryLabel('ADJUSTMENT')).not.toBe(walletCategoryLabel('PENALTY'));
   });
   it('หมวดนอก allowlist ตกเป็นชื่อดิบ / ค่าว่างตกเป็นป้ายกลาง', () => {
     expect(walletCategoryLabel('LOGISTICS_REVENUE')).toBe('LOGISTICS_REVENUE');
