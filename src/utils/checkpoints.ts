@@ -15,13 +15,12 @@
 import { ref, update, get } from 'firebase/database';
 import { db } from '../api/firebase';
 import { JOB_STATUS } from '../types/job-statuses';
+import type { CheckpointStage } from './jobTimeline';
 
-export type CheckpointStage =
-  | 'rider_accepted'
-  | 'rider_en_route'
-  | 'rider_arrived'
-  | 'customer_left'
-  | 'branch_handover';
+// ชนิด stage + ป้ายไทยย้ายไปอยู่ jobTimeline.ts (pure, เทสได้) —
+// re-export ไว้ที่นี่ให้ผู้ใช้เดิมไม่ต้องแก้ import
+export type { CheckpointStage } from './jobTimeline';
+export { STAGE_LABEL_TH } from './jobTimeline';
 
 interface VerifyConfig {
   // 'customer' uses the job's cust_lat/lng. 'branch' picks the nearest
@@ -148,11 +147,3 @@ export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResu
   };
 }
 
-// Human-readable label for toast messages.
-export const STAGE_LABEL_TH: Record<CheckpointStage, string> = {
-  rider_accepted: 'รับงาน',
-  rider_en_route: 'ออกเดินทาง',
-  rider_arrived: 'ถึงลูกค้า',
-  customer_left: 'ออกจากลูกค้า',
-  branch_handover: 'ส่งมอบสาขา',
-};

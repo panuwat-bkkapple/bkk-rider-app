@@ -1,7 +1,16 @@
 // src/components/history/HistoryTab.tsx
-import { useMemo } from 'react';
-import { Activity, MessageSquare } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Activity, Bike, ChevronRight, Clock, Navigation, Star } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import {
+  checkpointAt,
+  formatDurationTh,
+  formatTimeTh,
+  jobDistanceKm,
+  totalJobMs,
+} from '../../utils/jobTimeline';
+import { JOB_STATUS, normalizeStatus } from '../../types/job-statuses';
+import { HistoryJobSheet } from './HistoryJobSheet';
 import type { HistoryFilter } from '../../types';
 
 interface HistoryTabProps {
@@ -19,6 +28,8 @@ const filters = [
 ];
 
 export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat }: HistoryTabProps) => {
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
   const displayData = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -37,6 +48,10 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
       }
     };
   }, [history, historyFilter]);
+
+  // Sheet อ่านงานสดจาก list เสมอ (ไม่ freeze snapshot ตอนกด) — ค่ารอบ/รีวิว
+  // ที่เพิ่งเปลี่ยนจะสะท้อนทันทีระหว่างเปิดค้าง
+  const selectedJob = selectedJobId ? displayData.list.find(j => j.id === selectedJobId) : null;
 
   return (
     <div className="p-6 pt-12 h-full overflow-y-auto pb-32 animate-in fade-in">
@@ -84,37 +99,78 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat 
             <p className="text-sm text-gray-400">ไม่มีประวัติการวิ่งงานในช่วงเวลานี้</p>
           </div>
         ) : (
-          displayData.list.map(job => (
-            <div key={job.id} className="bg-white p-4 rounded-2xl shadow-sm flex flex-col border border-gray-100">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-bold text-gray-800 text-sm mb-1 line-clamp-1">{job.model}</div>
-                  <div className="text-[10px] text-gray-400 flex items-center gap-2">
-                    <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
-                      {job.OID || job.ref_no || `#${job.id.slice(-4)}`}
-                    </span>
-                    <span>•</span>
-                    <span>{formatDate(job.completed_at || job.updated_at || job.created_at)}</span>
+          displayData.list.map(job => {
+            const acceptedAt = checkpointAt(job, 'rider_accepted');
+            const distanceKm = jobDistanceKm(job);
+            const totalMs = totalJobMs(job);
+            const hasMetaRow = acceptedAt !== null || distanceKm !== null || totalMs !== null;
+            const cancelled = normalizeStatus(job.status, job.receive_method) === JOB_STATUS.CANCELLED;
+            return (
+              <button
+                key={job.id}
+                onClick={() => setSelectedJobId(job.id)}
+                className="w-full text-left bg-white p-4 rounded-2xl shadow-sm flex flex-col gap-2.5 border border-gray-100 active:scale-[0.98] transition-transform"
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-gray-800 text-sm mb-1 line-clamp-1">{job.model}</div>
+                    <div className="text-[10px] text-gray-400 flex items-center gap-2 flex-wrap">
+                      <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                        {job.OID || job.ref_no || `#${job.id.slice(-4)}`}
+                      </span>
+                      <span>{formatDate(job.completed_at || job.updated_at || job.created_at)}</span>
+                      {/* ป้ายรีวิว — งานที่ยกเลิกไม่มีวันได้รีวิว ไม่ต้องขึ้นป้าย */}
+                      {!cancelled && (job.is_reviewed ? (
+                        <span className="flex items-center gap-1 bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full">
+                          <Star size={9} className="text-amber-500 fill-amber-500" /> รีวิวแล้ว
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-gray-400">
+                          <Star size={9} className="text-gray-300" /> ยังไม่รีวิว
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
+                      +{formatCurrency(job.rider_fee || 150)}
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300" />
                   </div>
                 </div>
-                <div className="text-right flex flex-col items-end gap-2">
-                  <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
-                    +{formatCurrency(job.rider_fee || 150)}
+                {/* แถวสรุปเวลา/ระยะทาง — มีข้อมูลถึงขึ้น ไม่มีก็ตัดทั้งแถว */}
+                {hasMetaRow && (
+                  <div className="flex items-center gap-3 border-t border-gray-100 pt-2.5 flex-wrap">
+                    {acceptedAt !== null && (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-500">
+                        <Clock size={12} className="text-gray-400" /> รับงาน {formatTimeTh(acceptedAt)}
+                      </span>
+                    )}
+                    {distanceKm !== null && (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-500">
+                        <Bike size={12} className="text-gray-400" /> {distanceKm} กม.
+                      </span>
+                    )}
+                    {totalMs !== null && (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-500">
+                        <Navigation size={12} className="text-gray-400" /> รวม {formatDurationTh(totalMs)}
+                      </span>
+                    )}
                   </div>
-                  {(job.chats || job.chat_flags) && (
-                    <button
-                      onClick={() => onOpenChat(job.id)}
-                      className="text-[10px] flex items-center gap-1 text-purple-600 bg-purple-50 px-2 py-1 rounded-lg hover:bg-purple-100 transition-colors"
-                    >
-                      <MessageSquare size={12} /> ประวัติแชท
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))
+                )}
+              </button>
+            );
+          })
         )}
       </div>
+
+      {selectedJob && (
+        <HistoryJobSheet
+          job={selectedJob}
+          onClose={() => setSelectedJobId(null)}
+          onOpenChat={(jobId) => { setSelectedJobId(null); onOpenChat(jobId); }}
+        />
+      )}
     </div>
   );
 };
