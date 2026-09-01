@@ -12,14 +12,6 @@ name: CI
 # รันบน pull_request เพราะ GitHub checkout **ผลลัพธ์หลัง merge** ไม่ใช่ปลาย
 # branch ตัวเลขจากที่นี่จึงเป็นของต้นไม้ที่จะมีอยู่จริงหลัง merge เสมอ ซึ่งเป็น
 # สิ่งที่การรันในเครื่องบนฐานเก่าสัญญาไม่ได้
-#
-# ทำไมไม่มีขั้น lint: `npm run lint` ของ repo นี้ **รันไม่ได้ตั้งแต่ต้น** —
-# `eslint.config.js` import `@eslint/js`, `globals`, `eslint-plugin-react-hooks`,
-# `eslint-plugin-react-refresh`, `typescript-eslint` และตัว `eslint` เอง แต่
-# ไม่มีตัวไหนอยู่ใน devDependencies เลย (`npx eslint .` ตอบ ERR_MODULE_NOT_FOUND)
-# ใส่เข้ามาเป็นขั้น advisory ก็ได้แค่บรรทัด error ทุกครั้งซึ่งสอนให้คนเลิกอ่าน
-# ผลของ workflow ทั้งอัน การรื้อ toolchain กลับมาเป็นงานแยก (ต้องเลือกเวอร์ชัน
-# แล้วไล่เก็บ error ที่ค้างอยู่) ไม่ใช่ของที่ควรแอบมาอยู่ใน PR ที่เพิ่มด่าน
 
 on:
   push:
@@ -40,6 +32,28 @@ jobs:
           node-version: 20
           cache: 'npm'
       - run: npm ci
+
+      # ADVISORY ไม่ใช่ด่าน — และนี่คือการตัดสินใจ ไม่ใช่ความหละหลวม
+      #
+      # ตอนต่อ toolchain กลับมา (`npm run lint` เคยรันไม่ได้เลยเพราะ eslint กับ
+      # อีก 5 แพ็กเกจไม่อยู่ใน devDependencies) รอบแรกรายงาน **250 ปัญหา
+      # (244 error)** ซึ่ง **221 ตัวเป็น `@typescript-eslint/no-explicit-any`**
+      # กระจายทั่วแอปและมีมาก่อนทั้งหมด ไม่มีตัวไหนมาจากการแก้ที่กำลังทดสอบ
+      #
+      # ตั้งเป็นด่านตอนนี้ = แดงทุก PR ตั้งแต่วันแรก ซึ่งแย่กว่าไม่มีด่าน เพราะ
+      # ด่านที่แดงตลอดสอนให้ทุกคน merge ผ่านสีแดง แล้ววันที่ type หรือเทสพังจริง
+      # จะไม่มีใครมอง (เหตุผลและตัวเลขชุดเดียวกับที่ bkk-system บันทึกไว้ตอน
+      # เจอ 1,109 ปัญหา — `eslint.config.js` ของสอง repo เหมือนกันเป๊ะ)
+      #
+      # ยังรันเพราะผลของมันมีค่าให้อ่าน และตัวเลขคือสิ่งที่ควรไล่ให้ลดลง
+      # **เปลี่ยนเป็นด่านเมื่อถึงศูนย์ ไม่ใช่ก่อนหน้านั้น**
+      #
+      # ในนั้นมี 21 ตัวที่ไม่ใช่เรื่องสไตล์และควรดูแยกต่างหาก:
+      # react-hooks/set-state-in-effect (8) · exhaustive-deps (8) · purity (3) ·
+      # preserve-manual-memoization (1) · immutability (1)
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: npm run lint
 
       # `tsc -b` ไม่ใช่ `tsc --noEmit` — เป็นคำสั่งเดียวกับที่ `npm run build`
       # ใช้. --noEmit อ่าน tsconfig ตัว root ซึ่ง **ไม่ครอบ** `vite.config.ts`
