@@ -4,7 +4,11 @@
 // เริ่มรับงานกี่โมง ใช้เวลาเดินทาง/ระยะทางเท่าไหร่ และลูกค้ารีวิวว่ายังไง
 // ทุกตัวเลขมาจากข้อมูลที่อยู่บน job แล้ว (checkpoints / rider_fee_meta) —
 // ไม่มีการเขียนอะไร และ query เพิ่มมีแค่ reviews/{review_id} ใบเดียว
-import { Bike, CheckCircle2, Clock, MessageSquare, Navigation, Star, X } from 'lucide-react';
+import { useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { AlertTriangle, Bike, CheckCircle2, Clock, MapPinOff, MessageSquare, Navigation, Star, X } from 'lucide-react';
+import { functions } from '../../api/firebase';
+import { toast } from '../common/Toast';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
   buildJobTimeline,
@@ -44,6 +48,37 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
   const travelMs = travelToCustomerMs(job);
   const totalMs = totalJobMs(job);
   const { review } = useJobReview(job);
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeBusy, setDisputeBusy] = useState(false);
+
+  // แย้งหมุดลูกค้า — เปิดให้กดเฉพาะตอนจุดเช็คอิน 'ถึงลูกค้า' อยู่นอกโซนที่
+  // ระบบตั้งไว้ (is_within_zone === false) เพราะนั่นคือเคสเดียวที่ระยะทางซึ่ง
+  // ใช้คิดค่าวิ่งอาจไม่ใช่ที่ที่ไปจริง. server ตรวจซ้ำทุกเงื่อนไขอีกรอบ
+  const arrived = job?.checkpoints?.rider_arrived;
+  const dispute = job?.pin_dispute;
+  const canDispute =
+    !dispute &&
+    arrived?.is_within_zone === false &&
+    typeof arrived?.lat === 'number' &&
+    typeof arrived?.lng === 'number';
+
+  const submitDispute = async () => {
+    setDisputeBusy(true);
+    try {
+      await httpsCallable(functions, 'riderDisputePickupPin')({
+        jobId: job.id,
+        reason: disputeReason.trim() || undefined,
+      });
+      toast.success('ส่งคำแย้งให้แอดมินแล้ว');
+      setDisputeOpen(false);
+      setDisputeReason('');
+    } catch (e: any) {
+      toast.error(e?.message || 'ส่งคำแย้งไม่สำเร็จ');
+    } finally {
+      setDisputeBusy(false);
+    }
+  };
 
   const canonical = normalizeStatus(job.status, job.receive_method);
   const isCancelled = canonical === JOB_STATUS.CANCELLED;
@@ -57,7 +92,16 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
     if (entry.stage === 'rider_arrived') {
       const parts: string[] = [];
       if (entry.sincePrevMs !== null) parts.push(`เดินทาง ${formatDurationTh(entry.sincePrevMs)}`);
-      if (entry.distanceM !== null) parts.push(`ห่างหมุดลูกค้า ${Math.round(entry.distanceM)} ม.`);
+      // นอกโซน = เล่าเป็น "หมุดกับจุดเช็คอินไม่ตรงกัน" ไม่ใช่ "ไรเดอร์ห่างเป้า"
+      // เพราะสาเหตุที่พบจริงคือลูกค้าปักหมุดผิด และถ้อยคำที่อ่านเหมือนตำหนิ
+      // จะทำให้คนที่ถูกหมุดผิดเล่นงานรู้สึกว่าระบบกำลังจับผิดเขา
+      if (entry.distanceM !== null) {
+        const outOfZone = arrived?.is_within_zone === false;
+        const label = entry.distanceM >= 1000
+          ? `${(entry.distanceM / 1000).toFixed(1)} กม.`
+          : `${Math.round(entry.distanceM)} ม.`;
+        parts.push(outOfZone ? `หมุดลูกค้าห่างจากจุดเช็คอิน ${label}` : `ห่างหมุดลูกค้า ${label}`);
+      }
       if (parts.length) lines.push(parts.join(' · '));
       if (job.cust_address) lines.push(String(job.cust_address));
     } else if (entry.stage === 'customer_left' && entry.sincePrevMs !== null) {
@@ -187,6 +231,85 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
             <div className="border border-dashed border-gray-200 rounded-2xl px-4 py-3 text-[11px] text-gray-400 text-center">
               งานนี้ยังไม่ได้กำหนดค่ารอบ — ติดต่อแอดมิน
             </div>
+          )
+        )}
+
+        {/* แย้งหมุดลูกค้า — ค่าวิ่งคิดจากเส้นทาง "หมุด → สาขา" ถ้าหมุดผิด
+            ระยะทางที่คิดเงินก็เป็นของที่ที่ไม่มีใครไป คนที่รู้คือไรเดอร์ */}
+        {dispute ? (
+          <div className={`rounded-2xl px-4 py-3 border ${
+            dispute.status === 'approved' ? 'bg-emerald-50 border-emerald-100'
+              : dispute.status === 'rejected' ? 'bg-gray-50 border-gray-200'
+              : 'bg-amber-50 border-amber-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <MapPinOff size={16} className={
+                dispute.status === 'approved' ? 'text-emerald-600'
+                  : dispute.status === 'rejected' ? 'text-gray-400' : 'text-amber-700'
+              } />
+              <div className="text-[13px] font-bold text-gray-800">
+                {dispute.status === 'approved' ? 'แอดมินอนุมัติการแย้งหมุด'
+                  : dispute.status === 'rejected' ? 'แอดมินไม่อนุมัติการแย้งหมุด'
+                  : 'ยื่นแย้งหมุดแล้ว รอแอดมินตรวจ'}
+              </div>
+            </div>
+            {dispute.status === 'approved' && (
+              <div className="text-[11px] text-emerald-700 mt-1 leading-relaxed">
+                คิดค่าวิ่งใหม่จากจุดที่เช็คอิน: {formatCurrency(dispute.fee_before)} → {formatCurrency(dispute.fee_after)}
+                {typeof dispute.delta === 'number' && dispute.delta !== 0 &&
+                  ` (${dispute.delta > 0 ? '+' : ''}${formatCurrency(dispute.delta)})`}
+                {dispute.delta_tx_id && ' · ลงส่วนต่างในกระเป๋าแล้ว'}
+              </div>
+            )}
+            {dispute.admin_note && (
+              <div className="text-[11px] text-gray-500 mt-1 leading-relaxed">หมายเหตุจากแอดมิน: {dispute.admin_note}</div>
+            )}
+          </div>
+        ) : canDispute && (
+          disputeOpen ? (
+            <div className="rounded-2xl px-4 py-3 border border-amber-200 bg-amber-50 flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-amber-700 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-amber-900 leading-relaxed">
+                  ระบบจะส่งพิกัดจุดที่คุณเช็คอิน "ถึงลูกค้า" ให้แอดมินตรวจ ถ้าอนุมัติจะคิดค่าวิ่งใหม่จากจุดนั้น
+                </div>
+              </div>
+              <textarea
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="จุดรับจริงอยู่ที่ไหน (ไม่บังคับ)"
+                className="w-full text-xs rounded-xl border border-amber-200 px-3 py-2 bg-white focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={submitDispute}
+                  disabled={disputeBusy}
+                  className="flex-1 bg-amber-600 text-white text-xs font-bold rounded-xl py-2.5 disabled:opacity-50"
+                >
+                  {disputeBusy ? 'กำลังส่ง...' : 'ส่งคำแย้งให้แอดมิน'}
+                </button>
+                <button
+                  onClick={() => setDisputeOpen(false)}
+                  disabled={disputeBusy}
+                  className="px-4 bg-white text-gray-500 border border-gray-200 text-xs font-bold rounded-xl py-2.5"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setDisputeOpen(true)}
+              className="rounded-2xl px-4 py-3 border border-dashed border-amber-300 bg-amber-50/50 flex items-center gap-2.5 text-left active:scale-[0.98] transition-transform"
+            >
+              <MapPinOff size={16} className="text-amber-600 shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-amber-900">หมุดลูกค้าไม่ตรงกับจุดรับจริง?</div>
+                <div className="text-[10px] text-amber-700 mt-0.5">แย้งเพื่อขอให้คิดค่าวิ่งใหม่จากจุดที่คุณเช็คอิน</div>
+              </div>
+            </button>
           )
         )}
 
