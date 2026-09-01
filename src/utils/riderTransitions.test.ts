@@ -33,6 +33,32 @@ describe('RIDER_EVENT', () => {
   });
 });
 
+describe('การ์ด Revised Offer', () => {
+  const enginePath = resolve(__dirname, '../../../bkk-system/functions/status-engine.js');
+
+  it.skipIf(!existsSync(enginePath))('ขายอมรับพาไป Payout Processing ไม่ใช่ Price Accepted', () => {
+    // เจ้าของงานเคาะให้คงพฤติกรรมวันนี้ (1 ก.ย. 2569) — ปลายทางนี้เป็นการ
+    // ตัดสินใจเชิงธุรกิจ ไม่ใช่รายละเอียดการ implement ถ้าวันหนึ่งมีคนย้าย
+    // event ไปชี้ Price Accepted "ให้เหมือนทางเว็บ" เงินจะค้างอีกหนึ่งขั้น
+    // โดยไม่มีใครเห็น เทสนี้อ่านตาราง engine จริงเพื่อกันเรื่องนั้น
+    const engine = readFileSync(enginePath, 'utf8');
+    const rule = engine.slice(engine.indexOf('  revised_offer_accepted: {'));
+    const to = rule.slice(0, rule.indexOf('},')).match(/to:\s*S\.([A-Z_]+)/)?.[1];
+    expect(to).toBe('PAYOUT_PROCESSING');
+  });
+
+  it('ขายกเลิกใช้ event กลาง ไม่ใช่ event เฉพาะของการ์ด', () => {
+    // engine บังคับ cancel taxonomy ผ่าน `requires` ของ event นี้ — การ์ดนี้
+    // ส่ง cancel_category/cancelled_by/cancelled_at ครบอยู่แล้ว
+    expect(RIDER_EVENT.CANCELLED).toBe('cancelled');
+  });
+
+  it('ทั้งสองปุ่มไม่มีจุดเช็คอิน — ไรเดอร์ไม่ได้เคลื่อนที่ไปไหน', () => {
+    expect(EVENT_CHECKPOINT_STAGE[RIDER_EVENT.REVISED_OFFER_ACCEPTED]).toBeUndefined();
+    expect(EVENT_CHECKPOINT_STAGE[RIDER_EVENT.CANCELLED]).toBeUndefined();
+  });
+});
+
 describe('EVENT_CHECKPOINT_STAGE', () => {
   it('ทุก stage ที่ map ไว้เป็น stage ที่มีจริง', () => {
     for (const stage of Object.values(EVENT_CHECKPOINT_STAGE)) {
