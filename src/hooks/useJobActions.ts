@@ -10,7 +10,7 @@ import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
-import { getCheckpointForStatus, getCheckpointForStage, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
+import { getCheckpointForStage, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
 import { capturePosition } from '../utils/geolocation';
 import { distanceMeters, GPS_STATUS_LABEL_TH } from '../utils/checkpointPayload';
 import type { CheckpointTarget } from '../utils/checkpointPayload';
@@ -54,7 +54,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
    */
   const recordStatusCheckpoint = async (
     jobId: string,
-    where: { status?: string; stage?: CheckpointStage },
+    where: { stage?: CheckpointStage },
     job: any,
     prefetched?: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean },
   ) => {
@@ -91,7 +91,6 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       const result = await recordCheckpoint({
         jobId,
         riderId: riderInfo.id,
-        status: where.status,
         stage: where.stage,
         gps,
         gpsStatus,
@@ -155,89 +154,6 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       sendAdminNotification('กำลังกลับสาขา', `${riderInfo.name} กำลังนำเครื่อง #${shortJobId} กลับมาส่ง`);
     } else if (nextStatus === JOB_STATUS.PENDING_QC) {
       sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
-    }
-  };
-
-  const updateStatus = async (
-    jobId: string, nextStatus: string, logMsg: string, extraData = {},
-    jobLists: { activeList: any[]; incomingList: any[] }
-  ) => {
-    const job = jobLists.activeList.find(j => j.id === jobId) || jobLists.incomingList.find(j => j.id === jobId);
-
-    // จุดที่ต้องเทียบพิกัด (ถึงลูกค้า / ออกจากลูกค้า / ส่งมอบสาขา): อ่านตำแหน่ง
-    // **ก่อน** เขียนสถานะ แล้วถ้าอยู่นอกโซนให้ถามยืนยันก่อน
-    //
-    // ทำไมต้องถาม: พิกัดที่บันทึกคือที่ที่ "กดปุ่ม" ไม่ใช่ที่ที่ "เกิดเหตุการณ์"
-    // และมันถูกใช้เป็นหลักฐานคิดค่าวิ่งใหม่ได้ (ท่อแย้งหมุด) — เคส 31 ส.ค. 2569
-    // ไรเดอร์กดสามสถานะรวดเดียวตอนขี่กลับ พิกัดกลางทางเลยถูกใช้แทนจุดรับจริง
-    // แล้วค่ารอบถูกปรับผิดไป 104 บาท ทั้งที่หมุดลูกค้าถูกต้อง
-    //
-    // ขอพิกัดไม่ได้ = ไม่ถาม เดินหน้าตามปกติ (แถวยังถูกเขียนพร้อม gps_status
-    // ตามกฎ "พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก")
-    let prefetched: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean } | undefined;
-    const cpConfig = getCheckpointForStatus(nextStatus);
-    if (cpConfig && cpConfig.verify.target !== 'none') {
-      const { gps, status: gpsStatus } = await capturePosition();
-      let target: CheckpointTarget | null = null;
-      try {
-        target = await resolveCheckpointTarget(
-          cpConfig.verify, gps, job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
-        );
-      } catch (e) {
-        console.error('Failed to resolve checkpoint target:', e);
-      }
-      let selfConfirmed = false;
-      if (gps && target) {
-        const away = distanceMeters(gps.lat, gps.lng, target.lat, target.lng);
-        if (away > cpConfig.verify.thresholdM) {
-          const shown = away >= 1000 ? `${(away / 1000).toFixed(1)} กม.` : `${away} ม.`;
-          const ok = window.confirm(
-            `ตอนนี้คุณอยู่ห่างจาก${target.label} ${shown}\n\n` +
-            `ยืนยันว่า "${STAGE_LABEL_TH[cpConfig.stage]}" แล้วจริงไหม?\n\n` +
-            'OK = ใช่ ถึงแล้ว (บันทึกพร้อมหมายเหตุว่าคุณยืนยันเอง)\n' +
-            'Cancel = ยังไม่ถึง กดพลาด (ไม่บันทึกอะไรเลย)'
-          );
-          if (!ok) {
-            toast.info('ยกเลิกแล้ว — ยังไม่เปลี่ยนสถานะ กดใหม่อีกครั้งเมื่อถึงจุดหมาย');
-            return;
-          }
-          selfConfirmed = true;
-        }
-      }
-      prefetched = { gps, gpsStatus, target, selfConfirmed };
-    }
-
-    const updatedLogs = [
-      { action: nextStatus, by: `Rider: ${riderInfo.name}`, timestamp: Date.now(), details: logMsg },
-      ...(job?.qc_logs || [])
-    ];
-
-    try {
-      await update(ref(db, `jobs/${jobId}`), {
-        status: nextStatus, updated_at: Date.now(), qc_logs: updatedLogs, ...extraData
-      });
-
-      // Push พิกัดไรเดอร์ไปที่ riders/{id} ทุกครั้งที่เปลี่ยนสถานะ
-      // - แอดมินจะเห็นพิกัดตลอดตั้งแต่รับงานจนจบงาน
-      // - ลูกค้าจะเห็นเฉพาะตอน Heading to Customer (ควบคุมฝั่ง frontend)
-      // นอกจากนั้นยังบันทึก check-in snapshot ลง jobs/{id}/checkpoints/{stage}
-      // สำหรับ analytics + dispute audit (recordCheckpoint จะ no-op ถ้า
-      // status นี้ไม่ใช่จุดที่ต้อง check-in)
-      //
-      // สำคัญ: การเขียน checkpoint อยู่ **นอก** เงื่อนไข "ได้พิกัด" โดยตั้งใจ
-      // เดิมมันอยู่ข้างใน success callback ของ getCurrentPosition — ปฏิเสธสิทธิ์
-      // ตำแหน่ง, GPS หาสัญญาณไม่เจอ, หรือผู้ใช้ปล่อย prompt ค้าง = ไม่มีแถว
-      // checkpoint เลยทั้งที่ status เปลี่ยนสำเร็จ ทำให้ไทม์ไลน์งานขาดเป็นช่วงๆ
-      // โดยไม่มี error ให้ใครเห็น พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก
-      void recordStatusCheckpoint(jobId, { status: nextStatus }, job, prefetched);
-
-      notifyStatusChange(nextStatus, jobId, job);
-    } catch (error: any) {
-      console.error('updateStatus error:', error);
-      const msg = error?.code === 'PERMISSION_DENIED'
-        ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
-        : `เกิดข้อผิดพลาดในการอัปเดตข้อมูล: ${error?.message || error}`;
-      toast.error(msg);
     }
   };
 
@@ -490,28 +406,29 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     job: any,
     jobLists: { activeList: any[]; incomingList: any[] }
   ) => {
+    // เช็คสถานะฝั่ง client ไว้เพื่อไม่ให้ยิงไปโดนปฏิเสธในเคสที่รู้อยู่แล้ว —
+    // แต่ตัวที่ตัดสินจริงคือ engine (from: [QC Review] + blockedWhenPaid) ซึ่ง
+    // เห็นสถานะสด ไม่ใช่สำเนาที่หน้าจอถืออยู่
     if (!job || job.status !== 'QC Review') {
       toast.error('ไม่สามารถย้อนกลับได้ แอดมินเริ่มดำเนินการกับงานนี้แล้ว');
       return;
     }
-    try {
-      const currentDevices = Array.isArray(job.devices) ? job.devices : [];
-      const revertedDevices = currentDevices.map((d: any) => {
-        const { photos, deductions, inspection_status, ...rest } = d;
-        return rest;
-      });
 
-      await updateStatus(
-        job.id,
-        'Being Inspected',
-        'ไรเดอร์ย้อนกลับเพื่อแก้ไขผลตรวจสภาพ',
-        { devices: revertedDevices, inspected_at: null },
-        jobLists
-      );
-      toast.success('ย้อนกลับเรียบร้อย กรุณาตรวจสภาพและส่งใหม่อีกครั้ง');
-    } catch (e: any) {
-      toast.error('เกิดข้อผิดพลาด: ' + (e?.message || e));
-    }
+    const currentDevices = Array.isArray(job.devices) ? job.devices : [];
+    const revertedDevices = currentDevices.map((d: any) => {
+      const { photos, deductions, inspection_status, ...rest } = d;
+      return rest;
+    });
+
+    const ok = await runTransition(
+      job.id,
+      RIDER_EVENT.INSPECTION_REVERTED,
+      'ไรเดอร์ย้อนกลับเพื่อแก้ไขผลตรวจสภาพ',
+      { devices: revertedDevices, inspected_at: null },
+      jobLists
+    );
+    if (!ok) return;
+    toast.success('ย้อนกลับเรียบร้อย กรุณาตรวจสภาพและส่งใหม่อีกครั้ง');
   };
 
   const handleCompleteJob = async (job: any, jobLists: { activeList: any[]; incomingList: any[] }) => {
@@ -680,7 +597,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   };
 
   return {
-    updateStatus, runTransition, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
+    runTransition, acceptIncomingJob, handleRejectOrCancelJob, handleCompleteJob,
     handleRevertInspection, submitKYC,
     handleOpenNavigation, handleCallCustomer, handleRequestWithdraw,
     reportDiscrepancy

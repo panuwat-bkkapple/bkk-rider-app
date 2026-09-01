@@ -11,6 +11,7 @@ import { sumAppliedAdjustments, sumAppliedCoupons } from '../utils/adjustments';
 // Hooks
 import { useRiderData } from '../hooks/useRiderData';
 import { useJobActions } from '../hooks/useJobActions';
+import { RIDER_EVENT } from '../utils/riderTransitions';
 import type { RiderEvent } from '../utils/riderTransitions';
 
 // Components
@@ -240,8 +241,19 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
       if (v.verification_warranty_photo) jobUpdates.verification_warranty_photo = v.verification_warranty_photo;
     }
 
-    await actions.updateStatus(job.id, 'QC Review', `ไรเดอร์ส่งผลตรวจสภาพ ${updatedDevices.length} เครื่อง`,
-      jobUpdates, { activeList: jobData.activeList, incomingList: jobData.incomingList });
+    // ราคาที่เพิ่งคำนวณไปกับ patch จึงถูกเขียนใน transaction เดียวกับสถานะ
+    // เดิมเป็น update() ก้อนเดียวซึ่งก็ atomic เหมือนกัน แต่ไม่มี status_version
+    // และไม่มีใครกันไม่ให้มันทับสถานะที่แอดมินเพิ่งเลื่อนไป
+    const ok = await actions.runTransition(
+      job.id,
+      RIDER_EVENT.INSPECTION_SUBMITTED,
+      `ไรเดอร์ส่งผลตรวจสภาพ ${updatedDevices.length} เครื่อง`,
+      jobUpdates,
+      { activeList: jobData.activeList, incomingList: jobData.incomingList }
+    );
+    // ปฏิเสธ = ปิดฟอร์มไม่ได้ ไรเดอร์ต้องยังเห็นข้อมูลที่กรอกไว้เพื่อลองใหม่
+    // (รูปที่อัปโหลดไปแล้วไม่หาย แต่ผลตรวจที่กรอกจะหายถ้าปิดฟอร์มทิ้ง)
+    if (!ok) return;
 
     setInspectingJob(null);
   };

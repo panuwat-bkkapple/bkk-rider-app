@@ -21,6 +21,12 @@ export const RIDER_EVENT = {
   DEPARTED: 'rider_departed',
   ARRIVED: 'rider_arrived',
   INSPECTION_STARTED: 'inspection_started',
+  // ส่งผลตรวจ — ราคาที่คิดใหม่ (final_price / net_payout / devices) ไปกับ patch
+  // จึงถูกเขียนใน transaction เดียวกับสถานะ ไม่ใช่ write แยกที่อาจสำเร็จครึ่งเดียว
+  INSPECTION_SUBMITTED: 'inspection_submitted',
+  // ย้อนกลับไปแก้ผลตรวจ — engine กัน blockedWhenPaid ไว้ ปุ่มนี้จึงเปิดงานที่
+  // จ่ายเงินไปแล้วไม่ได้ ซึ่งเดิมไม่มีอะไรกันเลยนอกจากปุ่มไม่ render
+  INSPECTION_REVERTED: 'inspection_reverted',
   RETURN_STARTED: 'rider_return_started',
   RETURN_ARRIVED: 'rider_return_arrived',
   // ลูกค้าตัดสินใจกับข้อเสนอที่ปรับใหม่ "ต่อหน้าไรเดอร์" — ไรเดอร์เป็นคนกดแทน

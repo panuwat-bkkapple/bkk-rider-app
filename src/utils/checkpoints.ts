@@ -20,7 +20,6 @@
 
 import { ref, update, get } from 'firebase/database';
 import { db } from '../api/firebase';
-import { JOB_STATUS } from '../types/job-statuses';
 import type { CheckpointStage } from './jobTimeline';
 import type { GpsFix, GpsStatus } from './geolocation';
 import { buildCheckpointRow, distanceMeters } from './checkpointPayload';
@@ -52,25 +51,15 @@ const STAGE_VERIFY: Record<CheckpointStage, VerifyConfig> = {
   branch_handover: { target: 'branch',   thresholdM: 300 },
 };
 
-const STATUS_TO_STAGE: Record<string, CheckpointStage> = {
-  // Pickup flow
-  [JOB_STATUS.RIDER_ACCEPTED]:  'rider_accepted',
-  'Accepted':                   'rider_accepted', // legacy
-  [JOB_STATUS.RIDER_EN_ROUTE]:  'rider_en_route',
-  'Heading to Customer':        'rider_en_route', // legacy
-  [JOB_STATUS.RIDER_ARRIVED]:   'rider_arrived',
-  'Arrived':                    'rider_arrived',  // legacy
-  [JOB_STATUS.RIDER_RETURNING]: 'customer_left',
-  'In-Transit':                 'customer_left',  // legacy
-  [JOB_STATUS.PENDING_QC]:      'branch_handover',
-};
-
-export function getCheckpointForStatus(status: string): { stage: CheckpointStage; verify: VerifyConfig } | null {
-  const stage = STATUS_TO_STAGE[status];
-  return stage ? { stage, verify: STAGE_VERIFY[stage] } : null;
-}
-
-/** เกณฑ์ของ stage ที่รู้ชื่ออยู่แล้ว — ใช้โดยเส้นทาง event (ดู riderTransitions.ts) */
+/**
+ * เกณฑ์ของ stage — ผู้เรียกรู้ stage จาก **event** ที่ตัวเองยิง (ดู
+ * EVENT_CHECKPOINT_STAGE ใน riderTransitions.ts)
+ *
+ * เดิมมีอีกทางคือค้นจาก "ชื่อสถานะปลายทาง" พร้อมตารางที่ต้องลิสต์ทั้ง canonical
+ * และ legacy spelling ทุกตัว — ทางนั้นตายไปพร้อมกับ updateStatus เพราะไม่มี
+ * ไคลเอนต์ตัวไหนรู้จักสถานะปลายทางล่วงหน้าอีกแล้ว ลบทิ้งแทนที่จะเก็บไว้ให้
+ * คนอ่านรอบหน้าเข้าใจผิดว่ายังมีสองทาง
+ */
 export function getCheckpointForStage(stage: CheckpointStage): { stage: CheckpointStage; verify: VerifyConfig } {
   return { stage, verify: STAGE_VERIFY[stage] };
 }
@@ -118,9 +107,7 @@ export interface CheckpointResult {
 interface RecordArgs {
   jobId: string;
   riderId: string;
-  /** เส้นทางเดิม: หา stage จากชื่อสถานะปลายทาง (ส่ง stage มาแทนได้) */
-  status?: string;
-  /** เส้นทาง event: ผู้เรียกรู้ stage อยู่แล้ว ไม่ต้องเดาจากสถานะ */
+  /** จุดเช็คอินของ event ที่เพิ่งยิงไป — ไม่มี = ไม่ต้องบันทึกอะไร */
   stage?: CheckpointStage;
   /** null = ขอพิกัดไม่ได้ — แถวยังต้องถูกเขียน (ดูหัวไฟล์) */
   gps: GpsFix | null;
@@ -161,12 +148,8 @@ export async function resolveCheckpointTarget(
 }
 
 export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResult | null> {
-  const config = args.stage
-    ? getCheckpointForStage(args.stage)
-    : args.status
-      ? getCheckpointForStatus(args.status)
-      : null;
-  if (!config) return null;
+  if (!args.stage) return null;
+  const config = getCheckpointForStage(args.stage);
 
   const { stage, verify } = config;
   const now = Date.now();
