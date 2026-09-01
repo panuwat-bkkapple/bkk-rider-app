@@ -11,11 +11,19 @@
 // expected zone we still record the checkpoint and let admin review
 // later. The toast in useJobActions tells the rider what happened so
 // they can sort it with the customer if it was an honest mistake.
+//
+// พิกัดเป็น "ของเสริม" ไม่ใช่เงื่อนไข: แถว checkpoint ต้องถูกเขียนทุกครั้งที่
+// status เปลี่ยนไปยังจุดเช็คอิน แม้ขอพิกัดไม่ได้ — เดิม recordCheckpoint ถูก
+// เรียกอยู่ "ข้างใน" success callback ของ getCurrentPosition ปฏิเสธสิทธิ์หรือ
+// GPS ไม่ตอบ = ไม่มีแถวเลย ทั้งที่ status เปลี่ยนสำเร็จไปแล้ว ไทม์ไลน์จึงขาด
+// เป็นช่วงๆ โดยไม่มี error ให้ใครเห็น
 
 import { ref, update, get } from 'firebase/database';
 import { db } from '../api/firebase';
 import { JOB_STATUS } from '../types/job-statuses';
 import type { CheckpointStage } from './jobTimeline';
+import type { GpsFix, GpsStatus } from './geolocation';
+import { buildCheckpointRow, distanceMeters } from './checkpointPayload';
 
 // ชนิด stage + ป้ายไทยย้ายไปอยู่ jobTimeline.ts (pure, เทสได้) —
 // re-export ไว้ที่นี่ให้ผู้ใช้เดิมไม่ต้องแก้ import
@@ -49,17 +57,9 @@ export function getCheckpointForStatus(status: string): { stage: CheckpointStage
   return STATUS_TO_STAGE[status] ?? null;
 }
 
-// Haversine — accurate enough at neighbourhood scale, no external dep.
-export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
+// Haversine ย้ายไปอยู่ checkpointPayload.ts (pure, เทสได้) — re-export ไว้ให้
+// ผู้ใช้เดิมไม่ต้องแก้ import
+export { distanceMeters } from './checkpointPayload';
 
 interface BranchRecord {
   id: string;
@@ -94,13 +94,17 @@ export interface CheckpointResult {
   distanceM: number | null;
   thresholdM: number;
   targetLabel: string | null;
+  gpsStatus: GpsStatus;
 }
 
 interface RecordArgs {
   jobId: string;
   riderId: string;
   status: string;
-  gps: { lat: number; lng: number; accuracy?: number };
+  /** null = ขอพิกัดไม่ได้ — แถวยังต้องถูกเขียน (ดูหัวไฟล์) */
+  gps: GpsFix | null;
+  /** เหตุผลเมื่อ gps เป็น null ('ok' เมื่อมีพิกัด) */
+  gpsStatus: GpsStatus;
   job: { cust_lat?: number; cust_lng?: number } | null;
 }
 
@@ -114,29 +118,24 @@ export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResu
   let target: { lat: number; lng: number; label: string } | null = null;
   if (verify.target === 'customer' && args.job?.cust_lat != null && args.job?.cust_lng != null) {
     target = { lat: args.job.cust_lat, lng: args.job.cust_lng, label: 'พิกัดลูกค้า' };
-  } else if (verify.target === 'branch') {
+  } else if (verify.target === 'branch' && args.gps) {
+    // หาสาขาที่ใกล้ "ตำแหน่งของเรา" ที่สุด — ไม่มีพิกัดของเราก็หาไม่ได้
+    // และห้ามหยิบสาขาแรกมาใส่แทน (จะทำให้ระยะห่างเป็น 0 และ is_within_zone
+    // เป็น true ทุกครั้งที่ GPS ล้ม = ด่านตรวจกลายเป็นตรายาง)
     const branch = await findNearestBranch(args.gps.lat, args.gps.lng);
     if (branch) target = { lat: branch.lat, lng: branch.lng, label: branch.name || 'สาขา' };
   }
 
-  const distanceM = target ? distanceMeters(args.gps.lat, args.gps.lng, target.lat, target.lng) : null;
-  const withinZone = distanceM == null ? null : distanceM <= verify.thresholdM;
-
-  const payload: Record<string, unknown> = {
+  const { row, distanceM, withinZone } = buildCheckpointRow({
+    riderId: args.riderId,
     at: now,
-    rider_id: args.riderId,
-    lat: args.gps.lat,
-    lng: args.gps.lng,
-  };
-  if (typeof args.gps.accuracy === 'number') payload.accuracy = args.gps.accuracy;
-  if (target) payload.target = target;
-  if (distanceM != null) {
-    payload.distance_m = distanceM;
-    payload.is_within_zone = withinZone;
-    payload.zone_m = verify.thresholdM;
-  }
+    gps: args.gps,
+    gpsStatus: args.gpsStatus,
+    target,
+    thresholdM: verify.thresholdM,
+  });
 
-  await update(ref(db, `jobs/${args.jobId}/checkpoints/${stage}`), payload);
+  await update(ref(db, `jobs/${args.jobId}/checkpoints/${stage}`), row);
 
   return {
     stage,
@@ -144,6 +143,7 @@ export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResu
     distanceM,
     thresholdM: verify.thresholdM,
     targetLabel: target?.label ?? null,
+    gpsStatus: args.gpsStatus,
   };
 }
 

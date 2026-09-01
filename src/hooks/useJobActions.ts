@@ -11,6 +11,8 @@ import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 import { recordCheckpoint, STAGE_LABEL_TH } from '../utils/checkpoints';
+import { capturePosition } from '../utils/geolocation';
+import { GPS_STATUS_LABEL_TH } from '../utils/checkpointPayload';
 import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
@@ -25,6 +27,61 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       });
     } catch (error) {
       console.error('Error sending customer notification:', error);
+    }
+  };
+
+  /**
+   * บันทึกตำแหน่ง + checkpoint ของการเปลี่ยนสถานะหนึ่งครั้ง
+   *
+   * เดินหน้าเสมอ ไม่ว่าจะขอพิกัดได้หรือไม่ — `capturePosition` resolve เสมอ
+   * (ไม่ reject ไม่ค้าง) และ `recordCheckpoint` เขียนแถวพร้อม `gps_status`
+   * บอกเหตุผลเมื่อไม่มีพิกัด
+   */
+  const recordStatusCheckpoint = async (jobId: string, nextStatus: string, job: any) => {
+    const { gps, status: gpsStatus } = await capturePosition();
+
+    // riders/{id} อัปเดตเฉพาะตอนมีพิกัดจริง — ห้ามเขียนทับตำแหน่งล่าสุดที่ใช้ได้
+    // ด้วยค่าว่างหรือ 0,0 เพราะแอดมินกับหน้าจ่ายงานอ่านค่านี้เป็นตำแหน่งปัจจุบัน
+    if (gps) {
+      try {
+        await update(ref(db, `riders/${riderInfo.id}`), {
+          lat: gps.lat,
+          lng: gps.lng,
+          last_updated: Date.now(),
+        });
+      } catch (e) {
+        console.error('Failed to update rider location:', e);
+      }
+    } else {
+      console.warn(`Geolocation unavailable on status change (${gpsStatus})`);
+    }
+
+    try {
+      const result = await recordCheckpoint({
+        jobId,
+        riderId: riderInfo.id,
+        status: nextStatus,
+        gps,
+        gpsStatus,
+        job: job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
+      });
+      if (!result) return;
+      if (result.withinZone === false && result.distanceM != null && result.targetLabel) {
+        // Non-blocking — admin sees this in the dashboard, rider gets a
+        // heads-up so they can correct course (or call the customer if
+        // the pin is wrong).
+        toast.info(
+          `เช็คอิน "${STAGE_LABEL_TH[result.stage]}" อยู่ห่างจาก${result.targetLabel} ${result.distanceM} ม. (เกิน ${result.thresholdM} ม.)`,
+        );
+      } else if (gpsStatus !== 'ok') {
+        // บอกไรเดอร์ตรงๆ ว่าเช็คอินถูกบันทึกแล้วแต่ไม่มีพิกัด — ถ้าเงียบไป เขา
+        // จะไม่มีทางรู้ว่าหลักฐานตำแหน่งของงานนี้หายไปจนกว่าจะมีข้อพิพาท
+        toast.info(
+          `บันทึกเช็คอิน "${STAGE_LABEL_TH[result.stage]}" แล้ว แต่ไม่มีพิกัด (${GPS_STATUS_LABEL_TH[gpsStatus]})`,
+        );
+      }
+    } catch (e) {
+      console.error('Failed to record checkpoint:', e);
     }
   };
 
@@ -49,41 +106,13 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // นอกจากนั้นยังบันทึก check-in snapshot ลง jobs/{id}/checkpoints/{stage}
       // สำหรับ analytics + dispute audit (recordCheckpoint จะ no-op ถ้า
       // status นี้ไม่ใช่จุดที่ต้อง check-in)
-      navigator.geolocation.getCurrentPosition(async (pos) => {
-        try {
-          await update(ref(db, `riders/${riderInfo.id}`), {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            last_updated: Date.now()
-          });
-        } catch (e) {
-          console.error('Failed to update rider location:', e);
-        }
-        try {
-          const result = await recordCheckpoint({
-            jobId,
-            riderId: riderInfo.id,
-            status: nextStatus,
-            gps: {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-            },
-            job: job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
-          });
-          if (result && result.withinZone === false && result.distanceM != null && result.targetLabel) {
-            // Non-blocking — admin sees this in the dashboard, rider gets a
-            // heads-up so they can correct course (or call the customer if
-            // the pin is wrong).
-            toast.info(
-              `เช็คอิน "${STAGE_LABEL_TH[result.stage]}" อยู่ห่างจาก${result.targetLabel} ${result.distanceM} ม. (เกิน ${result.thresholdM} ม.)`,
-            );
-          }
-        } catch (e) {
-          console.error('Failed to record checkpoint:', e);
-        }
-      }, (err) => console.error('Geolocation error on status change:', err),
-      { enableHighAccuracy: true });
+      //
+      // สำคัญ: การเขียน checkpoint อยู่ **นอก** เงื่อนไข "ได้พิกัด" โดยตั้งใจ
+      // เดิมมันอยู่ข้างใน success callback ของ getCurrentPosition — ปฏิเสธสิทธิ์
+      // ตำแหน่ง, GPS หาสัญญาณไม่เจอ, หรือผู้ใช้ปล่อย prompt ค้าง = ไม่มีแถว
+      // checkpoint เลยทั้งที่ status เปลี่ยนสำเร็จ ทำให้ไทม์ไลน์งานขาดเป็นช่วงๆ
+      // โดยไม่มี error ให้ใครเห็น พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก
+      void recordStatusCheckpoint(jobId, nextStatus, job);
 
       const shortJobId = jobId.slice(-4).toUpperCase();
 
@@ -199,21 +228,16 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // is correct. Fire-and-forget — non-fatal if it errors.
       markOfferAccepted(job.id, riderInfo.id);
 
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            await update(ref(db, `riders/${riderInfo.id}`), {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              last_updated: Date.now()
-            });
-          } catch (e) {
-            console.error('Failed to update rider location after accept:', e);
-          }
-        },
-        (err) => console.error('Geolocation error on accept:', err),
-        { enableHighAccuracy: true }
-      );
+      // การกดรับงานคือการเปลี่ยนสถานะเป็น Rider Accepted ซึ่งเป็นจุดเช็คอิน
+      // `rider_accepted` — แต่เส้นทางนี้ใช้ runTransaction ไม่ได้ผ่าน
+      // updateStatus จึง **ไม่เคยเขียน checkpoint นั้นเลย** ตั้งแต่ต้น
+      // (recordCheckpoint มี call site เดียวคือใน updateStatus)
+      //
+      // ผลที่ตามมาซึ่งมองไม่เห็นจากโค้ด: `totalJobMs()` ใน jobTimeline.ts เริ่ม
+      // นับจาก rider_accepted เสมอ เมื่อจุดนั้นไม่มีอยู่จริง มันคืน null ทุกใบ
+      // แถว "รวม X นาที" ในหน้าประวัติจึงไม่เคยขึ้นให้ใครเห็นเลย และไทม์ไลน์ใน
+      // หน้า /rider-performance ของแอดมินขาดขั้นแรกทุกงาน
+      void recordStatusCheckpoint(job.id, JOB_STATUS.RIDER_ACCEPTED, job);
 
       return { success: true };
     } catch (error: any) {
