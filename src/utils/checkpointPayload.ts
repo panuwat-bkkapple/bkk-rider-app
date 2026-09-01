@@ -26,6 +26,9 @@ export interface BuildCheckpointArgs {
   gpsStatus: GpsStatus;
   target: CheckpointTarget | null;
   thresholdM: number;
+  /** ไรเดอร์ยืนยันเองว่าถึงแล้วทั้งที่อยู่นอกโซน — ไม่ใช่ค่าที่ระบบวัดได้เอง
+   *  จึงต้องแยกให้เห็นชัดตอนแอดมินอ่านย้อนหลัง */
+  selfConfirmed?: boolean;
 }
 
 export interface CheckpointRow {
@@ -39,6 +42,7 @@ export interface CheckpointRow {
   distance_m?: number;
   is_within_zone?: boolean;
   zone_m?: number;
+  self_confirmed?: boolean;
 }
 
 /** ระยะห่างจากเป้า (เมตร) — Haversine, แม่นพอในระดับละแวกบ้าน */
@@ -85,6 +89,9 @@ export function buildCheckpointRow(args: BuildCheckpointArgs): {
     row.is_within_zone = withinZone as boolean;
     row.zone_m = args.thresholdM;
   }
+  // ติดธงเฉพาะตอนที่มันมีความหมายจริง คือ "วัดได้ว่านอกโซนแต่ไรเดอร์ยืนยัน" —
+  // ติดไว้ตอนไม่มีพิกัดหรือตอนอยู่ในโซน จะกลายเป็นธงที่ไม่ได้บอกอะไร
+  if (args.selfConfirmed && withinZone === false) row.self_confirmed = true;
   return { row, distanceM, withinZone };
 }
 

@@ -10,9 +10,11 @@ import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
-import { recordCheckpoint, STAGE_LABEL_TH } from '../utils/checkpoints';
+import { getCheckpointForStatus, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
 import { capturePosition } from '../utils/geolocation';
-import { GPS_STATUS_LABEL_TH } from '../utils/checkpointPayload';
+import { distanceMeters, GPS_STATUS_LABEL_TH } from '../utils/checkpointPayload';
+import type { CheckpointTarget } from '../utils/checkpointPayload';
+import type { GpsFix, GpsStatus } from '../utils/geolocation';
 import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
 
 export const useJobActions = (riderInfo: RiderInfo) => {
@@ -37,8 +39,24 @@ export const useJobActions = (riderInfo: RiderInfo) => {
    * (ไม่ reject ไม่ค้าง) และ `recordCheckpoint` เขียนแถวพร้อม `gps_status`
    * บอกเหตุผลเมื่อไม่มีพิกัด
    */
-  const recordStatusCheckpoint = async (jobId: string, nextStatus: string, job: any) => {
-    const { gps, status: gpsStatus } = await capturePosition();
+  const recordStatusCheckpoint = async (
+    jobId: string,
+    nextStatus: string,
+    job: any,
+    prefetched?: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean },
+  ) => {
+    // จุดที่ต้องเทียบพิกัดถูกอ่านตำแหน่งไปแล้วก่อนเปลี่ยนสถานะ (เพื่อถามยืนยัน) —
+    // ใช้ค่านั้นต่อ ไม่ยิง GPS ซ้ำและไม่หาสาขาซ้ำ
+    let gps: GpsFix | null;
+    let gpsStatus: GpsStatus;
+    if (prefetched) {
+      gps = prefetched.gps;
+      gpsStatus = prefetched.gpsStatus;
+    } else {
+      const captured = await capturePosition();
+      gps = captured.gps;
+      gpsStatus = captured.status;
+    }
 
     // riders/{id} อัปเดตเฉพาะตอนมีพิกัดจริง — ห้ามเขียนทับตำแหน่งล่าสุดที่ใช้ได้
     // ด้วยค่าว่างหรือ 0,0 เพราะแอดมินกับหน้าจ่ายงานอ่านค่านี้เป็นตำแหน่งปัจจุบัน
@@ -64,6 +82,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         gps,
         gpsStatus,
         job: job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
+        target: prefetched?.target,
+        selfConfirmed: prefetched?.selfConfirmed,
       });
       if (!result) return;
       if (result.withinZone === false && result.distanceM != null && result.targetLabel) {
@@ -71,7 +91,8 @@ export const useJobActions = (riderInfo: RiderInfo) => {
         // heads-up so they can correct course (or call the customer if
         // the pin is wrong).
         toast.info(
-          `เช็คอิน "${STAGE_LABEL_TH[result.stage]}" อยู่ห่างจาก${result.targetLabel} ${result.distanceM} ม. (เกิน ${result.thresholdM} ม.)`,
+          `บันทึกเช็คอิน "${STAGE_LABEL_TH[result.stage]}" ห่างจาก${result.targetLabel} ${result.distanceM} ม.` +
+            (prefetched?.selfConfirmed ? ' (คุณยืนยันเอง)' : ` (เกิน ${result.thresholdM} ม.)`),
         );
       } else if (gpsStatus !== 'ok') {
         // บอกไรเดอร์ตรงๆ ว่าเช็คอินถูกบันทึกแล้วแต่ไม่มีพิกัด — ถ้าเงียบไป เขา
@@ -90,6 +111,50 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     jobLists: { activeList: any[]; incomingList: any[] }
   ) => {
     const job = jobLists.activeList.find(j => j.id === jobId) || jobLists.incomingList.find(j => j.id === jobId);
+
+    // จุดที่ต้องเทียบพิกัด (ถึงลูกค้า / ออกจากลูกค้า / ส่งมอบสาขา): อ่านตำแหน่ง
+    // **ก่อน** เขียนสถานะ แล้วถ้าอยู่นอกโซนให้ถามยืนยันก่อน
+    //
+    // ทำไมต้องถาม: พิกัดที่บันทึกคือที่ที่ "กดปุ่ม" ไม่ใช่ที่ที่ "เกิดเหตุการณ์"
+    // และมันถูกใช้เป็นหลักฐานคิดค่าวิ่งใหม่ได้ (ท่อแย้งหมุด) — เคส 31 ส.ค. 2569
+    // ไรเดอร์กดสามสถานะรวดเดียวตอนขี่กลับ พิกัดกลางทางเลยถูกใช้แทนจุดรับจริง
+    // แล้วค่ารอบถูกปรับผิดไป 104 บาท ทั้งที่หมุดลูกค้าถูกต้อง
+    //
+    // ขอพิกัดไม่ได้ = ไม่ถาม เดินหน้าตามปกติ (แถวยังถูกเขียนพร้อม gps_status
+    // ตามกฎ "พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก")
+    let prefetched: { gps: GpsFix | null; gpsStatus: GpsStatus; target?: CheckpointTarget | null; selfConfirmed?: boolean } | undefined;
+    const cpConfig = getCheckpointForStatus(nextStatus);
+    if (cpConfig && cpConfig.verify.target !== 'none') {
+      const { gps, status: gpsStatus } = await capturePosition();
+      let target: CheckpointTarget | null = null;
+      try {
+        target = await resolveCheckpointTarget(
+          cpConfig.verify, gps, job ? { cust_lat: job.cust_lat, cust_lng: job.cust_lng } : null,
+        );
+      } catch (e) {
+        console.error('Failed to resolve checkpoint target:', e);
+      }
+      let selfConfirmed = false;
+      if (gps && target) {
+        const away = distanceMeters(gps.lat, gps.lng, target.lat, target.lng);
+        if (away > cpConfig.verify.thresholdM) {
+          const shown = away >= 1000 ? `${(away / 1000).toFixed(1)} กม.` : `${away} ม.`;
+          const ok = window.confirm(
+            `ตอนนี้คุณอยู่ห่างจาก${target.label} ${shown}\n\n` +
+            `ยืนยันว่า "${STAGE_LABEL_TH[cpConfig.stage]}" แล้วจริงไหม?\n\n` +
+            'OK = ใช่ ถึงแล้ว (บันทึกพร้อมหมายเหตุว่าคุณยืนยันเอง)\n' +
+            'Cancel = ยังไม่ถึง กดพลาด (ไม่บันทึกอะไรเลย)'
+          );
+          if (!ok) {
+            toast.info('ยกเลิกแล้ว — ยังไม่เปลี่ยนสถานะ กดใหม่อีกครั้งเมื่อถึงจุดหมาย');
+            return;
+          }
+          selfConfirmed = true;
+        }
+      }
+      prefetched = { gps, gpsStatus, target, selfConfirmed };
+    }
+
     const updatedLogs = [
       { action: nextStatus, by: `Rider: ${riderInfo.name}`, timestamp: Date.now(), details: logMsg },
       ...(job?.qc_logs || [])
@@ -112,7 +177,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // ตำแหน่ง, GPS หาสัญญาณไม่เจอ, หรือผู้ใช้ปล่อย prompt ค้าง = ไม่มีแถว
       // checkpoint เลยทั้งที่ status เปลี่ยนสำเร็จ ทำให้ไทม์ไลน์งานขาดเป็นช่วงๆ
       // โดยไม่มี error ให้ใครเห็น พิกัดเป็นของเสริม เวลาที่เกิดเหตุคือของหลัก
-      void recordStatusCheckpoint(jobId, nextStatus, job);
+      void recordStatusCheckpoint(jobId, nextStatus, job, prefetched);
 
       const shortJobId = jobId.slice(-4).toUpperCase();
 

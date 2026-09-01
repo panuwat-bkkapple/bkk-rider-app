@@ -106,6 +106,37 @@ interface RecordArgs {
   /** เหตุผลเมื่อ gps เป็น null ('ok' เมื่อมีพิกัด) */
   gpsStatus: GpsStatus;
   job: { cust_lat?: number; cust_lng?: number } | null;
+  /** เป้าที่ผู้เรียกหามาแล้ว (ตอนประเมินก่อนถามยืนยัน) — ไม่ส่ง = หาเอง
+   *  ส่งมาแล้วจะไม่หาซ้ำ กัน findNearestBranch ยิงสองรอบต่อการกดหนึ่งครั้ง */
+  target?: { lat: number; lng: number; label: string } | null;
+  /** ไรเดอร์ยืนยันเองว่าถึงแล้วทั้งที่นอกโซน */
+  selfConfirmed?: boolean;
+}
+
+/**
+ * หาเป้าที่ใช้เทียบระยะของ stage นี้ — แยกออกมาเพื่อให้ "ประเมินก่อนเขียน" ได้
+ *
+ * ผู้เรียกต้องรู้ระยะห่าง **ก่อน** ตัดสินใจว่าจะเขียนอะไรลง DB ไหม (ดูการถาม
+ * ยืนยันใน useJobActions) การหาเป้าจึงต้องเรียกได้เดี่ยวๆ ไม่ใช่ฝังอยู่ใน
+ * ตัวเขียนอย่างเดียว มิฉะนั้น logic เดียวกันจะถูกก๊อปไปอยู่สองที่แล้ววันหนึ่ง
+ * ไม่ตรงกัน
+ */
+export async function resolveCheckpointTarget(
+  verify: VerifyConfig,
+  gps: GpsFix | null,
+  job: { cust_lat?: number; cust_lng?: number } | null,
+): Promise<{ lat: number; lng: number; label: string } | null> {
+  if (verify.target === 'customer' && job?.cust_lat != null && job?.cust_lng != null) {
+    return { lat: job.cust_lat, lng: job.cust_lng, label: 'พิกัดลูกค้า' };
+  }
+  if (verify.target === 'branch' && gps) {
+    // หาสาขาที่ใกล้ "ตำแหน่งของเรา" ที่สุด — ไม่มีพิกัดของเราก็หาไม่ได้
+    // และห้ามหยิบสาขาแรกมาใส่แทน (จะทำให้ระยะห่างเป็น 0 และ is_within_zone
+    // เป็น true ทุกครั้งที่ GPS ล้ม = ด่านตรวจกลายเป็นตรายาง)
+    const branch = await findNearestBranch(gps.lat, gps.lng);
+    if (branch) return { lat: branch.lat, lng: branch.lng, label: branch.name || 'สาขา' };
+  }
+  return null;
 }
 
 export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResult | null> {
@@ -115,16 +146,9 @@ export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResu
   const { stage, verify } = config;
   const now = Date.now();
 
-  let target: { lat: number; lng: number; label: string } | null = null;
-  if (verify.target === 'customer' && args.job?.cust_lat != null && args.job?.cust_lng != null) {
-    target = { lat: args.job.cust_lat, lng: args.job.cust_lng, label: 'พิกัดลูกค้า' };
-  } else if (verify.target === 'branch' && args.gps) {
-    // หาสาขาที่ใกล้ "ตำแหน่งของเรา" ที่สุด — ไม่มีพิกัดของเราก็หาไม่ได้
-    // และห้ามหยิบสาขาแรกมาใส่แทน (จะทำให้ระยะห่างเป็น 0 และ is_within_zone
-    // เป็น true ทุกครั้งที่ GPS ล้ม = ด่านตรวจกลายเป็นตรายาง)
-    const branch = await findNearestBranch(args.gps.lat, args.gps.lng);
-    if (branch) target = { lat: branch.lat, lng: branch.lng, label: branch.name || 'สาขา' };
-  }
+  const target = args.target !== undefined
+    ? args.target
+    : await resolveCheckpointTarget(verify, args.gps, args.job);
 
   const { row, distanceM, withinZone } = buildCheckpointRow({
     riderId: args.riderId,
@@ -133,6 +157,7 @@ export async function recordCheckpoint(args: RecordArgs): Promise<CheckpointResu
     gpsStatus: args.gpsStatus,
     target,
     thresholdM: verify.thresholdM,
+    selfConfirmed: args.selfConfirmed,
   });
 
   await update(ref(db, `jobs/${args.jobId}/checkpoints/${stage}`), row);
