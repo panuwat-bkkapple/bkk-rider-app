@@ -13,7 +13,9 @@ interface ChatModalProps {
   onClose: () => void;
 }
 
-const CLOSED_STATUSES = ['Pending QC', 'In Stock', 'Paid', 'PAID', 'Completed', 'Returned', 'Closed (Lost)', 'Cancelled'];
+// 'Returned' is the legacy spelling of canonical 'Return Confirmed' — keep both
+// until the data is migrated, same pattern as 'Paid'/'PAID'.
+const CLOSED_STATUSES = ['Pending QC', 'In Stock', 'Paid', 'PAID', 'Completed', 'Returned', 'Return Confirmed', 'Closed (Lost)', 'Cancelled'];
 
 export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   const [chatText, setChatText] = useState('');
