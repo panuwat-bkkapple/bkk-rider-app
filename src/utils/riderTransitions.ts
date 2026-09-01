@@ -42,6 +42,13 @@ export const RIDER_EVENT = {
   // ให้เอง ซึ่งเดิมเป็นกติกาที่ฝากไว้กับความจำของแต่ละ call site และมีช่องทาง
   // ที่ลืมจริงจนงานค้างเป็น soft-cancel ถาวรเพราะ finaliser หยิบไม่ได้
   CANCELLED: 'cancelled',
+  // ไรเดอร์คืนงานกลางทาง — **ไม่ใช่การยกเลิกดีล** งานกลับเข้าคิว sales ให้แอดมิน
+  // ตัดสินว่าจะ re-broadcast โทรหาลูกค้า หรือปิดจริง
+  //
+  // engine ประทับ withdrawn_at/withdrawn_by ให้เอง (bkk-system #644) แทนที่จะ
+  // ให้ไคลเอนต์เขียน cancel_* แบบเดิม — ฟิลด์ยกเลิกบนงานที่ยังวิ่งอยู่ทำให้
+  // finalizeCancelledJobs เห็นเวลาเก่าแล้วปิดงานทันทีในวันที่แอดมินยกเลิกจริง
+  WITHDREW: 'rider_withdrew',
 } as const;
 
 export type RiderEvent = (typeof RIDER_EVENT)[keyof typeof RIDER_EVENT];
