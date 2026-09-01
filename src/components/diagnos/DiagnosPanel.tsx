@@ -49,7 +49,9 @@ export default function DiagnosPanel({ job, deviceIndex }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(() => recallSession(job.id, deviceIndex));
   const [session, setSession] = useState<DiagnosSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [now, setNow] = useState(Date.now());
+  // lazy initializer — `useState(Date.now())` เรียก Date.now() ทุก render
+  // ทั้งที่ใช้ค่าแรกครั้งเดียว
+  const [now, setNow] = useState(() => Date.now());
   const urlRef = useRef('');
 
   // Live session subscription (also restores state after app reload).

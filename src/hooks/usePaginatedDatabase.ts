@@ -25,7 +25,11 @@ export const usePaginatedDatabase = (
   const scoped = scopeField !== undefined && scopeValue !== undefined && scopeValue !== null;
 
   useEffect(() => {
-    if (scopeBy && (scopeValue === undefined || scopeValue === null || scopeValue === '')) {
+    // เช็คจาก scopeField ไม่ใช่ตัว object `scopeBy` เพราะ dep array ถือค่า
+    // ที่แตกออกมาแล้ว (scopeField/scopeValue) — อ่าน object ตรงๆ ตรงนี้แปลว่า
+    // effect พึ่ง identity ที่ไม่มีใครเฝ้า และ caller ที่ส่ง object ใหม่ทุก
+    // render จะไม่ทำให้ effect รันใหม่ ซึ่งเป็นสิ่งที่ตั้งใจอยู่แล้ว
+    if (scopeField !== undefined && (scopeValue === undefined || scopeValue === null || scopeValue === '')) {
       setData([]);
       setHasMore(false);
       setLoading(false);
