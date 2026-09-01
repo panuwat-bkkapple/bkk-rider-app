@@ -19,6 +19,19 @@ export const RIDER_EVENT = {
   INSPECTION_STARTED: 'inspection_started',
   RETURN_STARTED: 'rider_return_started',
   RETURN_ARRIVED: 'rider_return_arrived',
+  // ลูกค้าตัดสินใจกับข้อเสนอที่ปรับใหม่ "ต่อหน้าไรเดอร์" — ไรเดอร์เป็นคนกดแทน
+  // แต่เจ้าของการตัดสินใจคือลูกค้า ซึ่งเป็นสิ่งที่ audit trail ต้องบันทึก
+  //
+  // ขา "ยอมรับ" ไป Payout Processing ไม่ใช่ Price Accepted (เจ้าของงานเคาะ
+  // 1 ก.ย. 2569 ให้คงพฤติกรรมวันนี้ไว้ — ตกลงราคากันจบหน้างานแล้ว ไม่มีขั้น
+  // รอลูกค้ายืนยันคั่นอีกชั้น). รายละเอียดอยู่ที่ revised_offer_accepted ใน
+  // bkk-system/functions/status-engine.js
+  REVISED_OFFER_ACCEPTED: 'revised_offer_accepted',
+  // ใช้ event กลางของการยกเลิก ไม่ใช่ event เฉพาะของการ์ดนี้ — engine บังคับ
+  // taxonomy (cancel_category / cancelled_by / cancelled_at) ผ่าน `requires`
+  // ให้เอง ซึ่งเดิมเป็นกติกาที่ฝากไว้กับความจำของแต่ละ call site และมีช่องทาง
+  // ที่ลืมจริงจนงานค้างเป็น soft-cancel ถาวรเพราะ finaliser หยิบไม่ได้
+  CANCELLED: 'cancelled',
 } as const;
 
 export type RiderEvent = (typeof RIDER_EVENT)[keyof typeof RIDER_EVENT];

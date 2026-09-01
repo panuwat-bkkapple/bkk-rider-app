@@ -20,7 +20,6 @@ interface HomeTabProps {
   jobDateFilter: JobDateFilter;
   onJobDateFilterChange: (filter: JobDateFilter) => void;
   onAcceptJob: (jobId: string, extraData: any) => void;
-  onUpdateStatus: (jobId: string, nextStatus: string, logMsg: string, extraData?: any) => void;
   onJobEvent: (jobId: string, event: RiderEvent, logMsg: string, extraData?: any) => void;
   onRejectJob: (job: any) => void;
   onOpenChat: (jobId: string) => void;
@@ -64,7 +63,7 @@ const filterByDate = (list: any[], filter: JobDateFilter): any[] => {
 export const HomeTab = ({
   riderInfo, isOnline, onToggleOnline, balance,
   incomingList, activeList, jobDateFilter, onJobDateFilterChange,
-  onAcceptJob, onUpdateStatus, onJobEvent, onRejectJob,
+  onAcceptJob, onJobEvent, onRejectJob,
   onOpenChat, onCallCustomer, onOpenNavigation,
   onStartKYC, onInspectJob, onCompleteJob, onRevertInspection, onReportDiscrepancy,
   onOpenJobDetail, onGoToProfile
@@ -162,7 +161,6 @@ export const HomeTab = ({
           job={job}
           index={index}
           totalJobs={activeList.length}
-          onUpdateStatus={onUpdateStatus}
           onJobEvent={onJobEvent}
           onOpenChat={onOpenChat}
           onCallCustomer={onCallCustomer}
