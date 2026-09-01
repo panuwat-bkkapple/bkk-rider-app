@@ -88,6 +88,25 @@ describe('การ์ด Revised Offer', () => {
   });
 });
 
+describe('เส้นทางที่ยังเขียน status ตรง', () => {
+  // หลัง P2 ทุกปุ่มของไรเดอร์ยิง event หมดแล้ว เหลือเส้นเดียวที่ยังเขียน
+  // jobs/{id}/status ตรงคือ handleRejectOrCancelJob ซึ่งติดอยู่ด้วยเหตุผลจริง:
+  // desktop อ่าน cancel_* ที่มันเขียน (ปุ่ม Re-broadcast + แบนเนอร์เตือนแอดมิน)
+  // ส่วน engine ตั้งใจให้ rider_withdrew ไม่เขียนฟิลด์ชุดนั้น — เป็น coordinated
+  // change ข้าม repo ไม่ใช่ cutover
+  //
+  // เทสนี้ตรึง "จำนวนที่เหลือ" ไว้ ไม่ใช่เพื่อห้ามแก้ แต่เพื่อให้การเพิ่ม
+  // ทางเขียนตรงทางใหม่ต้องเป็นการตัดสินใจที่มีคนเห็น ไม่ใช่ของที่ไหลกลับเข้ามา
+  it('เหลือทางเดียว และเป็นทางที่รู้ว่าทำไม', () => {
+    const hook = readFileSync(resolve(__dirname, '../hooks/useJobActions.ts'), 'utf8');
+    const directWrites = hook.match(/update\(ref\(db, `jobs\/\$\{[^`]*`\), \{/g) ?? [];
+    expect(directWrites).toHaveLength(1);
+    // และมันต้องเป็นเส้นยกเลิกจริงๆ ไม่ใช่เส้นอื่นที่บังเอิญเหลือรอด
+    const cancelFn = hook.slice(hook.indexOf('const handleRejectOrCancelJob'));
+    expect(cancelFn).toContain('update(ref(db, `jobs/${rejectingJob.id}`)');
+  });
+});
+
 describe('EVENT_CHECKPOINT_STAGE', () => {
   it('ทุก stage ที่ map ไว้เป็น stage ที่มีจริง', () => {
     for (const stage of Object.values(EVENT_CHECKPOINT_STAGE)) {
