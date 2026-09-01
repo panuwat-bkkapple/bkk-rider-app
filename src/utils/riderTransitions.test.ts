@@ -33,6 +33,28 @@ describe('RIDER_EVENT', () => {
   });
 });
 
+describe('การรับงาน', () => {
+  const apiPath = resolve(__dirname, '../../../bkk-system/functions/status-transition-api.js');
+
+  it.skipIf(!existsSync(apiPath))('rider_accepted อยู่ใน CLAIMING_EVENTS ของ callable', () => {
+    // สมมติฐานทั้งหมดของเส้นรับงานอยู่ตรงนี้: guard ฝั่ง server ยอมให้ยิง
+    // event นี้ตอนงาน "ยังไม่มีเจ้าของ" ได้ ส่วน event อื่นต้องเป็นของเราก่อน
+    //
+    // ถ้าชื่อหลุดออกจากเซ็ตนั้นเมื่อไหร่ ไรเดอร์จะรับงานไม่ได้เลยสักใบ ทุกคน
+    // ทุกงาน โดยได้ not_job_owner กลับมา — และไม่มีเทสฝั่งไหนแดง เพราะสองฝั่ง
+    // อยู่คนละ repo
+    const api = readFileSync(apiPath, 'utf8');
+    const line = api.match(/const CLAIMING_EVENTS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? '';
+    expect(line).toContain(RIDER_EVENT.ACCEPTED);
+  });
+
+  it('การรับงานมีจุดเช็คอิน — เป็นจุดเริ่มนับเวลาของงาน', () => {
+    // totalJobMs() ใน jobTimeline เริ่มนับจาก rider_accepted เสมอ ไม่มีแถวนี้
+    // = คืน null ทั้งใบ แล้วแถว "รวม X นาที" หายไปจากหน้าประวัติทั้งหมด
+    expect(EVENT_CHECKPOINT_STAGE[RIDER_EVENT.ACCEPTED]).toBe('rider_accepted');
+  });
+});
+
 describe('การ์ด Revised Offer', () => {
   const enginePath = resolve(__dirname, '../../../bkk-system/functions/status-engine.js');
 

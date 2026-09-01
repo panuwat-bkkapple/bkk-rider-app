@@ -14,6 +14,10 @@ import type { CheckpointStage } from './jobTimeline';
 
 /** event ที่แอปไรเดอร์ยิงได้ — ต้องมีชื่อตรงกับคีย์ใน status-engine.js เป๊ะ */
 export const RIDER_EVENT = {
+  // การรับงาน — เป็น event เดียวในชุดนี้ที่ "สร้างความเป็นเจ้าของ" ไม่ใช่
+  // เดินหน้างานที่ถืออยู่แล้ว. ฝั่ง callable มี CLAIMING_EVENTS กำกับไว้ว่า
+  // event นี้ยิงได้ตอนงานยังไม่มีเจ้าของ ส่วน event อื่นต้องเป็นของเราก่อน
+  ACCEPTED: 'rider_accepted',
   DEPARTED: 'rider_departed',
   ARRIVED: 'rider_arrived',
   INSPECTION_STARTED: 'inspection_started',
@@ -48,6 +52,10 @@ export type RiderEvent = (typeof RIDER_EVENT)[keyof typeof RIDER_EVENT];
  * event ที่ไม่มีจุดเช็คอิน (inspection_started) ไม่ต้องมีในตารางนี้
  */
 export const EVENT_CHECKPOINT_STAGE: Partial<Record<RiderEvent, CheckpointStage>> = {
+  // จุดเริ่มนับเวลาของทั้งงาน — `totalJobMs()` ใน jobTimeline วัดจากแถวนี้เสมอ
+  // ไม่มีมัน = คืน null ทั้งใบ แถว "รวม X นาที" หายจากหน้าประวัติ และไทม์ไลน์
+  // ใน /rider-performance ของแอดมินขาดขั้นแรกทุกงาน
+  [RIDER_EVENT.ACCEPTED]: 'rider_accepted',
   [RIDER_EVENT.DEPARTED]: 'rider_en_route',
   [RIDER_EVENT.ARRIVED]: 'rider_arrived',
   [RIDER_EVENT.RETURN_STARTED]: 'customer_left',

@@ -1,5 +1,5 @@
 // src/hooks/useJobActions.ts
-import { ref, update, push, set, runTransaction } from 'firebase/database';
+import { ref, update, push, set } from 'firebase/database';
 import { db, functions } from '../api/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { sendAdminNotification } from '../utils/notifications';
@@ -7,7 +7,7 @@ import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo, KYCRecord } from '../types';
 import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
-import { JOB_STATUS, normalizeStatus, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
+import { JOB_STATUS, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 import { getCheckpointForStatus, getCheckpointForStage, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
@@ -262,7 +262,11 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     event: RiderEvent,
     logMsg: string,
     extraData: Record<string, unknown> = {},
-    jobLists: JobLists
+    jobLists: JobLists,
+    // แปลงรหัสปฏิเสธเป็นข้อความของเส้นทางนั้นๆ — บางปุ่มมีคำที่ตรงกว่าค่ากลาง
+    // (เช่น "งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว" ซึ่งบอกไรเดอร์ได้ตรงกว่า
+    // "งานนี้ไม่ได้อยู่ในมือคุณแล้ว") คืน null = ใช้ข้อความกลาง
+    errorFor?: (code: string | null) => string | null
   ): Promise<boolean> => {
     const job = jobLists.activeList.find(j => j.id === jobId) || jobLists.incomingList.find(j => j.id === jobId);
 
@@ -326,21 +330,25 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // log ให้ครบทั้งรหัสของ engine และของ callable — เวลาไรเดอร์โทรมาแจ้ง
       // "กดแล้วไม่ไป" สิ่งที่ต้องรู้คือ engine ปฏิเสธด้วยเหตุอะไร
       console.error(`runTransition ${event} failed:`, code || err?.code, err?.message);
-      toast.error(transitionErrorMessage(code, err?.message));
+      toast.error(errorFor?.(code) || transitionErrorMessage(code, err?.message));
       return false;
     }
   };
 
   /**
-   * Atomically claim a broadcast or assigned job. Two riders tapping
-   * "รับงาน" within milliseconds of each other previously raced each other
-   * via plain update() — last write wins, the loser thinks they got the job
-   * but the DB belongs to the other rider.
+   * รับงาน — ย้ายการแย่งงานไปตัดสินฝั่ง server
    *
-   * runTransaction() reads the live job state inside Firebase's optimistic
-   * lock, decides whether the rider is still allowed to claim it, and only
-   * commits if so. The loser sees `result.committed === false` and gets a
-   * "งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว" toast.
+   * เดิมใช้ `runTransaction` ในเบราว์เซอร์: อ่านสถานะสด ตรวจว่ายังรับได้ไหม
+   * แล้วค่อย commit ซึ่งกันไรเดอร์สองคนกดพร้อมกันได้จริง แต่กติกาว่า "ใครรับ
+   * ได้บ้าง" อยู่ในเครื่องของไรเดอร์ — ใครยิง RTDB ตรงก็เขียนทับได้ และ
+   * กติกานั้นถูกก๊อปไว้คนละที่กับ engine
+   *
+   * ตอนนี้ transaction ยังมีอยู่ แต่ไปอยู่ใน `applyTransition` ฝั่ง server
+   * พร้อม `riderOwnershipGuard` ที่รันอยู่ **ข้างใน** transaction เดียวกัน —
+   * `rider_accepted` อยู่ใน CLAIMING_EVENTS จึงผ่านได้เมื่องานยังไม่มีเจ้าของ
+   * และถูกปฏิเสธทันทีถ้ามีไรเดอร์คนอื่นถืออยู่แล้ว. คนที่แพ้ได้
+   * `not_job_owner` แทนที่จะได้ `committed === false` — ข้อความถึงไรเดอร์
+   * เหมือนเดิมทุกตัวอักษร
    */
   const acceptIncomingJob = async (
     job: any
@@ -350,86 +358,37 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       return { success: false, reason: 'not_found' };
     }
 
-    const updatedLogs = [
-      {
-        action: 'Accepted',
-        by: `Rider: ${riderInfo.name}`,
-        timestamp: Date.now(),
-        details: 'ไรเดอร์กดรับงาน'
-      },
-      ...(job.qc_logs || [])
-    ];
-
-    try {
-      const result = await runTransaction(ref(db, `jobs/${job.id}`), (current) => {
-        if (current === null) {
-          // Job was deleted between fetch and click — abort.
-          return current;
+    let taken = false;
+    const ok = await runTransition(
+      job.id,
+      RIDER_EVENT.ACCEPTED,
+      'ไรเดอร์กดรับงาน',
+      // rider_id ไปกับ patch จึงถูกเขียน **ข้างใน** transaction เดียวกับสถานะ
+      // ไม่ใช่ write ที่สองซึ่งเป็นช่องให้แพ้การแย่งงานแบบเงียบๆ
+      { rider_id: riderInfo.id },
+      // งานยังไม่อยู่ใน activeList (เพิ่งรับ) — ส่งตัวมันเองเข้าไปเพื่อให้
+      // ขั้นบันทึก checkpoint หา job เจอ. stage `rider_accepted` ไม่เทียบพิกัด
+      // (target 'none') จึงไม่มีการขอ GPS หรือถามยืนยันในเส้นทางนี้
+      { activeList: [job], incomingList: [] },
+      (code) => {
+        // แพ้การแย่งงาน มาได้สองรหัส: มีเจ้าของแล้ว (not_job_owner) หรือ
+        // สถานะเดินไปข้างหน้าแล้วเพราะคนอื่นรับไปก่อน (illegal_from)
+        if (code === 'not_job_owner' || code === 'illegal_from') {
+          taken = true;
+          return 'งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว';
         }
-
-        const canonical = normalizeStatus(current.status, current.receive_method);
-
-        if (canonical === JOB_STATUS.ACTIVE_LEAD) {
-          // Broadcast: only the first rider without rider_id wins.
-          if (current.rider_id) return undefined;
-        } else if (canonical === JOB_STATUS.RIDER_ASSIGNED) {
-          // Direct assignment: only the assigned rider may claim it.
-          if (current.rider_id !== riderInfo.id) return undefined;
-        } else {
-          // Wrong status (cancelled, accepted by someone else, ...) — abort.
-          return undefined;
-        }
-
-        return {
-          ...current,
-          status: JOB_STATUS.RIDER_ACCEPTED,
-          rider_id: riderInfo.id,
-          updated_at: Date.now(),
-          qc_logs: updatedLogs
-        };
-      });
-
-      if (!result.committed) {
-        toast.error('งานนี้ถูกไรเดอร์คนอื่นรับไปแล้ว');
-        return { success: false, reason: 'taken' };
+        return null;
       }
+    );
 
-      const shortJobId = job.id.slice(-4).toUpperCase();
-      sendAdminNotification(
-        'ไรเดอร์รับงาน',
-        `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`
-      );
-      sendCustomerNotification(
-        job,
-        'จัดสรรไรเดอร์สำเร็จ!',
-        `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`
-      );
+    if (!ok) return { success: false, reason: taken ? 'taken' : 'error' };
 
-      // Stamp accepted_at on the offer log so dashboard acceptance rate
-      // is correct. Fire-and-forget — non-fatal if it errors.
-      markOfferAccepted(job.id, riderInfo.id);
+    // แจ้งเตือนแอดมิน/ลูกค้าถูกยิงโดย notifyStatusChange ใน runTransition แล้ว
+    // (สถานะปลายทาง Rider Accepted) เหลือแค่ประทับเวลาบน offer log ซึ่งเป็น
+    // ของนอกงาน — fire-and-forget ตามเดิม พังแล้วไม่กระทบการรับงาน
+    markOfferAccepted(job.id, riderInfo.id);
 
-      // การกดรับงานคือการเปลี่ยนสถานะเป็น Rider Accepted ซึ่งเป็นจุดเช็คอิน
-      // `rider_accepted` — แต่เส้นทางนี้ใช้ runTransaction ไม่ได้ผ่าน
-      // updateStatus จึง **ไม่เคยเขียน checkpoint นั้นเลย** ตั้งแต่ต้น
-      // (recordCheckpoint มี call site เดียวคือใน updateStatus)
-      //
-      // ผลที่ตามมาซึ่งมองไม่เห็นจากโค้ด: `totalJobMs()` ใน jobTimeline.ts เริ่ม
-      // นับจาก rider_accepted เสมอ เมื่อจุดนั้นไม่มีอยู่จริง มันคืน null ทุกใบ
-      // แถว "รวม X นาที" ในหน้าประวัติจึงไม่เคยขึ้นให้ใครเห็นเลย และไทม์ไลน์ใน
-      // หน้า /rider-performance ของแอดมินขาดขั้นแรกทุกงาน
-      void recordStatusCheckpoint(job.id, { status: JOB_STATUS.RIDER_ACCEPTED }, job);
-
-      return { success: true };
-    } catch (error: any) {
-      console.error('acceptIncomingJob error:', error);
-      const msg =
-        error?.code === 'PERMISSION_DENIED'
-          ? 'ไม่มีสิทธิ์อัปเดตข้อมูล กรุณาลองใหม่หรือติดต่อแอดมิน'
-          : `เกิดข้อผิดพลาดในการรับงาน: ${error?.message || error}`;
-      toast.error(msg);
-      return { success: false, reason: 'error' };
-    }
+    return { success: true };
   };
 
   const handleRejectOrCancelJob = async (
