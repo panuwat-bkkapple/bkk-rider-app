@@ -61,6 +61,57 @@ jobs:
       - name: Type check
         run: npx tsc -b
 
+      # ─── ด่านข้ามรีโป ────────────────────────────────────────────────────
+      # `src/utils/riderTransitions.test.ts` เทียบชื่อ event ที่ปุ่มของไรเดอร์
+      # ยิง กับตาราง TRANSITIONS ใน `bkk-system/functions/status-engine.js`
+      # ถ้าสองฝั่งหลุดกัน ไรเดอร์กดปุ่มแล้วโดน "unknown_event" กลับมา ทุกใบ
+      # ทุกคน โดยไม่มีเทสฝั่งไหนแดงเพราะมันอยู่คนละ repo
+      #
+      # เทสตัวนั้น **skip ตัวเองเมื่อหา bkk-system ไม่เจอ** ซึ่งคือทุกครั้งที่
+      # CI รัน (checkout มารีโปเดียว) ด่านจึงว่างมาตลอด — ขั้นนี้เอามาวางข้างกัน
+      # ให้มันรันจริง เทสอ่านจาก `<workspace>/../bkk-system` (สามชั้นขึ้นจาก
+      # src/utils) ซึ่ง actions/checkout เขียนออกนอก workspace ไม่ได้ จึงต้อง
+      # checkout ลงในนี้ก่อนแล้ว mv ขึ้นไป
+      #
+      # sparse-checkout เอาเฉพาะสองไฟล์ที่เทสอ่านจริง ไม่ต้องลากทั้งรีโป
+      # (ตรวจด้วย `grep -rhoE '\.\./\.\./\.\./[a-z-]+/...' src/` — ถ้าเทสตัวใหม่
+      #  อ้างไฟล์ที่สามของ bkk-system ต้องเพิ่มที่นี่ด้วย ไม่งั้นมันจะ skip เงียบ
+      #  แบบเดียวกับที่ทั้งชุดนี้เคยเป็น)
+      - name: Checkout bkk-system (สำหรับด่านข้ามรีโป)
+        id: sibling
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: panuwat-bkkapple/bkk-system
+          path: bkk-system-src
+          sparse-checkout: |
+            functions/status-engine.js
+            functions/status-transition-api.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # continue-on-error ข้างบนเป็นของจำเป็น ไม่ใช่ความหละหลวม: วันที่ bkk-system
+      # ถูกเปลี่ยนเป็น private ขั้นนี้จะล้ม และ CI ของ repo นี้ต้องไม่แดงยกแผง
+      # เพราะรีโปข้างๆ เปลี่ยน visibility
+      #
+      # แต่ห้ามให้มันกลับไปเงียบแบบเดิม — ถ้าวางไม่สำเร็จ ขั้นนี้เขียน warning
+      # annotation + บรรทัดใน job summary ให้เห็นบนหน้า PR ว่าด่านนี้ไม่ได้รัน
+      # (แก้ตอนนั้น = เพิ่ม PAT ที่อ่าน bkk-system ได้เป็น secret แล้วส่งเข้า
+      # `token:` ของขั้นข้างบน)
+      - name: วาง bkk-system ไว้ข้างกัน
+        run: |
+          missing=""
+          for f in functions/status-engine.js functions/status-transition-api.js; do
+            [ -f "bkk-system-src/$f" ] || missing="$missing $f"
+          done
+          if [ -z "$missing" ]; then
+            mv bkk-system-src ../bkk-system
+            echo "ด่านข้ามรีโป: พร้อมรัน (เจอไฟล์ของ bkk-system ครบทั้งสอง)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::ด่านข้ามรีโปไม่ได้รันครบ — checkout bkk-system outcome=${{ steps.sibling.outcome }} ไม่เจอ:$missing · riderTransitions.test.ts จะ skip เทสที่อ่านไฟล์นั้น ชื่อ event สองฝั่งจึงไม่ถูกตรวจในรอบนี้"
+            echo "ด่านข้ามรีโป: **ไม่ได้รันครบ** — ไม่เจอ:$missing" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Test
         run: npm test
 
