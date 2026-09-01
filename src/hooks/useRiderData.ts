@@ -1,5 +1,5 @@
 // src/hooks/useRiderData.ts
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
@@ -109,6 +109,20 @@ export const useRiderData = (currentRiderId: string) => {
     return () => unsubscribe();
   }, [currentRiderId]);
 
+  // จำนวนงานที่ไรเดอร์ถืออยู่ ณ ตอนนี้ — เก็บใน ref เพราะตัวที่อ่านมันคือ
+  // callback ของ watchPosition ซึ่งมีอายุยาวตลอด session ที่เปิดรับงาน
+  //
+  // เดิม callback นั้นอ่าน `jobData.activeList.length` จาก closure ที่ถูก
+  // แช่ไว้ตั้งแต่ตอนกดเปิดรับงาน (deps มีแค่ [isOnline, riderInfo.id]) แปลว่า
+  // ไรเดอร์ที่เปิดรับงานตอนมือว่างแล้วกดรับงาน จะถูกเขียนสถานะเป็น 'Online'
+  // ทุก 10 วินาทีไปตลอดทั้งกะ ทั้งที่กำลังวิ่งงานอยู่ (และกลับกัน คนที่เปิด
+  // ตอนถืองานอยู่จะค้างเป็น 'Busy' หลังส่งงานเสร็จ) — จุดสีเขียว/เหลืองใน
+  // หน้า RiderManagement ของแอดมินอ่านฟิลด์นี้ตรงๆ
+  //
+  // ใส่ลง deps ตรงๆ ไม่ได้ เพราะจะรื้อ watchPosition ทิ้งแล้วเริ่มใหม่ทุกครั้ง
+  // ที่จำนวนงานเปลี่ยน ซึ่งรีเซ็ตตัวหน่วง 10 วินาทีไปด้วย
+  const activeJobCountRef = useRef(0);
+
   // Geolocation tracking
   useEffect(() => {
     if (!isOnline) return;
@@ -123,7 +137,7 @@ export const useRiderData = (currentRiderId: string) => {
 
       await update(ref(db, `riders/${riderInfo.id}`), {
         lat: pos.coords.latitude, lng: pos.coords.longitude,
-        status: jobData.activeList.length > 0 ? 'Busy' : 'Online',
+        status: activeJobCountRef.current > 0 ? 'Busy' : 'Online',
         battery: currentBattery, last_updated: Date.now()
       });
     };
@@ -202,6 +216,12 @@ export const useRiderData = (currentRiderId: string) => {
       transactions: myTx
     };
   }, [jobs, transactions, withdrawals, currentRiderId, dispatchMode]);
+
+  // sync ref ให้ callback ของ watchPosition (อายุยาว) อ่านค่าล่าสุดเสมอ
+  const activeJobCount = jobData.activeList.length;
+  useEffect(() => {
+    activeJobCountRef.current = activeJobCount;
+  }, [activeJobCount]);
 
   return {
     jobData, riderInfo, setRiderInfo,

@@ -115,6 +115,14 @@ interface Props {
 interface UploadedPhoto {
   url: string;
   uploading: boolean;
+  /**
+   * เวลาที่อัปโหลดเสร็จจริง — ต้องประทับตอนอัปโหลดสำเร็จเท่านั้น
+   *
+   * เดิมค่านี้ถูกคิดตอน render ของ `readyEvidence` แปลว่าเลขที่ถูกส่งไปกับ
+   * คำขอแก้ยอดคือ "เวลาที่คอมโพเนนต์ render ล่าสุด" ไม่ใช่เวลาที่อัปโหลด
+   * ซึ่งเป็นหลักฐานที่แอดมินใช้ประกอบการอนุมัติ (adjustments[].evidence[])
+   */
+  uploaded_at?: number;
 }
 
 // ─── Type taxonomy for picker ───────────────────────────────────────
@@ -234,7 +242,8 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
       );
       setPhotos((p) => {
         const next = [...p];
-        uploads.forEach((url, i) => { next[startIdx + i] = { url, uploading: false }; });
+        const at = Date.now();
+        uploads.forEach((url, i) => { next[startIdx + i] = { url, uploading: false, uploaded_at: at }; });
         return next;
       });
     } catch (e: any) {
@@ -244,9 +253,13 @@ export const RequestAmendmentModal = ({ job, initialType, onClose, onSubmitted }
   };
   const removePhoto = (idx: number) => setPhotos((p) => p.filter((_, i) => i !== idx));
 
+  // กรองด้วย uploaded_at ด้วย ไม่ใช่แค่ url — รูปที่ไม่มีเวลาอัปโหลดคือรูปที่
+  // เราบอกไม่ได้ว่ามาเมื่อไร ใส่ค่าแทน (0 หรือเวลาปัจจุบัน) แปลว่าแอดมินอ่าน
+  // หลักฐานแล้วได้เวลาที่ระบบแต่งขึ้น ซึ่งแย่กว่ารูปนั้นไม่ถูกแนบไปเลย
   const readyEvidence: AmendmentEvidence[] = photos
-    .filter((p) => p.url && !p.uploading)
-    .map((p) => ({ url: p.url, purpose: 'other', uploaded_at: Date.now() }));
+    .filter((p): p is UploadedPhoto & { uploaded_at: number } =>
+      Boolean(p.url) && !p.uploading && typeof p.uploaded_at === 'number')
+    .map((p) => ({ url: p.url, purpose: 'other' as const, uploaded_at: p.uploaded_at }));
   const anyUploading = photos.some((p) => p.uploading);
 
   const buildTarget = (): AmendmentTarget | null => {

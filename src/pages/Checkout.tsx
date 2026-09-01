@@ -18,6 +18,11 @@ interface CheckoutProps {
   onBack: () => void;
 }
 
+// เป้าหมายของทัวร์แยกตามขั้นของฟอร์ม — ค่าคงที่ระดับโมดูล ไม่ใช่ของที่สร้างใหม่
+// ทุก render (เดิมประกาศในคอมโพเนนต์แล้วถูกใช้ใน useCallback โดยไม่อยู่ใน deps)
+const STEP1_TARGETS = ['fullname', 'phone', 'email', 'next-button'];
+const STEP2_TARGETS = ['location-bar', 'service-cards', 'confirm-button'];
+
 const SERVICE_OPTIONS = [
   {
     id: 'standard',
@@ -64,8 +69,8 @@ export const Checkout = ({ onBack }: CheckoutProps) => {
   };
 
   // Tour requests a target that's on a different form step
-  const STEP2_TARGETS = ['location-bar', 'service-cards', 'confirm-button'];
-  const STEP1_TARGETS = ['fullname', 'phone', 'email', 'next-button'];
+  // ย้ายไปไว้ระดับโมดูล (ดูบนสุดของไฟล์) — เดิมประกาศในคอมโพเนนต์จึงถูกสร้าง
+  // ใหม่ทุก render และไม่อยู่ใน deps ของ useCallback ที่ใช้มัน
 
   const handleTourRequestStep = useCallback((target: string) => {
     if (STEP2_TARGETS.some((t) => target.includes(t)) && step !== 2) {
