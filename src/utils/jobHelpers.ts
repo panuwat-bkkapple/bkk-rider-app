@@ -1,5 +1,6 @@
 // src/utils/jobHelpers.ts
 import type { Job, Device } from '../types';
+import { parseAppointmentWindow, formatWindow } from './pickupSchedule';
 
 export const getDisplayPrice = (job: any): number => {
   if (job.net_payout !== undefined && job.net_payout !== null) return Number(job.net_payout);
@@ -21,13 +22,19 @@ const parseScheduleDate = (dateStr: string): Date | null => {
 };
 
 export const getAppointmentDisplay = (job: any): string | null => {
-  const ps = job?.pickup_schedule;
-  if (ps) {
-    if (ps.type === 'instant' || ps.date === 'Instant') return 'รับด่วน (1-2 ชม.)';
-    const dt = parseScheduleDate(ps.date);
-    if (!dt) return `${ps.date} · ${ps.time}`;
+  const w = parseAppointmentWindow(job);
+  if (w) {
+    // แอดมินเลื่อนนัดแล้วไรเดอร์ไม่เคยเห็นบนการ์ดเลย เห็นแต่เวลาใหม่เฉยๆ
+    // ซึ่งอ่านไม่ออกว่าเปลี่ยนไปจากที่จำไว้หรือจำผิดเอง
+    const suffix = w.rescheduled ? ' · เลื่อนนัดแล้ว' : '';
+    if (w.instant) return `รับด่วน (1-2 ชม.)${suffix}`;
+    // formatWindow อ่าน time_start/time_end ก่อน แล้วค่อยตกมาที่สตริงรวม
+    // rawTime เป็นทางออกสุดท้ายเมื่อเวลาไม่ใช่รูป HH:MM (ห้ามกลืนทิ้ง)
+    const time = formatWindow(w) ?? w.rawTime;
+    const dt = w.date ? parseScheduleDate(w.date) : null;
+    if (!dt) return `${w.date ?? '-'} · ${time ?? '-'}${suffix}`;
     const dateStr = dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-    return `${dateStr} · ${ps.time}`;
+    return `${dateStr} · ${time ?? '-'}${suffix}`;
   }
   if (job?.appointment_time) {
     const dt = new Date(job.appointment_time);
@@ -39,9 +46,11 @@ export const getAppointmentDisplay = (job: any): string | null => {
 };
 
 export const getAppointmentDateKey = (job: any): string | null => {
-  const ps = job?.pickup_schedule;
-  if (ps?.date && ps.date !== 'Instant') return ps.date;
-  if (ps?.type === 'instant' || ps?.date === 'Instant') {
+  const w = parseAppointmentWindow(job);
+  if (w?.date) return w.date;
+  // งานรับด่วนไม่มีวันนัดของตัวเอง — ตัวกรอง "วันนี้" จึงนับมันเป็นของวันนี้
+  // ตามความหมายของบริการ (ออกภายใน 1-2 ชม.) ไม่ใช่การเดาวันที่จากข้อมูลที่ไม่มี
+  if (w?.instant) {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }

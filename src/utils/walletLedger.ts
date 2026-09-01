@@ -19,8 +19,11 @@
 
 export type WalletTxType = 'CREDIT' | 'DEBIT';
 
-/** หมวดที่เป็นเงินของไรเดอร์จริง — เพิ่มหมวดใหม่ที่นี่ที่เดียว */
-export const RIDER_WALLET_CATEGORIES = ['JOB_PAYOUT', 'WITHDRAWAL', 'PENALTY', 'BONUS'] as const;
+/** หมวดที่เป็นเงินของไรเดอร์จริง — เพิ่มหมวดใหม่ที่นี่ที่เดียว
+ *  MIRROR: bkk-system/src/utils/transactionLogger.ts (union ของ category)
+ *  หมวดเก่าห้ามถอดออก แม้เลิกเขียนแล้ว — แถวในประวัติยังอ้างมันอยู่ ถอดเมื่อไหร่
+ *  balance ของแถวเก่าหายจากจอเงียบๆ */
+export const RIDER_WALLET_CATEGORIES = ['JOB_PAYOUT', 'WITHDRAWAL', 'PENALTY', 'BONUS', 'ADJUSTMENT'] as const;
 export type RiderWalletCategory = (typeof RIDER_WALLET_CATEGORIES)[number];
 
 const WALLET_CATEGORY_SET: ReadonlySet<string> = new Set(RIDER_WALLET_CATEGORIES);
@@ -31,6 +34,9 @@ export const WALLET_CATEGORY_LABEL_TH: Record<RiderWalletCategory, string> = {
   WITHDRAWAL: 'ถอนเงินเข้าบัญชี',
   PENALTY: 'รายการหัก',
   BONUS: 'โบนัส',
+  // ปรับยอดที่คิดผิด (เช่น คิดค่ารอบใหม่หลังอนุมัติคำแย้งหมุด) — ไม่ใช่ค่าปรับ
+  // ทิศไหนก็หมวดนี้ ป้ายจึงต้องอ่านได้ทั้งตอนบวกและตอนลบ
+  ADJUSTMENT: 'ปรับปรุงค่ารอบ',
 };
 
 export function walletCategoryLabel(category: unknown): string {
