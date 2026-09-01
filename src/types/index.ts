@@ -311,10 +311,26 @@ export interface JobAmendment {
 export type JobAmendmentDevice = AmendmentDevice;
 export type JobAmendmentSnapshot = AmendmentSnapshot;
 
+/**
+ * นัดหมายรับเครื่อง — ฟิลด์นี้มีผู้เขียนสามรายและเขียนคนละรูป
+ * ทั้งสามรูปอยู่บน production พร้อมกัน (ดู src/utils/pickupSchedule.ts)
+ *
+ * `'scheduled'` (แอดมิน) กับ `time_start`/`time_end` เคยหายไปจาก type นี้
+ * ทั้งที่มีอยู่ใน DB จริง — แอปจึงอ่านเวลาแบบ structured ไม่ได้เลย
+ *
+ * **ห้ามอ่านฟิลด์พวกนี้ตรงๆ** ให้ผ่าน `parseAppointmentWindow()` เสมอ
+ */
 export interface PickupSchedule {
-  type: 'instant' | 'schedule';
+  /** `'instant'` / `'schedule'` = checkout ลูกค้า · `'scheduled'` = แอดมิน */
+  type: 'instant' | 'schedule' | 'scheduled';
   date: string;
+  /** สตริงรวมช่วงเวลา `"12:00 - 14:00"` — backward-compat, ผู้เขียนทุกรายใส่ */
   time: string;
+  /** ช่วงเวลาแบบ structured (แอดมินเท่านั้น) */
+  time_start?: string;
+  time_end?: string;
+  /** มีค่าเมื่อแอดมินเลื่อนนัด */
+  rescheduled_at?: number;
 }
 
 export interface Device {

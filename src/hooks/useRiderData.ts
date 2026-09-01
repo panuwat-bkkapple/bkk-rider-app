@@ -8,6 +8,7 @@ import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
 import { normalizeVehicleType } from '../utils/jobHelpers';
 import { isRiderWalletTx, walletBalance, pendingWithdrawalHold } from '../utils/walletLedger';
+import { compareByAppointment } from '../utils/pickupSchedule';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
 import type { JobStatus } from '../types/job-statuses';
@@ -179,7 +180,11 @@ export const useRiderData = (currentRiderId: string) => {
         (canonical === JOB_STATUS.ACTIVE_LEAD ||
           (canonical === JOB_STATUS.RIDER_ASSIGNED && !j.rider_id));
       return isDirectlyAssigned || isBroadcastJob;
-    });
+    })
+      // กองงานเคยเรียงตามลำดับคีย์ของ Firebase ล้วนๆ — งานที่นัดบ่ายจึงขึ้น
+      // เหนืองานที่นัดอีกยี่สิบนาทีได้ตามใจ compareByAppointment เรียงให้
+      // (รับด่วนก่อน → นัดใกล้สุด → งานที่อ่านเวลานัดไม่ได้อยู่ท้าย)
+      .sort(compareByAppointment);
 
     return {
       activeList: myJobs.filter((j: any) => {
