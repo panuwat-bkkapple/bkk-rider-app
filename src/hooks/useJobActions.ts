@@ -343,63 +343,36 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       return;
     }
 
-    const updatedLogs = [
+    // เหตุผลที่ไรเดอร์เลือกยังต้องไปกับ patch — engine เป็นคนตัดสิน "ไปสถานะไหน"
+    // แต่ "ทำไม" เป็นข้อมูลของงาน ไม่ใช่ของ state machine. ใช้ชื่อฟิลด์ชุด
+    // withdraw_* แยกจาก cancel_* ที่ยังสงวนไว้ให้การยกเลิกดีลจริง
+    const ok = await runTransition(
+      rejectingJob.id,
+      RIDER_EVENT.WITHDREW,
+      `ไรเดอร์${isIncoming ? 'ปฏิเสธรับงาน' : 'ยกเลิกงานกลางทาง'} เหตุผล: ${fullReason}`,
       {
-        action: isIncoming ? 'Rider Rejected' : 'Rider Cancelled',
-        by: `Rider: ${riderInfo.name}`,
-        timestamp: Date.now(),
-        details: `ไรเดอร์${isIncoming ? 'ปฏิเสธรับงาน' : 'ยกเลิกงานกลางทาง'} เหตุผล: ${fullReason}`
+        withdraw_category: cancelCategory,
+        withdraw_reason: cancelDetail || null,
       },
-      ...(rejectingJob.qc_logs || [])
-    ];
+      { activeList: [rejectingJob], incomingList: [] }
+    );
+    if (!ok) return;
 
-    try {
-      await update(ref(db, `jobs/${rejectingJob.id}`), {
-        // Park at Following Up (sales phase) so admin can decide what to
-        // do next — re-broadcast, call the customer, or confirm cancel.
-        // Do NOT route back to Active Leads here, even though that would
-        // re-broadcast immediately, because:
-        //   - the rider who just bailed would see the same job bounce
-        //     back into their incoming list
-        //   - other riders get a fresh notification for a job that
-        //     might still be cancelled by admin
-        //   - customer state is unclear and admin should call first
-        // Admin's "Re-broadcast" action explicitly moves it to
-        // Active Leads when they're ready (see bkk-system PR #123).
-        status: JOB_STATUS.FOLLOWING_UP,
-        rider_id: null,
-        updated_at: Date.now(),
-        qc_logs: updatedLogs,
-        // Cancel taxonomy (PR-5B schema).
-        cancel_category: cancelCategory,
-        cancel_reason: cancelDetail || null,
-        cancelled_by: `rider:${riderInfo.id}`,
-        cancelled_at: Date.now()
-      });
+    // engine ล้าง rider_id ให้แล้วผ่าน clears และประทับ withdrawn_at/withdrawn_by
+    // จากตัวตนที่ยืนยันแล้ว — ไคลเอนต์ไม่ต้องเขียนอะไรเพิ่ม
+    sendAdminNotification(
+      'ไรเดอร์ยกเลิกงาน!',
+      `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
+    );
 
-      sendAdminNotification(
-        'ไรเดอร์ยกเลิกงาน!',
-        `${riderInfo.name} ได้ยกเลิก/ปฏิเสธงาน #${rejectingJob.id.slice(-4)} (${fullReason})`
-      );
-
-      // Stamp rejected_at on the offer log only when this was an
-      // incoming-list rejection (rider hadn't started the job yet).
-      // Mid-route cancels are a different signal — they belong to
-      // the rider_cancelled bucket on the dashboard, not the
-      // offer-decline bucket.
-      if (isIncoming) {
-        markOfferRejected(rejectingJob.id, riderInfo.id);
-      }
-
-      onDone();
-    } catch (error: any) {
-      console.error('handleRejectOrCancelJob error:', error);
-      const msg =
-        error?.code === 'PERMISSION_DENIED'
-          ? 'ไม่มีสิทธิ์ยกเลิกงานนี้ กรุณาติดต่อแอดมิน'
-          : `เกิดข้อผิดพลาดในการยกเลิกงาน: ${error?.message || error}`;
-      toast.error(msg);
+    // ประทับ rejected_at บน offer log เฉพาะตอนปฏิเสธจากคิวงานเข้า (ยังไม่เริ่มงาน)
+    // การยกเลิกกลางทางเป็นสัญญาณคนละตัว อยู่ถัง rider_cancelled ของ dashboard
+    // ไม่ใช่ถัง offer-decline
+    if (isIncoming) {
+      markOfferRejected(rejectingJob.id, riderInfo.id);
     }
+
+    onDone();
   };
 
   const handleRevertInspection = async (
