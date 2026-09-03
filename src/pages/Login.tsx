@@ -17,14 +17,25 @@ interface LoginProps {
     // รหัสผ่านตรงๆ เพราะ PIN ปลดกลอนในเครื่องได้ แต่สร้าง session ใหม่ไม่ได้
     sessionExpired?: boolean;
     prefillEmail?: string | null;
+    // กลอน PIN ตามเวลา (usePinLock) — ไรเดอร์ยังล็อกอินอยู่ทุกประการ แค่ต้อง
+    // ปลดกลอนก่อนใช้งานต่อ **ห้ามพาไปหน้ากรอกอีเมล**
+    lockMode?: boolean;
+    onUnlock?: () => void;
 }
 
-export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, prefillEmail = null }: LoginProps) => {
+export const Login = ({
+    onLoginSuccess,
+    onGoToRegister,
+    sessionExpired = false,
+    prefillEmail = null,
+    lockMode = false,
+    onUnlock,
+}: LoginProps) => {
     const savedRiderId = localStorage.getItem('rider_id');
     const savedPin = localStorage.getItem('device_pin');
 
     const [mode, setMode] = useState<'email' | 'create_pin' | 'enter_pin' | 'forgot_password'>(
-        sessionExpired ? 'email' : (savedRiderId && savedPin ? 'enter_pin' : 'email')
+        lockMode ? 'enter_pin' : (sessionExpired ? 'email' : (savedRiderId && savedPin ? 'enter_pin' : 'email'))
     );
 
     const [email, setEmail] = useState(sessionExpired ? (prefillEmail || '') : '');
@@ -52,13 +63,17 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
             hashPin(pin).then(hashed => {
                 if (hashed === savedPin && savedRiderId) {
                     setPinAttempts(0);
-                    onLoginSuccess(savedRiderId);
+                    // ปลดกลอน ≠ ล็อกอิน — ตอนล็อก Firebase session ยังอยู่ครบ
+                    // การเรียก onLoginSuccess จะไปรีเซ็ต state ที่ไม่ควรถูกแตะ
+                    if (lockMode) onUnlock?.();
+                    else onLoginSuccess(savedRiderId);
                 } else {
                     // Backward compat: check plaintext for old PINs, then migrate
                     if (pin === savedPin && savedRiderId) {
                         hashPin(pin).then(h => localStorage.setItem('device_pin', h));
                         setPinAttempts(0);
-                        onLoginSuccess(savedRiderId);
+                        if (lockMode) onUnlock?.();
+                        else onLoginSuccess(savedRiderId);
                     } else {
                         const attempts = pinAttempts + 1;
                         setPinAttempts(attempts);
@@ -99,7 +114,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
                 }
             }
         }
-    }, [pin, mode, step, savedPin, savedRiderId, confirmPin, onLoginSuccess]);
+    }, [pin, mode, step, savedPin, savedRiderId, confirmPin, onLoginSuccess, lockMode, onUnlock]);
 
     // Email login with validation
     const handleEmailLogin = async (e: React.FormEvent) => {
@@ -243,6 +258,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
                     mode === 'email' ? 'เข้าสู่ระบบด้วยอีเมลพนักงาน' :
                         mode === 'create_pin' && step === 1 ? 'ตั้งรหัส PIN 4 หลักสำหรับเครื่องนี้' :
                             mode === 'create_pin' && step === 2 ? 'ยืนยันรหัส PIN อีกครั้ง' :
+                                lockMode ? 'พักหน้าจอนาน กรอกรหัส PIN เพื่อใช้งานต่อ' :
                                 'กรอกรหัส PIN เพื่อเข้าใช้งาน'}
                 </p>
 
