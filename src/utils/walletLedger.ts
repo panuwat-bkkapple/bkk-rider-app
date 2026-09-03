@@ -19,11 +19,28 @@
 
 export type WalletTxType = 'CREDIT' | 'DEBIT';
 
-/** หมวดที่เป็นเงินของไรเดอร์จริง — เพิ่มหมวดใหม่ที่นี่ที่เดียว
- *  MIRROR: bkk-system/src/utils/transactionLogger.ts (union ของ category)
+/** หมวดที่เป็นเงินของไรเดอร์จริง
+ *
+ *  **MIRROR 3 ที่ ไม่ใช่ 2 — แก้ที่นี่แล้วต้องแก้อีกสองที่เสมอ:**
+ *    1. `functions/src/index.ts` (rider-notifications) — ตัวที่คำนวณ "ยอดถอนได้"
+ *       ใน `riderRequestWithdraw`
+ *    2. `bkk-system/src/utils/transactionLogger.ts` — union ของ `category`
+ *
+ *  หัวข้อนี้เคยเขียนว่า mirror มีที่เดียวและ **นั่นทำให้หลุดจริง**: `ADJUSTMENT`
+ *  ถูกเพิ่มที่นี่ใน #125 แต่สำเนาใน functions ไม่ถูกแก้ตาม ผลคือหน้ากระเป๋าโชว์
+ *  ยอดที่รวมแถว ADJUSTMENT ขณะที่ยอดถอนได้ไม่นับมัน — ตัวเลขสองตัวบนจอเดียวกัน
+ *  ไม่ตรงกันโดยไม่มี error ที่ไหนบอก
+ *
  *  หมวดเก่าห้ามถอดออก แม้เลิกเขียนแล้ว — แถวในประวัติยังอ้างมันอยู่ ถอดเมื่อไหร่
  *  balance ของแถวเก่าหายจากจอเงียบๆ */
-export const RIDER_WALLET_CATEGORIES = ['JOB_PAYOUT', 'WITHDRAWAL', 'PENALTY', 'BONUS', 'ADJUSTMENT'] as const;
+export const RIDER_WALLET_CATEGORIES = [
+  'JOB_PAYOUT',
+  'WITHDRAWAL',
+  'PENALTY',
+  'BONUS',
+  'ADJUSTMENT',
+  'EXPENSE_REIMBURSEMENT',
+] as const;
 export type RiderWalletCategory = (typeof RIDER_WALLET_CATEGORIES)[number];
 
 const WALLET_CATEGORY_SET: ReadonlySet<string> = new Set(RIDER_WALLET_CATEGORIES);
@@ -37,6 +54,10 @@ export const WALLET_CATEGORY_LABEL_TH: Record<RiderWalletCategory, string> = {
   // ปรับยอดที่คิดผิด (เช่น คิดค่ารอบใหม่หลังอนุมัติคำแย้งหมุด) — ไม่ใช่ค่าปรับ
   // ทิศไหนก็หมวดนี้ ป้ายจึงต้องอ่านได้ทั้งตอนบวกและตอนลบ
   ADJUSTMENT: 'ปรับปรุงค่ารอบ',
+  // เงินที่ไรเดอร์สำรองจ่ายไปเอง (ทางด่วน/ที่จอดรถ) แล้วบริษัทคืนให้
+  // **ไม่ใช่โบนัสและไม่ใช่ค่ารอบ** — มันคือเงินของเขาที่เดินกลับมา ป้ายจึงต้อง
+  // ไม่อ่านว่าเป็นรายได้ ไม่งั้นทั้งไรเดอร์และบัญชีเข้าใจผิดคนละทาง
+  EXPENSE_REIMBURSEMENT: 'คืนเงินสำรองจ่าย',
 };
 
 export function walletCategoryLabel(category: unknown): string {

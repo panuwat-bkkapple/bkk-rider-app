@@ -1,7 +1,9 @@
 // src/components/wallet/WalletTab.tsx
-import { Bike, Landmark, Wallet as WalletIcon } from 'lucide-react';
+import { Bike, Landmark, Wallet as WalletIcon, ReceiptText } from 'lucide-react';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { walletCategoryLabel } from '../../utils/walletLedger';
+import { ExpenseQueueList } from './ExpenseQueueList';
+import type { QueuedUpload } from '../../utils/uploadQueue/types';
 
 interface WalletTabProps {
   /** ยอดที่ถอนได้จริง = ledger ลบคำขอถอนที่ค้างอยู่ (คิดใน useRiderData) */
@@ -12,9 +14,19 @@ interface WalletTabProps {
   hasMoreTx?: boolean;
   onLoadMoreTx?: () => void;
   onOpenWithdraw: () => void;
+  /** เบิกค่าใช้จ่ายที่ไรเดอร์สำรองจ่าย — อยู่ในกระเป๋าเพราะมันคือเงินของเขา
+   *  ไม่ใช่ฟีเจอร์ของงาน (ค่าทางด่วน/ที่จอดรถอาจไม่ผูกกับงานใดเลย) */
+  onOpenExpenseClaim: () => void;
+  expenseItems: QueuedUpload[];
+  expenseStaleCount: number;
+  onRetryExpenses: () => void;
+  onDeleteExpense: (id: string) => void;
 }
 
-export const WalletTab = ({ balance, pendingWithdrawals = [], transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw }: WalletTabProps) => (
+export const WalletTab = ({
+  balance, pendingWithdrawals = [], transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw,
+  onOpenExpenseClaim, expenseItems, expenseStaleCount, onRetryExpenses, onDeleteExpense,
+}: WalletTabProps) => (
   <div className="h-full bg-[#F9FAFB] overflow-y-auto pb-32 animate-in fade-in">
     {/* Header */}
     <div className="bg-emerald-600 p-8 pt-16 pb-12 text-white rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
@@ -27,7 +39,20 @@ export const WalletTab = ({ balance, pendingWithdrawals = [], transactions, hasM
       >
         ขอถอนเงินเข้าบัญชี
       </button>
+      <button
+        onClick={onOpenExpenseClaim}
+        className="w-full mt-3 bg-emerald-700/40 border border-white/30 text-white py-3.5 rounded-2xl font-bold text-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
+      >
+        <ReceiptText size={16} /> เบิกค่าใช้จ่ายที่จ่ายไปเอง
+      </button>
     </div>
+
+    <ExpenseQueueList
+      items={expenseItems}
+      staleCount={expenseStaleCount}
+      onRetry={onRetryExpenses}
+      onDelete={onDeleteExpense}
+    />
 
     {/* คำขอถอนที่รอฝ่ายการเงินโอน — ยอดถูกกันออกจาก balance ข้างบนแล้ว */}
     {pendingWithdrawals.length > 0 && (

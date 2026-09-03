@@ -12,6 +12,24 @@ const compressionOptions = {
 const MAX_FILE_SIZE_MB = 20;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 
+/**
+ * ชนิดไฟล์ที่ประกาศตอนอัป — **ต้องประกาศเอง ห้ามปล่อยให้ Firebase เดา**
+ *
+ * `storage.rules` มี `isImage()` ที่บังคับ
+ * `contentType.matches('^image/(jpeg|png|webp|heic|heif)$')` กับทุก path ที่แอปนี้เขียน
+ * ถ้า Blob ที่ส่งไปมี `type` ว่าง (เกิดได้จริงกับผลลัพธ์ของ `imageCompression`
+ * บางอินพุต และกับ Blob ที่อ่านกลับมาจาก IndexedDB) Firebase จะเดาเป็น
+ * `application/octet-stream` แล้ว **rules ปฏิเสธทั้งการอัป** — ขึ้นเป็น
+ * `storage/unauthorized` ซึ่งอ่านเหมือนปัญหาสิทธิ์ ทั้งที่เป็นปัญหา metadata
+ *
+ * fallback เป็น jpeg เพราะ `imageCompression` เข้ารหัสออกมาเป็น JPEG
+ * เมื่อไม่รู้ชนิดต้นทาง
+ */
+export const declaredImageType = (type: unknown): string => {
+  const t = typeof type === 'string' ? type.toLowerCase() : '';
+  return ALLOWED_TYPES.includes(t) ? t : 'image/jpeg';
+};
+
 export const validateImageFile = (file: File): string | null => {
   if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|webp|heic|heif)$/i)) {
     return 'รองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP, HEIC)';
@@ -58,7 +76,9 @@ export const uploadImageToFirebase = async (
     }
     const fullPath = `${path}/${fileName}`;
     const storageRef = ref(storage, fullPath);
-    const snapshot = await uploadBytes(storageRef, compressedFile);
+    const snapshot = await uploadBytes(storageRef, compressedFile, {
+      contentType: declaredImageType(compressedFile.type),
+    });
     return await getDownloadURL(snapshot.ref);
   } catch (error) {
     console.error("Upload failed:", error);

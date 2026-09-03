@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Checkout } from './pages/Checkout';
 import { ClaimAssessment } from './pages/ClaimAssessment';
+import { Probe } from './pages/Probe';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
@@ -53,6 +54,13 @@ const RegisterPage = () => {
 const CheckoutPage = () => {
   const navigate = useNavigate();
   return <Checkout onBack={() => navigate('/')} />;
+};
+
+// เครื่องมือวัด P0 ของคิวออฟไลน์ — ไม่ได้ลิงก์จาก UI ไหน เข้าโดยพิมพ์ /probe เท่านั้น
+// (ดูหัวไฟล์ Probe.tsx) ล็อกอินก่อนเพราะทุกการวัดเขียนใต้ riders/{uid}/_probe
+const ProbePage = () => {
+  const navigate = useNavigate();
+  return <Probe onBack={() => navigate('/')} />;
 };
 
 // Login, but able to hand the rider back to where they were going. Scanning a
@@ -231,6 +239,10 @@ function App() {
                   />
                 : <Navigate to="/login" replace />
             }
+          />
+          <Route
+            path="/probe"
+            element={riderId ? <ProbePage /> : <Navigate to="/login" replace />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -22,6 +22,9 @@ import { RejectModal } from '../components/common/RejectModal';
 import { HomeTab } from '../components/home/HomeTab';
 import { HistoryTab } from '../components/history/HistoryTab';
 import { WalletTab } from '../components/wallet/WalletTab';
+import { ExpenseClaimModal } from '../components/wallet/ExpenseClaimModal';
+import { useExpenseQueue } from '../hooks/useExpenseQueue';
+import * as expenseQueueStore from '../utils/uploadQueue/store';
 import { WithdrawModal } from '../components/wallet/WithdrawModal';
 import { ProfileTab } from '../components/profile/ProfileTab';
 import { FAQTab } from '../components/faq/FAQTab';
@@ -56,6 +59,11 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   } = useRiderData(currentRiderId);
 
   const actions = useJobActions(riderInfo);
+
+  // คิวเบิกค่าใช้จ่าย — ผูกกับ currentRiderId ไม่ใช่กับ mount เพราะตัวส่ง
+  // ต้องรอ auth settle ก่อน (token ยังไม่พร้อม = ล้มฟรี)
+  const expenseQueue = useExpenseQueue(currentRiderId);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
   // UI state
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -374,6 +382,14 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           hasMoreTx={hasMoreTx}
           onLoadMoreTx={loadMoreTx}
           onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
+          onOpenExpenseClaim={() => setIsExpenseModalOpen(true)}
+          expenseItems={expenseQueue.items}
+          expenseStaleCount={expenseQueue.staleCount}
+          onRetryExpenses={() => void expenseQueue.flushNow()}
+          onDeleteExpense={(id) => {
+            // ลบได้ทางเดียวคือไรเดอร์กดยืนยันเอง (ยืนยันอยู่ในการ์ด)
+            void expenseQueueStore.remove(id).then(() => expenseQueue.refresh());
+          }}
         />
       )}
 
@@ -486,6 +502,22 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
             })}
             onClose={() => setIsWithdrawModalOpen(false)}
             employmentType={riderInfo.employmentType}
+          />
+        </ModalErrorBoundary>
+      )}
+
+      {isExpenseModalOpen && (
+        <ModalErrorBoundary onClose={() => setIsExpenseModalOpen(false)}>
+          <ExpenseClaimModal
+            uid={currentRiderId}
+            activeJobs={jobData.activeList}
+            onClose={() => setIsExpenseModalOpen(false)}
+            onQueued={(queued) => {
+              // ออนไลน์ = ส่งทันที (ตัวกระตุ้นข้อ 1 ของแผนคิว)
+              // ออฟไลน์ = แค่ refresh ให้เห็นว่ารายการเข้าคิวแล้ว
+              if (queued) void expenseQueue.refresh();
+              else void expenseQueue.flushNow();
+            }}
           />
         </ModalErrorBoundary>
       )}

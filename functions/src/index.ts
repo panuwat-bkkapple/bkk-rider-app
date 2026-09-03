@@ -423,7 +423,23 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 
 // หมวดเงินไรเดอร์ — MIRROR ของ src/utils/walletLedger.ts (functions มี rootDir
 // ของตัวเอง import จาก src/ ไม่ได้) แก้ฝั่งไหนต้องแก้ทั้งคู่
-const RIDER_WALLET_CATEGORIES = new Set(["JOB_PAYOUT", "WITHDRAWAL", "PENALTY", "BONUS"]);
+//
+// **เคยหลุดมาแล้วหนึ่งรอบ อ่านก่อนแก้:** `ADJUSTMENT` ถูกเพิ่มฝั่งแอปใน #125
+// แต่สำเนานี้ไม่ถูกแก้ตาม ผลคือหน้ากระเป๋าโชว์ยอดที่รวมแถว ADJUSTMENT แล้ว
+// ขณะที่ `riderRequestWithdraw` คำนวณยอดถอนได้โดยไม่นับแถวนั้น — ไรเดอร์เห็น
+// ตัวเลขหนึ่งแล้วถอนได้อีกตัวเลขหนึ่ง โดยไม่มี error ที่ไหนบอกว่าทำไม
+// ซึ่งเป็นรูปบั๊กที่ CLAUDE.md เรียกว่า "แก้ฟิลด์เดียวของชุดที่ผูกกัน"
+//
+// **เพิ่มหมวดใหม่ = ต้องแก้สามที่ ไม่ใช่สองที่:** ไฟล์นี้ ·
+// `src/utils/walletLedger.ts` · `bkk-system/src/utils/transactionLogger.ts`
+const RIDER_WALLET_CATEGORIES = new Set([
+  "JOB_PAYOUT",
+  "WITHDRAWAL",
+  "PENALTY",
+  "BONUS",
+  "ADJUSTMENT",
+  "EXPENSE_REIMBURSEMENT",
+]);
 
 function walletTxAmount(t: Record<string, unknown> | null): number | null {
   if (!t) return null;
@@ -527,3 +543,174 @@ export const riderRequestWithdraw = onCall(
     }
   }
 );
+
+// ============================================================
+// 5. Rider expense claim — ไรเดอร์เบิกค่าใช้จ่ายที่สำรองจ่ายเอง
+// ============================================================
+//
+// ค่าทางด่วน/ค่าจอดรถที่ไรเดอร์จ่ายไปเองระหว่างวิ่งงาน วันนี้**ไม่มีช่องทาง
+// บันทึกเลยสักทาง** (สำรวจครบสามรีโปแล้ว) เขาจึงต้องทวงผ่านแชทหรือจำเอาเอง
+// ดีไซน์เต็มอยู่ที่ docs/reports/2026-09-02-rider-expense-claim-design.md
+//
+// เฟส P1 = ท่อฝั่ง server เท่านั้น ยังไม่มี UI:
+//   riderSubmitExpense (ไฟล์นี้ — ฝั่งไรเดอร์ ตามรอย riderRequestWithdraw)
+//   adminReviewExpense (bkk-system/functions — ต้องใช้ lookupStaffByAuth ที่นั่น)
+//
+// **ทำไม callable สองตัวอยู่คนละ codebase:** ตัวนี้ต้องรู้จัก `riders/{uid}`
+// และถูกเรียกจากแอปไรเดอร์ (โปรเจกต์นี้ deploy เป็น codebase rider-notifications)
+// ส่วนตัวรีวิวต้อง gate ด้วย `lookupStaffByAuth` + `dispatchAdminPush` ซึ่งอยู่ที่
+// bkk-system ทั้งคู่ การย้ายอย่างใดอย่างหนึ่งข้ามฝั่งแปลว่าต้องก๊อป gate ไปอีกที่
+// ซึ่งแพงกว่าการ deploy สอง codebase
+//
+// ชื่อ function ต้อง unique ระดับ project (กฎ {region}/{name} ใน CLAUDE.md) —
+// prefix `rider*` ยังไม่ชนกับใคร
+
+import {
+  RIDER_EXPENSE_DEFAULTS,
+  buildExpenseRow,
+  duplicateDecision,
+  evaluateExpense,
+  evidenceBelongsTo,
+  resolveExpenseSettings,
+} from "./riderExpensePolicy";
+
+const EXPENSE_CATEGORIES = new Set(["toll", "parking", "other"]);
+
+export const riderSubmitExpense = onCall(
+  { region: "asia-southeast1" },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "กรุณาเข้าสู่ระบบใหม่");
+
+    // สถานะไรเดอร์: ใช้เกณฑ์เดียวกับกฎ /jobs ที่แก้ใน #928 เป๊ะ — มี record
+    // และไม่ถูก Suspended/Rejected. **ห้ามกลับไปเป็น allow-list
+    // `approval_status === 'Active'`**: ค่านั้นไม่เคยถูกเขียนลง DB สำหรับ
+    // ไรเดอร์ส่วนใหญ่ (ตอนสมัครเขียนแค่ `status` ส่วนหน้าแอดมิน derive ตอน
+    // render โดยไม่เขียนกลับ) การใช้มันทำ production พังมาแล้วหนึ่งรอบ
+    const riderSnap = await db.ref(`riders/${uid}`).get();
+    if (!riderSnap.exists()) {
+      throw new HttpsError("permission-denied", "ไม่พบบัญชีไรเดอร์");
+    }
+    const rider = riderSnap.val() || {};
+    const standing = String(rider.approval_status ?? "");
+    if (standing === "Suspended" || standing === "Rejected") {
+      throw new HttpsError("permission-denied", "บัญชีถูกระงับ ติดต่อแอดมิน");
+    }
+
+    const data = (request.data || {}) as Record<string, unknown>;
+
+    const category = String(data.category ?? "");
+    if (!EXPENSE_CATEGORIES.has(category)) {
+      throw new HttpsError("invalid-argument", "เลือกประเภทค่าใช้จ่าย");
+    }
+    const note = String(data.note ?? "").trim().slice(0, 500);
+    if (category === "other" && note === "") {
+      throw new HttpsError("invalid-argument", "ระบุรายละเอียดเมื่อเลือก 'อื่นๆ'");
+    }
+
+    // หลักฐานเป็นเงื่อนไขของฟีเจอร์ ไม่ใช่ของแถม: ไม่มีรูป = ส่งไม่ได้
+    // และ URL ต้องอยู่ใต้โฟลเดอร์ของคนที่ยิงมาเอง — storage rules ให้ไรเดอร์
+    // ทุกคนอ่านรูปของกันได้ การแนบ URL ของคนอื่นจึงทำได้ง่ายมากถ้าไม่ตรงนี้
+    const rawEvidence = Array.isArray(data.evidence) ? data.evidence : [];
+    const evidence = rawEvidence
+      .map((e) => (e && typeof e === "object" ? (e as Record<string, unknown>).url : e))
+      .filter((url) => evidenceBelongsTo(url, uid))
+      .slice(0, 5)
+      .map((url) => ({ url: String(url), uploaded_at: Date.now() }));
+    if (evidence.length === 0) {
+      throw new HttpsError("invalid-argument", "แนบรูปสลิปหรือหลักฐานอย่างน้อย 1 รูป");
+    }
+
+    // งานที่อ้างต้องเป็นของไรเดอร์คนนี้ — ไม่งั้นเบิกใส่งานคนอื่นได้ ซึ่งทำให้
+    // ต้นทุนไปลงงานผิดใบและตามรอยย้อนกลับไม่ได้
+    const jobId = data.job_id == null ? null : String(data.job_id);
+    if (jobId) {
+      const jobRiderId = (await db.ref(`jobs/${jobId}/rider_id`).get()).val();
+      if (jobRiderId !== uid) {
+        throw new HttpsError("permission-denied", "งานนี้ไม่ใช่งานของคุณ");
+      }
+    }
+
+    const settings = resolveExpenseSettings(
+      (await db.ref("settings/rider_expense").get()).val()
+    );
+
+    // ยอดรวมของงานเดียวกันที่ยังมีชีวิต — ใช้ตัดสินว่าต้องขึ้น CEO ไหม
+    // query ตาม index rider_id (มีใน rules แล้ว) ไม่กวาดทั้งโหนด (กฎค่า RTDB)
+    let jobTotalSoFar = 0;
+    if (jobId) {
+      const mine = await db
+        .ref("rider_expenses")
+        .orderByChild("rider_id")
+        .equalTo(uid)
+        .get();
+      mine.forEach((child) => {
+        const v = child.val() || {};
+        if (v.job_id === jobId && v.status !== "rejected") {
+          jobTotalSoFar += Number(v.amount_thb) || 0;
+        }
+        return false;
+      });
+    }
+
+    const now = Date.now();
+    const occurredAt = Number(data.occurred_at);
+    const verdict = evaluateExpense(
+      {
+        amountThb: Number(data.amount_thb),
+        // ไม่ส่งมา = ถือว่าจ่ายตอนนี้ (เคสปกติ: ถ่ายสลิปแล้วส่งทันที)
+        occurredAt: Number.isFinite(occurredAt) ? occurredAt : now,
+        jobTotalSoFar,
+      },
+      settings,
+      now
+    );
+    if (!verdict.ok) {
+      throw new HttpsError("failed-precondition", verdict.message || "รายการนี้ส่งไม่ได้");
+    }
+
+    // id มาจาก client เพื่อให้ offline queue ยิงซ้ำได้โดยไม่เกิดแถวซ้ำ
+    // (queue ยิงซ้ำเป็นเรื่องปกติ ไม่ใช่ความผิดพลาด) — sanitize ให้เป็น key
+    // ที่ RTDB รับได้ก่อนเสมอ ไม่งั้น path พังหรือแตกโหนดโดยไม่ตั้งใจ
+    const rawId = String(data.id ?? "");
+    const id = /^[A-Za-z0-9_-]{8,64}$/.test(rawId)
+      ? rawId
+      : (db.ref("rider_expenses").push().key as string);
+
+    const rowRef = db.ref(`rider_expenses/${id}`);
+    const existing = (await rowRef.get()).val();
+    // ยิงซ้ำจากคิว = ตอบผลเดิม ไม่เขียนทับ (ทับแล้วรายการที่แอดมินอนุมัติไป
+    // แล้วจะกลับเป็น submitted แล้วอนุมัติได้อีกรอบ = จ่ายสองครั้ง)
+    const dup = duplicateDecision(existing, uid);
+    if (dup === "reject_not_owner") {
+      throw new HttpsError("permission-denied", "รหัสรายการนี้ถูกใช้แล้ว");
+    }
+    if (dup === "return_existing") {
+      return { id, status: existing.status, duplicate: true };
+    }
+
+    // status ถูกตั้งเป็น submitted ข้างใน buildExpenseRow และ **ไม่มีช่องให้
+    // ส่งค่าอื่นเข้ามา** — ไรเดอร์ยิง callable ตรงได้ สิ่งแรกที่จะลองส่งคือ
+    // status: "approved"
+    await rowRef.set(
+      buildExpenseRow({
+        id,
+        uid,
+        jobId,
+        category,
+        amountThb: Number(data.amount_thb),
+        note,
+        evidence,
+        occurredAt: Number.isFinite(occurredAt) ? occurredAt : now,
+        now,
+        needsCeo: verdict.needsCeo,
+        late: verdict.late,
+      })
+    );
+
+    return { id, status: "submitted", needs_ceo: verdict.needsCeo, late: verdict.late };
+  }
+);
+
+// ค่าเริ่มต้นถูก export เผื่อหน้าตั้งค่าฝั่งแอดมินอยากโชว์ว่า "ยังไม่ตั้ง = ใช้ค่านี้"
+export { RIDER_EXPENSE_DEFAULTS };
