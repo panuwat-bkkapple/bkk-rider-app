@@ -6,6 +6,8 @@ import { db, auth } from '../api/firebase';
 import { hashPin } from '../utils/pinHash';
 import { toast } from '../components/common/Toast';
 import { loginErrorMessage, resetPasswordErrorMessage } from '../utils/authErrors';
+import { riderStanding, STANDING } from '../utils/riderStanding';
+import { takeAuthNotice } from '../utils/authNotice';
 import { logAuthEvent } from '../utils/authEvents';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -39,6 +41,9 @@ export const Login = ({
     );
 
     const [email, setEmail] = useState(sessionExpired ? (prefillEmail || '') : '');
+
+    // ข้อความที่ฝากข้ามการ reload มา (เช่น บัญชีถูกระงับ) — อ่านครั้งเดียวแล้วลบ
+    const [notice] = useState<string | null>(() => (lockMode ? null : takeAuthNotice()));
     const [password, setPassword] = useState('');
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
@@ -145,10 +150,22 @@ export const Login = ({
 
             if (snapshot.exists()) {
                 const riderData = snapshot.val();
-                if (riderData.status === 'Pending') {
-                    logAuthEvent(uid, 'login_rejected_pending');
+                // ตัดสินด้วย approval_status เป็นหลัก (fallback ไป status สำหรับ
+                // แถวเก่าและผู้สมัครใหม่ที่ Register เขียนแค่ status) — ของเดิม
+                // เทียบ `status === 'Pending'` ตรงๆ ซึ่งเป็นฟิลด์ที่ **แอปไรเดอร์
+                // เขียนทับเองทุก ~10 วินาที** ด้วย presence (Online/Busy) ด่านนี้
+                // จึงทำงานถูกด้วยอุบัติเหตุเท่านั้น: คนที่ยัง Pending ยังไม่เคย
+                // ล็อกอินสำเร็จ จึงยังไม่เคยมีโอกาสเขียนทับ
+                const standing = riderStanding(riderData);
+                if (standing !== STANDING.ACTIVE) {
+                    const pending = standing === STANDING.PENDING;
+                    logAuthEvent(uid, pending ? 'login_rejected_pending' : 'login_rejected_not_active', { standing });
                     await signOut(auth);
-                    setError('บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน');
+                    setError(
+                        pending
+                            ? 'บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน'
+                            : 'บัญชีนี้ใช้งานไม่ได้ กรุณาติดต่อออฟฟิศ'
+                    );
                     setLoading(false);
                     return;
                 }
@@ -250,6 +267,12 @@ export const Login = ({
                 {sessionExpired && mode === 'email' && (
                     <div className="text-sm mb-4 font-medium bg-amber-50 text-amber-700 p-3 rounded-xl text-left">
                         เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง
+                    </div>
+                )}
+
+                {notice && (
+                    <div className="text-sm mb-4 font-medium bg-red-50 text-red-700 p-3 rounded-xl text-left">
+                        {notice}
                     </div>
                 )}
 
