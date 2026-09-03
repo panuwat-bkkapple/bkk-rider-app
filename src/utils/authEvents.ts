@@ -24,13 +24,12 @@ export type AuthEventReason =
   | 'session_recovered'
   // ไรเดอร์กดออกจากระบบเอง
   | 'explicit_logout'
-
+  // ตัวจับเวลา 30 นาทีของ useAutoLogout (PR 2 จะถอดออก)
+  | 'auto_logout_timeout'
   // listener บน riders/{id} เห็น approval_status === 'Suspended'
   | 'account_suspended'
   // ล็อกอินอีเมลผ่าน แต่บัญชียังรออนุมัติ
   | 'login_rejected_pending'
-  // ล็อกอินอีเมลผ่าน แต่ standing ไม่ใช่ Active (Rejected/Suspended/ค่าที่ไม่รู้จัก)
-  | 'login_rejected_not_active'
   // ล็อกอินอีเมลผ่าน แต่ไม่มีแถวไรเดอร์ในฐานข้อมูล
   | 'login_rejected_no_profile'
   // ไรเดอร์กดปุ่ม "สลับบัญชี" ที่จอ PIN
