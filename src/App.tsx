@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { auth } from './api/firebase';
@@ -13,14 +13,34 @@ import { LoadingSpinner } from './components/common/LoadingSpinner';
 import { useAutoLogout } from './hooks/useAutoLogout';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { ToastContainer } from './components/common/Toast';
+import { logAuthEvent } from './utils/authEvents';
+
+// เพดานรอ auth ก่อนยอมแพ้แล้วโชว์จอล็อกอิน — ยกค่าจาก bkk-frontend-next
+// (lib/anonAuth.ts AUTH_TIMEOUT_MS) ซึ่งตั้งไว้หลังเจอ IndexedDB แขวนเงียบบน
+// iOS Safari ทำให้ onAuthStateChanged ไม่ emit เลยสักครั้ง
+//
+// ที่นี่ไม่ได้ reject promise เหมือนต้นทาง แต่ปลด authChecked เพื่อให้ผู้ใช้
+// ได้ "จอที่กดอะไรได้" แทน spinner ที่หมุนไม่จบ — spinner ที่ไม่มีวันจบคือ
+// ทางตันที่ไรเดอร์ทำอะไรต่อไม่ได้เลย ส่วนจอล็อกอินอย่างน้อยยังพาเขากลับเข้ามาได้
+const AUTH_CHECK_TIMEOUT_MS = 10_000;
 
 // Wrapper to use navigate hooks inside components
-const LoginPage = ({ onLoginSuccess }: { onLoginSuccess: (id: string) => void }) => {
+const LoginPage = ({
+  onLoginSuccess,
+  sessionExpired,
+  prefillEmail,
+}: {
+  onLoginSuccess: (id: string) => void;
+  sessionExpired: boolean;
+  prefillEmail: string | null;
+}) => {
   const navigate = useNavigate();
   return (
     <Login
       onLoginSuccess={onLoginSuccess}
       onGoToRegister={() => navigate('/register')}
+      sessionExpired={sessionExpired}
+      prefillEmail={prefillEmail}
     />
   );
 };
@@ -40,23 +60,33 @@ const CheckoutPage = () => {
 // `next` round-trip, a logged-out rider scans, logs in, and lands on the job
 // list with no idea what happened to the scan.
 const LoginRoute = ({
-  riderId,
+  authed,
   onLoginSuccess,
+  sessionExpired,
+  prefillEmail,
 }: {
-  riderId: string | null;
+  authed: boolean;
   onLoginSuccess: (id: string) => void;
+  sessionExpired: boolean;
+  prefillEmail: string | null;
 }) => {
   const { search } = useLocation();
-  if (riderId) {
+  if (authed) {
     const next = new URLSearchParams(search).get('next');
     return <Navigate to={next || '/'} replace />;
   }
-  return <LoginPage onLoginSuccess={onLoginSuccess} />;
+  return (
+    <LoginPage
+      onLoginSuccess={onLoginSuccess}
+      sessionExpired={sessionExpired}
+      prefillEmail={prefillEmail}
+    />
+  );
 };
 
-const ClaimRoute = ({ riderId }: { riderId: string | null }) => {
+const ClaimRoute = ({ riderId, authed }: { riderId: string | null; authed: boolean }) => {
   const location = useLocation();
-  if (!riderId) {
+  if (!riderId || !authed) {
     const next = encodeURIComponent(location.pathname + location.search + location.hash);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
@@ -68,20 +98,48 @@ function App() {
     localStorage.getItem('rider_id') && localStorage.getItem('device_pin') ? localStorage.getItem('rider_id') : null
   );
   const [authChecked, setAuthChecked] = useState(false);
+  // Firebase session หายไปขณะที่เครื่องยังลงทะเบียนอยู่ — ไม่ใช่การออกจากระบบ
+  // จึงไม่ล้าง rider_id/device_pin (หลักการข้อ 2) แค่บังคับให้ยืนยันตัวตนใหม่
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Verify Firebase Auth session is still valid
   useEffect(() => {
+    // เพดานเวลา: ถ้า onAuthStateChanged ไม่ยิงเลย (IDB แขวนบน iOS Safari)
+    // setAuthChecked จะไม่มีวันถูกเรียกจากคอลแบ็ก แล้วไรเดอร์จะเห็น spinner
+    // ค้างถาวร — นาฬิกาตัวนี้คือคนที่ปลดล็อกสถานะนั้น
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      logAuthEvent(riderId, 'auth_check_timeout', { timeoutMs: AUTH_CHECK_TIMEOUT_MS });
+      // ไม่มี user มาถึงในเวลาที่กำหนด = ปฏิบัติเหมือน session หาย: จอล็อกอิน
+      // ไม่ใช่ spinner. เครื่องยังลงทะเบียนอยู่เหมือนเดิม
+      if (riderId) setSessionExpired(true);
+      setAuthChecked(true);
+    }, AUTH_CHECK_TIMEOUT_MS);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      settled = true;
+      clearTimeout(timer);
       if (!user && riderId) {
-        // Firebase Auth expired but localStorage thinks we're logged in → force re-login
-        console.warn('Firebase Auth session expired, clearing local session');
-        localStorage.removeItem('rider_id');
-        localStorage.removeItem('device_pin');
-        setRiderId(null);
+        // Firebase Auth หายไปแต่ localStorage ยังบอกว่าล็อกอินอยู่
+        //
+        // เดิมบรรทัดนี้ลบ rider_id + device_pin ทิ้ง ซึ่งแปลว่า null ตัวเดียว
+        // จาก SDK ทำลายการลงทะเบียนเครื่องถาวร และไรเดอร์ต้องกรอกอีเมล +
+        // รหัสผ่าน + ตั้ง PIN ใหม่ทั้งชุด. ตอนนี้เก็บการลงทะเบียนไว้แล้วขอแค่
+        // รหัสผ่านรอบเดียว — การล้างเป็นสิทธิ์ของการกดออกจากระบบเองกับสัญญาณ
+        // จากฝั่ง server เท่านั้น (หลักการข้อ 2)
+        logAuthEvent(riderId, 'firebase_session_lost');
+        setSessionExpired(true);
+      } else if (user) {
+        setSessionExpired(false);
       }
       setAuthChecked(true);
     });
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, [riderId]);
 
   // Auto-logout after 30 min of inactivity
@@ -112,12 +170,21 @@ function App() {
   if (!authChecked) return <LoadingSpinner />;
 
   const handleLoginSuccess = (id: string) => {
+    if (sessionExpired) logAuthEvent(id, 'session_recovered');
+    setSessionExpired(false);
     setRiderId(id);
   };
 
   const handleLogout = () => {
+    setSessionExpired(false);
     setRiderId(null);
   };
+
+  // "เข้าใช้งานได้" = เครื่องลงทะเบียนอยู่ **และ** Firebase session ยังใช้ได้
+  // แยกจาก riderId เพราะ riderId คือการลงทะเบียนเครื่องซึ่งอยู่ต่อได้ข้าม
+  // session ที่หมดอายุ (หลักการข้อ 1: Firebase คือแหล่งความจริงของการล็อกอิน
+  // ส่วน PIN เป็นแค่กลอนในเครื่อง)
+  const authed = !!riderId && !sessionExpired;
 
   return (
     <ErrorBoundary>
@@ -127,25 +194,35 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={<LoginRoute riderId={riderId} onLoginSuccess={handleLoginSuccess} />}
+            element={
+              <LoginRoute
+                authed={authed}
+                onLoginSuccess={handleLoginSuccess}
+                sessionExpired={sessionExpired}
+                prefillEmail={localStorage.getItem('rider_email')}
+              />
+            }
           />
-          <Route path="/claim/:assessmentId" element={<ClaimRoute riderId={riderId} />} />
+          <Route
+            path="/claim/:assessmentId"
+            element={<ClaimRoute riderId={riderId} authed={authed} />}
+          />
           <Route
             path="/register"
             element={
-              riderId ? <Navigate to="/" replace /> : <RegisterPage />
+              authed ? <Navigate to="/" replace /> : <RegisterPage />
             }
           />
           <Route
             path="/checkout"
             element={
-              riderId ? <CheckoutPage /> : <Navigate to="/login" replace />
+              authed ? <CheckoutPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/"
             element={
-              riderId
+              authed && riderId
                 ? <RiderApp
                     currentRiderId={riderId}
                     onLogout={handleLogout}

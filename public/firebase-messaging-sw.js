@@ -9,12 +9,33 @@
 // previous v1 listed /manifest-icon-192.maskable.png which never existed in
 // public/, so cache.addAll() rejected (atomic) and the install event failed,
 // leaving no active SW to receive background push.
-const CACHE_NAME = 'bkk-rider-v3';
+const CACHE_NAME = 'bkk-rider-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/android-chrome-192x192.png',
 ];
+
+// สำเนา index.html ที่ใช้ตอนออฟไลน์ — เก็บไว้ที่คีย์เดียวคือ '/'
+//
+// เดิมค่านี้ถูกเขียนครั้งเดียวตอน install ของ CACHE_NAME แต่ละรุ่น แล้วไม่เคย
+// ถูกเขียนทับอีกเลย (เส้น document เป็น network-first จึงไม่เคย cache.put)
+// ผลคือ fallback ออฟไลน์เสิร์ฟ index.html ของวันที่ SW รุ่นนั้นติดตั้ง ซึ่งชี้
+// ไปยัง /assets/index-<hash เก่า>.js — โค้ด auth ทั้งก้อนย้อนกลับไปเป็น
+// เวอร์ชันนั้นได้ไม่จำกัดเวลา (ดูรายงานสำรวจ 3 ก.ย. 2569 ข้อ 5)
+//
+// ตอนนี้รีเฟรชสองจังหวะ: ตอน activate และทุกครั้งที่ navigation สำเร็จ
+const OFFLINE_DOC_KEY = '/';
+
+async function cacheOfflineDoc(response) {
+  if (!response || !response.ok) return;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(OFFLINE_DOC_KEY, response);
+  } catch (err) {
+    console.warn('[SW] Failed to refresh offline document:', err?.message || err);
+  }
+}
 
 self.addEventListener('install', (event) => {
   // cache.addAll is atomic — a single 404 rejects the whole promise, the
@@ -38,9 +59,22 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
+
+      // ดึง index.html สดมาทับสำเนาออฟไลน์ทันทีที่ SW รุ่นนี้เข้าคุม —
+      // ถ้าไม่ทำ ตัวที่ค้างอยู่คือ snapshot ตอน install ซึ่งเก่าได้ไม่จำกัด
+      // cache: 'reload' เพื่อข้าม HTTP cache ของเบราว์เซอร์ ไม่งั้นอาจได้
+      // สำเนาเก่าจากชั้นนั้นมาแทน
+      try {
+        const fresh = await fetch(OFFLINE_DOC_KEY, { cache: 'reload' });
+        await cacheOfflineDoc(fresh.clone());
+      } catch (err) {
+        // ออฟไลน์ตอน activate = เก็บของเดิมไว้ก่อน ดีกว่าไม่มีอะไรเลย
+        console.warn('[SW] activate could not refresh offline document:', err?.message || err);
+      }
+    })()
   );
   self.clients.claim();
 });
@@ -51,10 +85,31 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first for HTML, cache-first for assets
-  if (event.request.destination === 'document') {
+  // Network-first for navigations, cache-first for hashed assets
+  //
+  // เทียบ request.mode === 'navigate' ด้วย ไม่ใช่ destination อย่างเดียว —
+  // destination เป็น '' ในบางเบราว์เซอร์/บางเส้นทาง แล้ว navigation จะร่วงลงไป
+  // ไม่เข้ากิ่งไหนเลย
+  const isNavigation =
+    event.request.mode === 'navigate' || event.request.destination === 'document';
+
+  if (isNavigation) {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('/'))
+      (async () => {
+        try {
+          const fresh = await fetch(event.request);
+          // ทุก navigation ที่สำเร็จรีเฟรชสำเนาออฟไลน์ไปด้วย — สำเนาจึงตามหลัง
+          // ของจริงไม่เกินหนึ่งครั้งที่เปิดแอปแบบออนไลน์ ไม่ใช่หลายเดือน
+          if (fresh && fresh.ok) void cacheOfflineDoc(fresh.clone());
+          return fresh;
+        } catch {
+          const cached = await caches.match(OFFLINE_DOC_KEY);
+          if (cached) return cached;
+          // ไม่มีสำเนาเลย (ยังไม่เคยออนไลน์หลังติดตั้ง) — ปล่อยให้เบราว์เซอร์
+          // แสดงหน้า offline ของตัวเอง ดีกว่าคืน Response ว่างที่อ่านไม่ออก
+          throw new Error('offline and no cached document');
+        }
+      })()
     );
   } else if (['script', 'style', 'image', 'font'].includes(event.request.destination)) {
     event.respondWith(

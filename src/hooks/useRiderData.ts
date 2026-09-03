@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
+import { logAuthEvent } from '../utils/authEvents';
 import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
@@ -81,9 +82,15 @@ export const useRiderData = (currentRiderId: string) => {
       if (data.approval_status === 'Suspended') {
         toast.error(`บัญชีถูกระงับ: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
         setIsOnline(false);
+        // สัญญาณจากฝั่ง server = หนึ่งในสองเหตุที่ล้างการลงทะเบียนเครื่องได้
+        // (อีกเหตุคือไรเดอร์กดออกเอง) — หลักการข้อ 2
+        logAuthEvent(currentRiderId, 'account_suspended', {
+          suspendReason: typeof data.suspend_reason === 'string' ? data.suspend_reason.slice(0, 120) : null,
+        });
         signOut(auth).then(() => {
           localStorage.removeItem('rider_id');
           localStorage.removeItem('device_pin');
+          localStorage.removeItem('rider_email');
           window.location.reload();
         });
         return;
