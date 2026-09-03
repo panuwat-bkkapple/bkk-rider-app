@@ -16,6 +16,7 @@
 // downstream filtering logic is unchanged.
 import { useState, useEffect, useMemo } from 'react';
 import { ref, onValue, query, orderByChild, equalTo } from 'firebase/database';
+import { isPermissionDenied, notifySessionLost } from '../utils/sessionState';
 import { db } from '../api/firebase';
 
 // Raw DB status strings whose normalizeStatus() result is ACTIVE_LEAD or
@@ -71,6 +72,14 @@ export const useRiderJobs = (currentRiderId: string) => {
         (error) => {
           console.error('useRiderJobs error (rider_id query):', error.message);
           markLoaded('mine');
+          // นี่คือ listener ที่ผลิตอาการ "ไม่มีงาน" ตอน token ตาย — กองงานของ
+          // ไรเดอร์มาจากตรงนี้ที่เดียว (หลักการข้อ 4)
+          if (isPermissionDenied(error)) {
+            notifySessionLost(currentRiderId, 'firebase_session_lost', {
+              source: 'useRiderJobs',
+              query: 'rider_id',
+            });
+          }
         }
       )
     );
@@ -87,6 +96,12 @@ export const useRiderJobs = (currentRiderId: string) => {
           (error) => {
             console.error(`useRiderJobs error (status "${status}"):`, error.message);
             markLoaded(status);
+            if (isPermissionDenied(error)) {
+              notifySessionLost(currentRiderId, 'firebase_session_lost', {
+                source: 'useRiderJobs',
+                query: `status:${status}`,
+              });
+            }
           }
         )
       );

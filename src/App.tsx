@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, onIdTokenChanged } from 'firebase/auth';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { auth } from './api/firebase';
 import { RiderApp } from './pages/RiderApp';
@@ -15,6 +15,7 @@ import { usePinLock } from './hooks/usePinLock';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { ToastContainer } from './components/common/Toast';
 import { logAuthEvent } from './utils/authEvents';
+import { onSessionLost, resetSessionLost } from './utils/sessionState';
 
 // เพดานรอ auth ก่อนยอมแพ้แล้วโชว์จอล็อกอิน — ยกค่าจาก bkk-frontend-next
 // (lib/anonAuth.ts AUTH_TIMEOUT_MS) ซึ่งตั้งไว้หลังเจอ IndexedDB แขวนเงียบบน
@@ -140,6 +141,7 @@ function App() {
         logAuthEvent(riderId, 'firebase_session_lost');
         setSessionExpired(true);
       } else if (user) {
+        resetSessionLost();
         setSessionExpired(false);
       }
       setAuthChecked(true);
@@ -167,6 +169,25 @@ function App() {
   const canLock = !!riderId && !sessionExpired && !!localStorage.getItem('device_pin');
   const { locked, unlock } = usePinLock(canLock);
 
+  // ชั้นล่าง (RTDB listener / callable) ประกาศว่า session ใช้ไม่ได้แล้ว
+  useEffect(() => {
+    return onSessionLost(() => setSessionExpired(true));
+  }, []);
+
+  // token ถูกเพิกถอน / บัญชีถูกปิด → SDK ยิง null ที่นี่
+  //
+  // นี่คือ seam ทั่วไปของเรื่องนี้: การเช็ค `unauthenticated` ตาม call site ของ
+  // callable เป็นทางลัดสำหรับเส้นที่ไรเดอร์ใช้ถี่ที่สุด แต่ตัวที่ครอบทุกเส้นทาง
+  // โดยไม่ต้องไล่ต่อทีละจุดคือตัวนี้ — ไม่ว่า request ไหนจะเป็นตัวสะดุดก่อน
+  useEffect(() => {
+    return onIdTokenChanged(auth, (user) => {
+      if (!user && riderId) {
+        logAuthEvent(riderId, 'firebase_session_lost', { source: 'onIdTokenChanged' });
+        setSessionExpired(true);
+      }
+    });
+  }, [riderId]);
+
   // Pending chat jobId from notification tap
   const [pendingChatJobId, setPendingChatJobId] = useState<string | null>(null);
 
@@ -193,11 +214,13 @@ function App() {
 
   const handleLoginSuccess = (id: string) => {
     if (sessionExpired) logAuthEvent(id, 'session_recovered');
+    resetSessionLost();
     setSessionExpired(false);
     setRiderId(id);
   };
 
   const handleLogout = () => {
+    resetSessionLost();
     setSessionExpired(false);
     setRiderId(null);
   };

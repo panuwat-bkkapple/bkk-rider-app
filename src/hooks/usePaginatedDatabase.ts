@@ -1,6 +1,7 @@
 // src/hooks/usePaginatedDatabase.ts
 import { useState, useEffect, useCallback } from 'react';
 import { ref, query, orderByChild, limitToLast, endBefore, equalTo, onValue, get } from 'firebase/database';
+import { isPermissionDenied, notifySessionLost } from '../utils/sessionState';
 import { db } from '../api/firebase';
 
 const PAGE_SIZE = 50;
@@ -62,6 +63,13 @@ export const usePaginatedDatabase = (
       setLoading(false);
     }, (error) => {
       console.error(`usePaginatedDatabase error on "${path}":`, error.message);
+      // ยอดกระเป๋าที่กลายเป็น 0 เพราะหมดสิทธิ์ อ่านออกมาเหมือน "ไม่มีเงิน"
+      if (isPermissionDenied(error)) {
+        notifySessionLost(localStorage.getItem('rider_id'), 'firebase_session_lost', {
+          source: 'usePaginatedDatabase',
+          path,
+        });
+      }
       setData([]);
       setHasMore(false);
       setLoading(false);
