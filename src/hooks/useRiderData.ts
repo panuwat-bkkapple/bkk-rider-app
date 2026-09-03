@@ -4,6 +4,8 @@ import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
 import { logAuthEvent } from '../utils/authEvents';
+import { isSuspended } from '../utils/riderStanding';
+import { setAuthNotice } from '../utils/authNotice';
 import { useDatabase } from './useDatabase';
 import { useRiderJobs } from './useRiderJobs';
 import { usePaginatedDatabase } from './usePaginatedDatabase';
@@ -79,14 +81,27 @@ export const useRiderData = (currentRiderId: string) => {
       if (!snapshot.exists()) return;
       const data = snapshot.val();
 
-      if (data.approval_status === 'Suspended') {
-        toast.error(`บัญชีถูกระงับ: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
+      // อ่านผ่าน isSuspended (approval_status ก่อน แล้ว fallback status) แทน
+      // การเทียบ `data.approval_status === 'Suspended'` ตรงๆ — เหตุผลเต็มอยู่ที่
+      // utils/riderStanding.ts และรายงาน Task 3 (3 ก.ย. 2569)
+      if (isSuspended(data)) {
+        const reason = typeof data.suspend_reason === 'string' ? data.suspend_reason.slice(0, 120) : '';
+        const message = reason
+          ? `บัญชีถูกระงับ กรุณาติดต่อออฟฟิศ (${reason})`
+          : 'บัญชีถูกระงับ กรุณาติดต่อออฟฟิศ';
+
+        toast.error(message);
         setIsOnline(false);
+
         // สัญญาณจากฝั่ง server = หนึ่งในสองเหตุที่ล้างการลงทะเบียนเครื่องได้
         // (อีกเหตุคือไรเดอร์กดออกเอง) — หลักการข้อ 2
-        logAuthEvent(currentRiderId, 'account_suspended', {
-          suspendReason: typeof data.suspend_reason === 'string' ? data.suspend_reason.slice(0, 120) : null,
-        });
+        logAuthEvent(currentRiderId, 'account_suspended', { suspendReason: reason || null });
+
+        // toast ตายพร้อมกับ reload ที่ตามมาอีกเสี้ยววินาที ไรเดอร์จึงเห็นแค่จอ
+        // ล็อกอินเปล่าๆ โดยไม่รู้ว่าเกิดอะไรขึ้น — ฝากข้อความไว้ใน
+        // sessionStorage ให้จอล็อกอินอ่านต่อ (หลักการข้อ 4: ต้องมองเห็นได้)
+        setAuthNotice(message);
+
         signOut(auth).then(() => {
           localStorage.removeItem('rider_id');
           localStorage.removeItem('device_pin');

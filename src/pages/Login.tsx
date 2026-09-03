@@ -6,6 +6,8 @@ import { db, auth } from '../api/firebase';
 import { hashPin } from '../utils/pinHash';
 import { toast } from '../components/common/Toast';
 import { logAuthEvent } from '../utils/authEvents';
+import { riderStanding, STANDING } from '../utils/riderStanding';
+import { takeAuthNotice } from '../utils/authNotice';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -16,15 +18,29 @@ interface LoginProps {
     // รหัสผ่านตรงๆ เพราะ PIN ปลดกลอนในเครื่องได้ แต่สร้าง session ใหม่ไม่ได้
     sessionExpired?: boolean;
     prefillEmail?: string | null;
+    // กลอน PIN ตามเวลา (usePinLock) — ไรเดอร์ยังล็อกอินอยู่ทุกประการ แค่ต้อง
+    // ปลดกลอนก่อนใช้งานต่อ ห้ามพาไปหน้ากรอกอีเมล
+    lockMode?: boolean;
+    onUnlock?: () => void;
 }
 
-export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, prefillEmail = null }: LoginProps) => {
+export const Login = ({
+    onLoginSuccess,
+    onGoToRegister,
+    sessionExpired = false,
+    prefillEmail = null,
+    lockMode = false,
+    onUnlock,
+}: LoginProps) => {
     const savedRiderId = localStorage.getItem('rider_id');
     const savedPin = localStorage.getItem('device_pin');
 
     const [mode, setMode] = useState<'email' | 'create_pin' | 'enter_pin' | 'forgot_password'>(
-        sessionExpired ? 'email' : (savedRiderId && savedPin ? 'enter_pin' : 'email')
+        lockMode ? 'enter_pin' : (sessionExpired ? 'email' : (savedRiderId && savedPin ? 'enter_pin' : 'email'))
     );
+
+    // ข้อความที่ฝากข้ามการ reload มา (เช่น บัญชีถูกระงับ) — อ่านครั้งเดียว
+    const [notice] = useState<string | null>(() => (lockMode ? null : takeAuthNotice()));
 
     const [email, setEmail] = useState(sessionExpired ? (prefillEmail || '') : '');
     const [password, setPassword] = useState('');
@@ -51,13 +67,17 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
             hashPin(pin).then(hashed => {
                 if (hashed === savedPin && savedRiderId) {
                     setPinAttempts(0);
-                    onLoginSuccess(savedRiderId);
+                    // ปลดกลอน ≠ ล็อกอิน — ตอนล็อก Firebase session ยังอยู่ครบ
+                    // การเรียก onLoginSuccess จะไปรีเซ็ต state ที่ไม่ควรถูกแตะ
+                    if (lockMode) onUnlock?.();
+                    else onLoginSuccess(savedRiderId);
                 } else {
                     // Backward compat: check plaintext for old PINs, then migrate
                     if (pin === savedPin && savedRiderId) {
                         hashPin(pin).then(h => localStorage.setItem('device_pin', h));
                         setPinAttempts(0);
-                        onLoginSuccess(savedRiderId);
+                        if (lockMode) onUnlock?.();
+                        else onLoginSuccess(savedRiderId);
                     } else {
                         const attempts = pinAttempts + 1;
                         setPinAttempts(attempts);
@@ -98,7 +118,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
                 }
             }
         }
-    }, [pin, mode, step, savedPin, savedRiderId, confirmPin, onLoginSuccess]);
+    }, [pin, mode, step, savedPin, savedRiderId, confirmPin, onLoginSuccess, lockMode, onUnlock]);
 
     // Email login with validation
     const handleEmailLogin = async (e: React.FormEvent) => {
@@ -129,10 +149,25 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
 
             if (snapshot.exists()) {
                 const riderData = snapshot.val();
-                if (riderData.status === 'Pending') {
-                    logAuthEvent(uid, 'login_rejected_pending');
+
+                // ตัดสินด้วย approval_status เป็นหลัก (fallback ไป status สำหรับ
+                // แถวเก่าและผู้สมัครใหม่ที่ Register เขียนแค่ status) — ของเดิม
+                // เทียบ `status === 'Pending'` ตรงๆ ซึ่งเป็นฟิลด์ที่ **แอปไรเดอร์
+                // เขียนทับเองทุก ~10 วินาที** ด้วย presence (Online/Busy) ด่านนี้
+                // จึงทำงานถูกด้วยอุบัติเหตุเท่านั้น: คนที่ยัง Pending ยังไม่เคย
+                // ล็อกอินสำเร็จ จึงยังไม่เคยมีโอกาสเขียนทับ (รายงาน Task 3)
+                const standing = riderStanding(riderData);
+                if (standing !== STANDING.ACTIVE) {
+                    const pending = standing === STANDING.PENDING;
+                    logAuthEvent(uid, pending ? 'login_rejected_pending' : 'login_rejected_not_active', {
+                        standing,
+                    });
                     await signOut(auth);
-                    setError('บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน');
+                    setError(
+                        pending
+                            ? 'บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน'
+                            : 'บัญชีนี้ใช้งานไม่ได้ กรุณาติดต่อออฟฟิศ'
+                    );
                     setLoading(false);
                     return;
                 }
@@ -237,6 +272,12 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
 
                 {/* เซสชันหมดอายุ ≠ ออกจากระบบ — เครื่องยังลงทะเบียนอยู่ ใส่รหัสผ่าน
                     รอบเดียวแล้วกลับเข้าใช้งานได้เลย ไม่ต้องตั้ง PIN ใหม่ */}
+                {notice && (
+                    <div className="text-sm mb-4 font-medium bg-red-50 text-red-700 p-3 rounded-xl text-left">
+                        {notice}
+                    </div>
+                )}
+
                 {sessionExpired && mode === 'email' && (
                     <div className="text-sm mb-4 font-medium bg-amber-50 text-amber-700 p-3 rounded-xl text-left">
                         เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง
@@ -248,6 +289,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
                     mode === 'email' ? 'เข้าสู่ระบบด้วยอีเมลพนักงาน' :
                         mode === 'create_pin' && step === 1 ? 'ตั้งรหัส PIN 4 หลักสำหรับเครื่องนี้' :
                             mode === 'create_pin' && step === 2 ? 'ยืนยันรหัส PIN อีกครั้ง' :
+                                lockMode ? 'พักหน้าจอเกิน 30 นาที กรอกรหัส PIN เพื่อใช้งานต่อ' :
                                 'กรอกรหัส PIN เพื่อเข้าใช้งาน'}
                 </p>
 
