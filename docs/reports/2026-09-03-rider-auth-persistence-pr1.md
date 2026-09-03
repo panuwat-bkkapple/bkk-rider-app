@@ -90,13 +90,27 @@ initializeAuth(app, {
 เป็นการ**ปิดช่องเผื่อไว้ ไม่ใช่การแก้บั๊กที่วัดได้** — ตัวที่วัดได้และเป็นเหตุจริง
 คือ `/` เท่านั้น **อย่าเครดิตการแก้ผิดที่**
 
-**after ยังไม่มี** — ต้อง deploy ก่อนแล้ววัดซ้ำด้วยสองคำสั่งเดิม:
+**after — วัดแล้วหลัง deploy `64d2f0e` (deploy run #120 เขียวทั้งสองงาน 14:38Z):**
+
+| path | ก่อน | หลัง |
+|---|---|---|
+| `/` (index.html) | `max-age=3600` | **`no-cache`** |
+| `/assets/index-FTdgGYFA.js` | *(ไม่มี rule เดิม → `max-age=3600`)* | **`public, max-age=31536000, immutable`** |
+
+ทั้งคู่ตรงกับที่ตั้งใจ **ปิดคู่ before/after ของข้อ 1.4 ครบแล้ว**
+
 ```bash
 curl -sI https://bkk-rider-app.web.app/ | grep -i cache-control
-# คาดหวัง: no-cache
-curl -sI https://bkk-rider-app.web.app/assets/<ไฟล์ที่ build ออกมา>.js | grep -i cache-control
-# คาดหวัง: public, max-age=31536000, immutable
+curl -s https://bkk-rider-app.web.app/ | grep -o '/assets/index-[^"]*\.js'
+curl -sI https://bkk-rider-app.web.app/assets/index-FTdgGYFA.js | grep -i cache-control
 ```
+
+**ข้อที่ตัวเลขนี้ยังไม่ได้แก้ และห้ามเข้าใจผิด:** `no-cache` คุมเฉพาะ response
+ที่เสิร์ฟ **จากนี้ไป** เบราว์เซอร์ของไรเดอร์ที่ดึง index.html ไว้ก่อน deploy
+ยังถือสำเนาเดิมภายใต้ `max-age=3600` ต่อได้อีกไม่เกินหนึ่งชั่วโมงนับจากครั้งที่
+เขาดึงล่าสุด — คนที่เปิดแอปไว้ตอน 14:20 จึงอาจยังรันโค้ด auth ก่อน merge ถึง
+ประมาณ 15:20 **นี่คือลมหายใจสุดท้ายของบั๊กที่ PR นี้แก้ ไม่ใช่บั๊กใหม่** และ
+มันหายไปเองเมื่อหน้าต่างเดิมหมดอายุ ครั้งต่อไปที่ deploy จะไม่มีช่องนี้แล้ว
 
 **หมายเหตุชื่อไฟล์:** บรีฟเขียน `sw.js` แต่ไฟล์จริงชื่อ
 `firebase-messaging-sw.js` — ใช้ชื่อจริง ถ้าตั้ง header ให้ `/sw.js` จะเป็นกฎที่
@@ -294,7 +308,9 @@ rider_auth_events/
 
 **baseline ของ header วัดแล้ว** (จากภายนอก โดยเจ้าของงาน — ดูข้อ 2 ด้านบน:
 `/` และ `/firebase-messaging-sw.js` เดิมเป็น `max-age=3600` ทั้งคู่)
-**ค่า after ยังไม่มี** ต้องวัดซ้ำหลัง deploy
+**ค่า after วัดแล้ว** — `/` เป็น `no-cache` และ `/assets/**` เป็น
+`public, max-age=31536000, immutable` (ดูตารางในข้อ 2 ด้านบน) คู่ before/after
+ของข้อ 1.4 จึงครบ
 
 **ยังไม่ได้เปิดซอร์ส firebase-js-sdk** ยืนยันลำดับ persistence ด้วยตา (ยกจาก fix
 ที่ใช้งานจริงบน production ของ repo พี่น้องแทน)
