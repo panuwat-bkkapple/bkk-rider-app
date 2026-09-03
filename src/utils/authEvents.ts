@@ -30,6 +30,8 @@ export type AuthEventReason =
   | 'account_suspended'
   // ล็อกอินอีเมลผ่าน แต่บัญชียังรออนุมัติ
   | 'login_rejected_pending'
+  // ล็อกอินผ่าน แต่ standing ไม่ใช่ Active (Rejected/Suspended/ค่าที่ไม่รู้จัก)
+  | 'login_rejected_not_active'
   // ล็อกอินอีเมลผ่าน แต่ไม่มีแถวไรเดอร์ในฐานข้อมูล
   | 'login_rejected_no_profile'
   // ไรเดอร์กดปุ่ม "สลับบัญชี" ที่จอ PIN

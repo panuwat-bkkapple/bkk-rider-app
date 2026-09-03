@@ -44,6 +44,8 @@ const HISTORY_LIST_STATUSES = new Set<JobStatus>([
 ]);
 
 import { toast } from '../components/common/Toast';
+import { isSuspended } from '../utils/riderStanding';
+import { setAuthNotice } from '../utils/authNotice';
 
 export const useRiderData = (currentRiderId: string) => {
   // Rider-scoped queries only — never subscribe to the whole /jobs node
@@ -79,9 +81,16 @@ export const useRiderData = (currentRiderId: string) => {
       if (!snapshot.exists()) return;
       const data = snapshot.val();
 
-      if (data.approval_status === 'Suspended') {
-        toast.error(`บัญชีถูกระงับ: ${data.suspend_reason || 'กรุณาติดต่อแอดมิน'}`);
+      // อ่านผ่าน isSuspended (approval_status ก่อน แล้ว fallback status)
+      if (isSuspended(data)) {
+        const reason = typeof data.suspend_reason === 'string' ? data.suspend_reason.slice(0, 120) : '';
+        const message = reason
+          ? `บัญชีถูกระงับ กรุณาติดต่อออฟฟิศ (${reason})`
+          : 'บัญชีถูกระงับ กรุณาติดต่อออฟฟิศ';
+        toast.error(message);
         setIsOnline(false);
+        // toast ตายไปกับ reload ที่ตามมาอีกเสี้ยววินาที ไรเดอร์จึงเห็นแค่จอเปล่า
+        setAuthNotice(message);
         // สัญญาณจากฝั่ง server = หนึ่งในสองเหตุที่ล้างการลงทะเบียนเครื่องได้
         // (อีกเหตุคือไรเดอร์กดออกเอง) — หลักการข้อ 2
         logAuthEvent(currentRiderId, 'account_suspended', {
