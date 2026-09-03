@@ -5,6 +5,7 @@ import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'fir
 import { db, auth } from '../api/firebase';
 import { hashPin } from '../utils/pinHash';
 import { toast } from '../components/common/Toast';
+import { loginErrorMessage, resetPasswordErrorMessage } from '../utils/authErrors';
 import { logAuthEvent } from '../utils/authEvents';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -161,12 +162,10 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
                 setError('ไม่พบข้อมูลโปรไฟล์ของคุณในฐานข้อมูล (โปรดติดต่อแอดมิน)');
             }
         } catch (err: any) {
-            console.error("Login Error:", err.message);
-            if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-                setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง');
-            } else {
-                setError(`ข้อผิดพลาดระบบ: ${err.message}`);
-            }
+            // เก็บ code ดิบไว้ใน console เสมอ — เวลาไรเดอร์โทรมาแจ้ง "เข้าไม่ได้"
+            // สิ่งที่ต้องรู้คือ code อะไร ส่วนที่โชว์บนจอต้องเป็นภาษาที่เขาทำต่อได้
+            console.error("Login Error:", err.code, err.message);
+            setError(loginErrorMessage(err.code));
         } finally {
             setLoading(false);
         }
@@ -195,12 +194,8 @@ export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, 
             toast.success('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว! กรุณาเช็คกล่องข้อความด้วยนะครับ');
         } catch (err: any) {
             setLoading(false);
-            console.error("Reset Password Error:", err.message);
-            if (err.code === 'auth/invalid-email') {
-                setError('รูปแบบอีเมลไม่ถูกต้องครับ');
-            } else {
-                setError('ไม่พบอีเมลนี้ในระบบ หรือเกิดข้อผิดพลาดครับ');
-            }
+            console.error("Reset Password Error:", err.code, err.message);
+            setError(resetPasswordErrorMessage(err.code));
         }
     };
 
