@@ -14,6 +14,21 @@ on:
         required: false
         default: 'diagnos-preview'
 
+# ตัวนี้ **ไม่ใช่** รูปเดียวกับ deploy หลัก และ key ก็คนละตัว
+#
+# มันเป็น workflow_dispatch ล้วน ยิงลง preview channel ที่ชื่อมาจาก input —
+# การกดสองครั้งด้วย "คนละ channel" เป็นงานอิสระที่เขียนคนละที่ ไม่ควรบล็อกกัน
+# group จึงผูกกับ **channel** ไม่ใช่ `github.ref` (ผูกกับ ref จะทำให้ preview
+# ของสอง channel บน branch เดียวกันต้องต่อคิวกันโดยไม่มีเหตุผล)
+#
+# และที่นี่ `cancel-in-progress: true` ต่างจากทุกตัวข้างบน เพราะ (ก) ไม่มี
+# functions ให้ค้างครึ่งๆ — hosting channel deploy เป็นการ release ก้อนเดียว
+# (ข) กด preview ของ channel เดิมซ้ำแปลว่าอยากได้ของใหม่ ตัวเก่าไม่มีค่าแล้ว
+# ต่างจาก deploy หลักที่ "ตัวเก่า" คือ production ที่คนใช้อยู่
+concurrency:
+  group: preview-deploy-${{ github.event.inputs.channel }}
+  cancel-in-progress: true
+
 permissions:
   checks: write
 

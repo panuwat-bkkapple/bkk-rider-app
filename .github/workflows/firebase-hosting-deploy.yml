@@ -4,6 +4,22 @@ on:
   push:
     branches: [main]
 
+# หนึ่ง deploy ต่อหนึ่งครั้ง ห้ามซ้อนกัน — รูปเดียวกับ bkk-system#675 เป๊ะ
+# (workflow นั้นเป็นฝาแฝดของไฟล์นี้: hosting + functions สอง job ขนานกัน)
+#
+# เคสจริงที่นั่น 3 ก.ย. 2569 merge สองใบห่างกัน 33 วินาที เสียหายสองทาง —
+# run ที่ถือต้นไม้เก่ากว่าจบทีหลังแล้วเขียน hosting ทับ (UI ของอีก PR ถูกย้อน
+# ออกจาก production โดยไม่มี run ไหนแดง) และ run ที่ใหม่กว่าอ่านสถานะฝั่ง
+# Firebase ตอนอีกตัวกำลังสร้างฟังก์ชันใหม่อยู่กลางทาง แล้วล้มด้วยข้อความที่
+# อ่านเหมือนบั๊กของโค้ดที่เพิ่ง merge
+#
+# `cancel-in-progress: false` เป็นส่วนสำคัญของกฎ ไม่ใช่ค่าที่ปล่อยไว้ —
+# `firebase deploy --only functions:rider-notifications` แก้ Cloud Run service
+# ทีละตัว การฆ่ามันกลางทางคือการสร้างสภาพครึ่งๆ แบบข้อสองโดยตั้งใจ
+concurrency:
+  group: firebase-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 # Hosting and Functions are deployed by two INDEPENDENT jobs that run in
 # parallel. Previously they were sequential steps in one job with Functions
 # before Hosting and no continue-on-error, so any Functions failure (e.g. a
