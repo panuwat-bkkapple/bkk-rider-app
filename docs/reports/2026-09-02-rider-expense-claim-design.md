@@ -192,7 +192,7 @@ nonTaxablePool = Σ(credits หมวด EXPENSE_REIMBURSEMENT)
                   REIMBURSEMENT
 ```
 
-### callable ที่ต้องมี 2 ตัว (อยู่ `bkk-system/functions/`)
+### callable ที่ต้องมี 2 ตัว (**คนละ codebase — ดูข้อ 6.7**)
 
 **`riderSubmitExpense`** — ตรวจก่อนเขียน:
 - ผู้เรียกเป็นไรเดอร์ที่มีตัวตนและไม่ถูก Suspended/Rejected *(ใช้เกณฑ์เดียวกับกฎ `/jobs` ที่เพิ่งแก้ใน #928 — อย่าเขียนเงื่อนไขที่สาม)*
@@ -222,7 +222,7 @@ nonTaxablePool = Σ(credits หมวด EXPENSE_REIMBURSEMENT)
 export const RIDER_WALLET_CATEGORIES = ['JOB_PAYOUT', 'WITHDRAWAL', 'PENALTY', 'BONUS'] as const;
 ```
 
-**เพิ่ม `EXPENSE_REIMBURSEMENT` เป็นตัวที่ 5 — ต้องแก้ 2 ไฟล์ (mirror):**
+**เพิ่ม `EXPENSE_REIMBURSEMENT` — ต้องแก้ 3 ไฟล์ ไม่ใช่ 2 (ดูข้อ 6.7):**
 
 | ไฟล์ | บทบาท |
 |---|---|
@@ -418,12 +418,61 @@ A/B ของแผนคิวข้อ 0.1 (RTDB path ของ record) **ต�
 
 ---
 
+## 6.7 ผล P1 (3 ก.ย. 2569) — สองข้อที่เอกสารนี้เขียนไม่ตรงกับโค้ดจริง
+
+ตามกติกา "เจอที่ขัดกับโค้ดจริงให้บอกทันที อย่าเงียบแล้วปรับให้เข้ากันเอง"
+
+### 1. callable สองตัวอยู่คนละ codebase ไม่ใช่ bkk-system ทั้งคู่
+
+ข้อ 2 เขียนว่า "callable ที่ต้องมี 2 ตัว (อยู่ `bkk-system/functions/`)" — **ผิด**
+`riderRequestWithdraw` ซึ่งเป็น callable เรื่องเงินฝั่งไรเดอร์ที่มีอยู่แล้ว อยู่ที่
+`bkk-rider-app/functions/src/index.ts` (codebase `rider-notifications` ตาม
+`bkk-rider-app/firebase.json`) ไม่ใช่ bkk-system
+
+ที่ทำจริงจึงแยกตามเจ้าของ helper:
+
+| callable | อยู่ที่ | เพราะ |
+|---|---|---|
+| `riderSubmitExpense` | `bkk-rider-app/functions/src/index.ts` | ถูกเรียกจากแอปไรเดอร์ · อยู่ข้าง `riderRequestWithdraw` ที่มี pattern เดียวกัน |
+| `adminReviewExpense` | `bkk-system/functions/rider-expenses.js` | ต้องใช้ `lookupStaffByAuth` + `dispatchAdminPush` + `pushToRider` ซึ่งอยู่ที่นั่นทั้งหมด |
+
+ราคาที่จ่าย: deploy สอง codebase แทนหนึ่ง. ทางเลือกอีกทางคือก๊อป `lookupStaffByAuth`
+ข้ามฝั่ง ซึ่งแพงกว่าเพราะมันคือ gate สิทธิ์ — สำเนาที่สองของ gate คือ gate ที่
+วันหนึ่งจะไม่ตรงกัน
+
+### 2. หมวดกระเป๋าไรเดอร์เป็น MIRROR 3 ที่ ไม่ใช่ 2 — และสำเนาที่สามหลุดไปแล้วจริง
+
+ข้อ 3 เขียนว่าแก้ 2 ไฟล์ และอ้างว่า allowlist มี 4 ค่า **ผิดทั้งคู่**: ตอนนี้มี 5 ค่า
+(`ADJUSTMENT` เพิ่มเข้ามาใน #125) และมีสำเนาที่สามที่เอกสารไม่ได้พูดถึงเลย
+
+```
+bkk-rider-app/src/utils/walletLedger.ts   allowlist + ป้ายไทยของจอ
+bkk-rider-app/functions/src/index.ts      ตัวคำนวณ "ยอดถอนได้"   ← ตัวที่หลุด
+bkk-system/src/utils/transactionLogger.ts union ของ category
+```
+
+`ADJUSTMENT` ถูกเพิ่มที่ตัวที่ 1 กับ 3 แต่**ลืมตัวที่ 2** ผลคือกระเป๋าบนจอไรเดอร์
+รวมแถว ADJUSTMENT แล้ว แต่ `riderRequestWithdraw` คำนวณยอดถอนได้โดยไม่นับ —
+**ไรเดอร์เห็นตัวเลขหนึ่งแล้วถอนได้อีกตัวเลขหนึ่ง โดยไม่มี error ที่ไหนบอกว่าทำไม**
+บั๊กนี้มีอยู่ก่อนงานนี้ ปิดไปแล้วพร้อมกับการเพิ่ม `EXPENSE_REIMBURSEMENT`
+และเพิ่มด่าน `walletCategoryParity.test.ts` ที่เทียบทั้งสามสำเนา
+
+### สิ่งที่ยังไม่มีด่านจริง (จดไว้ ไม่นับเป็นผ่าน)
+
+rule ที่เหลือใน `riderSubmitExpense` — สถานะไรเดอร์ (Suspended/Rejected) และ
+เจ้าของงาน — **ยังไม่มีเทสคุ้ม** ตอน injection มันทำให้ compile ไม่ผ่าน
+แต่นั่นคือ `noUnusedLocals` บ่นว่าตัวแปรลอย **ไม่ใช่การจับบั๊ก** (กับดัก
+"เทสที่เห็นด้วยกับตัวเอง"). ทั้งสองต้องแตะ DB จึงพิสูจน์ด้วย unit test เปล่าๆ
+ไม่ได้ ต้องรอ emulator หรือเทสระดับ integration ซึ่งยังไม่มีในรีโปนี้
+
+---
+
 ## 7. เฟส
 
 | เฟส | ทำอะไร | เสร็จเมื่อ |
 |---|---|---|
 | **P0** | ~~เคาะ 4 ข้อ~~ **เคาะแล้ว (ข้อ 6)** · ~~ตรวจ `rider_fee` → `/expenses`~~ **ตรวจแล้ว (ข้อ 6.5)** · P0 ของแผน queue: **(จ) เสร็จ · (ก)-(ง) รอรันบนมือถือจริงที่ `/probe`** | เหลือ (ก)-(ง) กับคำตอบนักบัญชี (ข้อ 6.4) ซึ่งไม่บล็อก P1 |
-| **P1** | rules + callable 2 ตัว + หมวดกระเป๋าใหม่ (mirror 2 ไฟล์) — **ยังไม่มี UI** | เทส callable ครบ: ปฏิเสธไม่มีสลิป / ปฏิเสธ URL ของคนอื่น / รีวิวซ้ำไม่เติมเงินสองรอบ / ไรเดอร์ที่ถูกระงับส่งไม่ได้ |
+| **P1** | ~~rules + callable 2 ตัว + หมวดกระเป๋าใหม่~~ **เสร็จแล้ว** (3 ก.ย. 2569) — mirror เป็น 3 ไฟล์ ไม่ใช่ 2 · ยังไม่มี UI ตามแผน | ครบ ยกเว้นสองข้อที่พิสูจน์ด้วย unit test เปล่าไม่ได้ (สถานะไรเดอร์ · เจ้าของงาน) ดูข้อ 6.7 |
 | **P2** | ฝั่งไรเดอร์: ฟอร์ม + queue + หน้ารายการของตัวเอง | ถ่ายสลิปตอนออฟไลน์ใต้ลานจอด → ขึ้นมาชั้นบน → รายการขึ้นฝั่งแอดมินครบพร้อมรูป |
 | **P3** | ฝั่งแอดมิน: หน้า `/rider-expenses` + อนุมัติ/ปฏิเสธ + เขียน 3 โหนด | อนุมัติแล้วเงินเข้ากระเป๋าไรเดอร์ + ขึ้นใน P&L + ตามรอยกลับได้ทั้งสองทาง |
 | **P4** | **แยกฐานภาษีตอนถอน** (ข้อ 0) + แก้ `buildWhtCertificatePdf` ให้ใช้ `wht_base` | ถอนเงินที่เป็นเงินคืนล้วน → WHT = 0 และไม่ออกใบ 50 ทวิ · ถอนผสม → หักเฉพาะส่วนที่เป็นเงินได้ |
