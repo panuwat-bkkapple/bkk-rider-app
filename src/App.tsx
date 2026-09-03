@@ -11,7 +11,7 @@ import { Probe } from './pages/Probe';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
-import { useAutoLogout } from './hooks/useAutoLogout';
+import { usePinLock } from './hooks/usePinLock';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { ToastContainer } from './components/common/Toast';
 import { logAuthEvent } from './utils/authEvents';
@@ -150,8 +150,22 @@ function App() {
     };
   }, [riderId]);
 
-  // Auto-logout after 30 min of inactivity
-  useAutoLogout(!!riderId);
+  // กลอน PIN ตามเวลาจริง — **ล็อก ไม่ใช่ออกจากระบบ**
+  //
+  // ของเดิม (useAutoLogout ลบทิ้งใน PR นี้) เป็น setTimeout 30 นาทีที่เรียก
+  // signOut **พร้อมล้าง rider_id + device_pin** ซึ่งผิดกับรูปการใช้งานจริงของ
+  // ธุรกิจนี้: งานเข้านานๆ ครั้ง (ครึ่งวันอาจมีงานเดียว) ไรเดอร์จึงนั่งรอเป็น
+  // ชั่วโมงเป็นเรื่องปกติ แล้วโดนเตะออกแทบทุกครั้งที่รอ — ต้องกรอกอีเมล +
+  // รหัสผ่าน + ตั้ง PIN ใหม่ทั้งชุด
+  //
+  // และมันลามไปถึง push ด้วย: usePushNotifications ข้างล่างขึ้นต้นด้วย
+  // `if (!riderId) return;` พอถูกเตะออก การต่ออายุ FCM token ก็หยุด token ตาย
+  // (ฝั่ง server มีคอมเมนต์ไว้เองว่า iOS PWA tokens ตายภายในไม่กี่นาที) แล้วถูก
+  // ตัดทิ้ง = ไม่เด้งอีกเลย และไม่มีอะไรเตือนให้เปิดแอปกลับมาล็อกอิน
+  //
+  // ตัวนี้จึงล็อกอย่างเดียว ไม่แตะ session ไม่แตะการลงทะเบียนเครื่อง
+  const canLock = !!riderId && !sessionExpired && !!localStorage.getItem('device_pin');
+  const { locked, unlock } = usePinLock(canLock);
 
   // Pending chat jobId from notification tap
   const [pendingChatJobId, setPendingChatJobId] = useState<string | null>(null);
@@ -193,6 +207,23 @@ function App() {
   // session ที่หมดอายุ (หลักการข้อ 1: Firebase คือแหล่งความจริงของการล็อกอิน
   // ส่วน PIN เป็นแค่กลอนในเครื่อง)
   const authed = !!riderId && !sessionExpired;
+
+  // กลอนอยู่เหนือ router โดยตั้งใจ — ไรเดอร์ยังล็อกอินอยู่ทุกประการ เส้นทางที่
+  // เขาค้างอยู่ไม่ถูกทิ้ง (ไม่มี Navigate) ปลดกลอนแล้วกลับมาที่เดิมพอดี
+  if (authed && locked) {
+    return (
+      <ErrorBoundary>
+        <ToastContainer />
+        <OfflineBanner />
+        <Login
+          lockMode
+          onUnlock={unlock}
+          onLoginSuccess={handleLoginSuccess}
+          onGoToRegister={() => { /* ล็อกอยู่ — ไม่มีทางไปหน้าสมัคร */ }}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   return (
     <ErrorBoundary>
