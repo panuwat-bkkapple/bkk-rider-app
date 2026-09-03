@@ -45,19 +45,10 @@ initializeAuth(app, {
 `signInWithRedirect`/`Popup` — ยืนยันด้วย grep แล้ว — แต่ค่า default ของ
 `getAuth` หายไปเมื่อใช้ `initializeAuth` ถ้าวันหนึ่งมีจะได้ไม่พังเงียบ)*
 
-### 2. ข้อ 1.4 วัด header ก่อนแก้ **ไม่สำเร็จ** — network policy ของ session บล็อก
+### 2. ข้อ 1.4 วัดจาก session นี้ไม่ได้ — **แต่มีตัวเลข baseline แล้ว (วัดจากภายนอก)**
 
-บรีฟสั่ง `curl -sI` production ก่อนแตะอะไร ทำแล้วได้:
-
-```
-$ curl -sI https://bkk-rider-app.web.app/
-HTTP/1.1 403 Forbidden
-Content-Type: text/plain; charset=utf-8
-X-Content-Type-Options: nosniff
-Content-Length: 79
-```
-
-**403 นี้มาจาก agent proxy ของ session ไม่ใช่จาก Firebase Hosting** — ยืนยันที่
+บรีฟสั่ง `curl -sI` production ก่อนแตะอะไร ทำจาก session นี้แล้วได้ 403 ที่
+**มาจาก agent proxy ไม่ใช่จาก Firebase Hosting** — ยืนยันที่
 `$HTTPS_PROXY/__agentproxy/status`:
 
 ```json
@@ -69,22 +60,47 @@ Content-Length: 79
 ```
 
 ได้ผลเหมือนกันทั้ง `/`, `/firebase-messaging-sw.js` และ `/sw.js`
-**ไม่มีตัวเลข before ให้แปะ และจะไม่เดาแทน** — ค่า default ที่เอกสาร Firebase
-Hosting ระบุคือ `Cache-Control: max-age=3600` สำหรับไฟล์ที่ไม่ได้ตั้ง header เอง
-แต่นั่นเป็น **เอกสาร ไม่ใช่การวัด** จึงไม่เขียนลงเป็นผลลัพธ์
 
-**ค้างไว้ให้คนทำ (2 คำสั่ง จากเครื่องที่ออกเน็ตได้):**
+**baseline ก่อนแก้ — วัดจากเครื่องภายนอกโดยเจ้าของงาน 3 ก.ย. 2569
+(ไม่ใช่ตัวเลขที่ session นี้วัดเอง และไม่ใช่ค่าที่เดาจากเอกสาร):**
+
+| path | `cache-control` ก่อนแก้ |
+|---|---|
+| `/` (index.html) | `max-age=3600` |
+| `/firebase-messaging-sw.js` | `max-age=3600` |
+
+ทั้งคู่คือ **ค่า default ของ Firebase Hosting** ซึ่งสอดคล้องกับที่ `firebase.json`
+เดิมไม่มีบล็อก `headers` เลย
+
+**ตัวเลขนี้ปิดคำถามที่ค้างจากรายงานสำรวจข้อ 5 — และยืนยันว่า "ทางที่ 2" คือของจริง:**
+
+> `/` ถูกเสิร์ฟด้วย `max-age=3600` แปลว่า **HTTP cache ของเบราว์เซอร์เสิร์ฟ
+> index.html เก่าได้นานถึง 1 ชั่วโมง** และเพราะ service worker เป็น network-first
+> ที่เรียก `fetch(event.request)` ธรรมดา ตัว `fetch` นั้น**ก็ผ่าน HTTP cache
+> ชั้นนั้นด้วย** → ได้ HTML เก่า → ได้ `/assets/index-<hash เก่า>.js` →
+> **โค้ด auth เก่านานได้ถึงหนึ่งชั่วโมงหลัง deploy โดยที่ไรเดอร์ออนไลน์เต็มที่**
+>
+> นี่คือทางที่อันตรายกว่าทางที่ 1 (fallback ออฟไลน์) เพราะมันทำงาน**ตอน
+> ออนไลน์ปกติ** ไม่ต้องรอให้เน็ตหลุด — ตรงกับที่รายงานสำรวจจัดอันดับไว้
+
+**ข้อควรรู้เรื่อง `firebase-messaging-sw.js`: 3600 ของมันไม่ใช่ตัวการ**
+เบราว์เซอร์ข้าม HTTP cache ตอนตรวจอัปเดตสคริปต์ service worker เองอยู่แล้ว
+(`updateViaCache` ค่า default คือ `'imports'` ซึ่งบังคับใช้ cache กับ
+`importScripts` เท่านั้น ไม่ใช่กับตัวสคริปต์หลัก) การตั้ง `no-cache` ให้มันจึง
+เป็นการ**ปิดช่องเผื่อไว้ ไม่ใช่การแก้บั๊กที่วัดได้** — ตัวที่วัดได้และเป็นเหตุจริง
+คือ `/` เท่านั้น **อย่าเครดิตการแก้ผิดที่**
+
+**after ยังไม่มี** — ต้อง deploy ก่อนแล้ววัดซ้ำด้วยสองคำสั่งเดิม:
 ```bash
 curl -sI https://bkk-rider-app.web.app/ | grep -i cache-control
-curl -sI https://bkk-rider-app.web.app/firebase-messaging-sw.js | grep -i cache-control
+# คาดหวัง: no-cache
+curl -sI https://bkk-rider-app.web.app/assets/<ไฟล์ที่ build ออกมา>.js | grep -i cache-control
+# คาดหวัง: public, max-age=31536000, immutable
 ```
-ทำ **ก่อน** deploy เพื่อให้มี before/after จริง ถ้าค่าเดิมคือ `max-age=3600`
-แปลว่าหน้าต่างที่ index.html เก่าถูกเสิร์ฟคือ 1 ชั่วโมง ซึ่งยืนยันทางที่ 2
-ในข้อ 5 ของรายงานสำรวจ
 
 **หมายเหตุชื่อไฟล์:** บรีฟเขียน `sw.js` แต่ไฟล์จริงชื่อ
 `firebase-messaging-sw.js` — ใช้ชื่อจริง ถ้าตั้ง header ให้ `/sw.js` จะเป็นกฎที่
-ไม่ match อะไรเลย
+ไม่ match อะไรเลย (การวัดจากภายนอกยืนยันด้วยว่า `/sw.js` ไม่มีอยู่จริง)
 
 ---
 
@@ -276,6 +292,9 @@ rider_auth_events/
    เช่นสั่ง revoke refresh tokens ของไรเดอร์คนนั้นจาก Firebase console แล้วเปิดแอป
 2. **เพดาน 10 วินาที** — ต้องได้จอล็อกอิน ไม่ใช่ spinner ค้าง
 
-**ยังไม่ได้วัด:** header ของ production (ถูกบล็อก ดูข้างบน) และยังไม่ได้เปิด
-ซอร์ส firebase-js-sdk ยืนยันลำดับ persistence ด้วยตา (ยกจาก fix ที่ใช้งานจริง
-บน production ของ repo พี่น้องแทน)
+**baseline ของ header วัดแล้ว** (จากภายนอก โดยเจ้าของงาน — ดูข้อ 2 ด้านบน:
+`/` และ `/firebase-messaging-sw.js` เดิมเป็น `max-age=3600` ทั้งคู่)
+**ค่า after ยังไม่มี** ต้องวัดซ้ำหลัง deploy
+
+**ยังไม่ได้เปิดซอร์ส firebase-js-sdk** ยืนยันลำดับ persistence ด้วยตา (ยกจาก fix
+ที่ใช้งานจริงบน production ของ repo พี่น้องแทน)
