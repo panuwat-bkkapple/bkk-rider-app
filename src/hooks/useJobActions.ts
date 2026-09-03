@@ -2,6 +2,7 @@
 import { ref, update, push, set } from 'firebase/database';
 import { db, functions } from '../api/firebase';
 import { httpsCallable } from 'firebase/functions';
+import { isUnauthenticatedError, notifySessionLost } from '../utils/sessionState';
 import { sendAdminNotification } from '../utils/notifications';
 import { uploadImageToFirebase } from '../utils/uploadImage';
 import { formatCurrency } from '../utils/formatters';
@@ -242,6 +243,22 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       return true;
     } catch (error) {
       const err = error as { code?: string; message?: string } | null;
+
+      // ดัก **ก่อน** engineErrorCode: error ที่ถูกปฏิเสธที่ชั้น auth ไม่มี
+      // `details` ที่ engine ใส่มา engineErrorCode จึงคืน null แล้วข้อความตกไป
+      // ที่ "เกิดข้อผิดพลาด กรุณาลองใหม่" — คำแนะนำที่ไม่มีวันสำเร็จ เพราะการ
+      // ลองใหม่ด้วย token เดิมก็โดนปฏิเสธเหมือนเดิมทุกครั้ง (หลักการข้อ 4)
+      if (isUnauthenticatedError(error)) {
+        console.error(`runTransition ${event} rejected: unauthenticated`);
+        const riderIdForLog =
+          typeof job?.rider_id === 'string' ? job.rider_id : localStorage.getItem('rider_id');
+        notifySessionLost(riderIdForLog, 'firebase_session_lost', {
+          source: 'callable:transitionJob',
+          event,
+        });
+        return false;
+      }
+
       const code = engineErrorCode(error);
       // log ให้ครบทั้งรหัสของ engine และของ callable — เวลาไรเดอร์โทรมาแจ้ง
       // "กดแล้วไม่ไป" สิ่งที่ต้องรู้คือ engine ปฏิเสธด้วยเหตุอะไร
@@ -470,6 +487,12 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       toast.success('ส่งคำขอถอนเงินสำเร็จ! รอฝ่ายการเงินโอนเข้าบัญชี');
       onDone();
     } catch (e: any) {
+      if (isUnauthenticatedError(e)) {
+        notifySessionLost(localStorage.getItem('rider_id'), 'firebase_session_lost', {
+          source: 'callable:riderRequestWithdraw',
+        });
+        return;
+      }
       // HttpsError จาก server มีข้อความไทยพร้อมใช้ (ยอดไม่พอ/มีคำขอค้าง)
       toast.error(e?.message || 'เกิดข้อผิดพลาดในการส่งคำขอถอนเงิน');
     }
