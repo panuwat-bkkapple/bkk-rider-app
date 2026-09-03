@@ -5,18 +5,28 @@ import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'fir
 import { db, auth } from '../api/firebase';
 import { hashPin } from '../utils/pinHash';
 import { toast } from '../components/common/Toast';
+import { logAuthEvent } from '../utils/authEvents';
 
 const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (riderId: string) => void, onGoToRegister: () => void }) => {
+interface LoginProps {
+    onLoginSuccess: (riderId: string) => void;
+    onGoToRegister: () => void;
+    // Firebase session หายไปแต่เครื่องยังลงทะเบียนอยู่ — ข้ามจอ PIN ไปขอ
+    // รหัสผ่านตรงๆ เพราะ PIN ปลดกลอนในเครื่องได้ แต่สร้าง session ใหม่ไม่ได้
+    sessionExpired?: boolean;
+    prefillEmail?: string | null;
+}
+
+export const Login = ({ onLoginSuccess, onGoToRegister, sessionExpired = false, prefillEmail = null }: LoginProps) => {
     const savedRiderId = localStorage.getItem('rider_id');
     const savedPin = localStorage.getItem('device_pin');
 
     const [mode, setMode] = useState<'email' | 'create_pin' | 'enter_pin' | 'forgot_password'>(
-        savedRiderId && savedPin ? 'enter_pin' : 'email'
+        sessionExpired ? 'email' : (savedRiderId && savedPin ? 'enter_pin' : 'email')
     );
 
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(sessionExpired ? (prefillEmail || '') : '');
     const [password, setPassword] = useState('');
     const [pin, setPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
@@ -107,8 +117,10 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
         setLoading(true);
         setError('');
-        localStorage.removeItem('rider_id');
-        localStorage.removeItem('device_pin');
+        // เดิมล้าง rider_id + device_pin ทิ้งตรงนี้ **ก่อน** รู้ผลการล็อกอินด้วยซ้ำ
+        // ซึ่งแปลว่าการเข้าสู่ระบบใหม่ของไรเดอร์คนเดิมก็ทำลายการลงทะเบียนเครื่อง
+        // ไปด้วยเสมอ (และล็อกอินพลาดก็ยังทำลาย) — ตอนนี้ตัดสินหลังรู้ว่าเป็นใคร
+        // ล้างเฉพาะตอนที่เป็น "คนละคน" จริงๆ
 
         try {
             const userCred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
@@ -118,15 +130,33 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
             if (snapshot.exists()) {
                 const riderData = snapshot.val();
                 if (riderData.status === 'Pending') {
+                    logAuthEvent(uid, 'login_rejected_pending');
                     await signOut(auth);
                     setError('บัญชีของคุณอยู่ระหว่างรอการตรวจสอบจากแอดมิน');
                     setLoading(false);
                     return;
                 }
+
+                // สลับบัญชี = การลงทะเบียนของคนเก่าต้องหมดอายุ ส่วนคนเดิมกลับเข้ามา
+                // ต้องได้ PIN ของตัวเองคืน (นี่คือเส้นทางของจอ "เซสชันหมดอายุ")
+                const priorRiderId = localStorage.getItem('rider_id');
+                if (priorRiderId && priorRiderId !== uid) {
+                    localStorage.removeItem('device_pin');
+                }
+
                 localStorage.setItem('rider_id', uid);
-                setMode('create_pin');
-                setPin('');
+                localStorage.setItem('rider_email', cleanEmail);
+
+                // ตั้ง PIN เฉพาะตอนที่เครื่องนี้ยังไม่มี — ไรเดอร์ที่แค่ session
+                // หมดอายุจะกลับเข้าใช้งานทันทีโดยไม่ต้องตั้งใหม่
+                if (localStorage.getItem('device_pin')) {
+                    onLoginSuccess(uid);
+                } else {
+                    setMode('create_pin');
+                    setPin('');
+                }
             } else {
+                logAuthEvent(uid, 'login_rejected_no_profile');
                 await signOut(auth);
                 setError('ไม่พบข้อมูลโปรไฟล์ของคุณในฐานข้อมูล (โปรดติดต่อแอดมิน)');
             }
@@ -176,9 +206,11 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
     const handleResetDevice = async () => {
         if (window.confirm('ต้องการออกจากระบบและตั้งค่าเครื่องใหม่หรือไม่?')) {
+            logAuthEvent(localStorage.getItem('rider_id'), 'device_reset');
             await signOut(auth);
             localStorage.removeItem('rider_id');
             localStorage.removeItem('device_pin');
+            localStorage.removeItem('rider_email');
             setMode('email');
             setPin('');
             setError('');
@@ -190,7 +222,7 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
 
     return (
         <div className="min-h-screen bg-[#F3F4F6] flex flex-col justify-center items-center p-6 relative">
-            {mode === 'enter_pin' && (
+            {mode === 'enter_pin' && !sessionExpired && (
                 <button onClick={handleResetDevice} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 flex items-center gap-1 text-xs font-medium bg-white px-3 py-2 rounded-full shadow-sm">
                     <LogOut size={14} /> สลับบัญชี
                 </button>
@@ -202,6 +234,14 @@ export const Login = ({ onLoginSuccess, onGoToRegister }: { onLoginSuccess: (rid
                 </div>
 
                 <h1 className="text-2xl font-bold text-gray-900 mb-2">BKK Rider</h1>
+
+                {/* เซสชันหมดอายุ ≠ ออกจากระบบ — เครื่องยังลงทะเบียนอยู่ ใส่รหัสผ่าน
+                    รอบเดียวแล้วกลับเข้าใช้งานได้เลย ไม่ต้องตั้ง PIN ใหม่ */}
+                {sessionExpired && mode === 'email' && (
+                    <div className="text-sm mb-4 font-medium bg-amber-50 text-amber-700 p-3 rounded-xl text-left">
+                        เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง
+                    </div>
+                )}
 
                 <p className="text-sm text-gray-500 mb-8">
                     {mode === 'forgot_password' ? 'กรอกอีเมลของคุณเพื่อรับลิงก์ตั้งรหัสผ่านใหม่' :

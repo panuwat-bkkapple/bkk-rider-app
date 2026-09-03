@@ -1,6 +1,7 @@
 // src/pages/RiderApp.tsx - Orchestrator (rebuilt from 1,110 lines monolith)
 import { useState, useEffect, useMemo } from 'react';
 import { signOut } from 'firebase/auth';
+import { logAuthEvent } from '../utils/authEvents';
 import { ref, update } from 'firebase/database';
 import { auth, db } from '../api/firebase';
 import { uploadImageToFirebase } from '../utils/uploadImage';
@@ -292,9 +293,12 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
 
   const confirmLogout = async () => {
     setIsOnline(false);
+    // ไรเดอร์กดเอง = อีกหนึ่งในสองเหตุที่ล้างการลงทะเบียนเครื่องได้ (หลักการข้อ 2)
+    logAuthEvent(currentRiderId, 'explicit_logout');
     await signOut(auth);
     localStorage.removeItem('rider_id');
     localStorage.removeItem('device_pin');
+    localStorage.removeItem('rider_email');
     window.location.reload();
   };
 
