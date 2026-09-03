@@ -22,6 +22,7 @@
 // ทีละ 2 ฟิลด์ที่ต้องใช้ ไม่ลากรูปเอกสาร/พิกัด/ประวัติมาทั้งหมด
 
 import { createRequire } from 'node:module';
+import { existsSync } from 'node:fs';
 import { riderStanding, effectiveApprovalStatus, STANDING } from '../src/utils/riderStanding.ts';
 
 const require = createRequire(import.meta.url);
@@ -45,7 +46,51 @@ function pad(s: string, n: number) {
   return s + ' '.repeat(Math.max(0, n - s.length));
 }
 
+// ตรวจ credential ให้ล้มเร็วก่อนแตะ firebase-admin
+//
+// ไม่มี credential = Admin SDK ตกไปถาม GCE metadata server
+// (metadata.google.internal) ซึ่งบนเครื่องที่ไม่ใช่ GCP **ไม่มีทาง resolve ได้**
+// แล้วมันจะ retry พร้อมพิมพ์ FIREBASE WARNING ก้อนเดิมซ้ำไม่หยุดจนต้องกด Ctrl-C
+// ซึ่งอ่านไม่ออกเลยว่าปัญหาคือ "ไม่ได้ตั้ง credential" (เจอจริง 3 ก.ย. 2569)
+function assertCredentials(): void {
+  const explicit = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (explicit) {
+    if (existsSync(explicit)) return;
+    console.error(
+      `GOOGLE_APPLICATION_CREDENTIALS ชี้ไปที่ไฟล์ที่ไม่มีอยู่:\n  ${explicit}\n`
+    );
+    process.exit(2);
+  }
+
+  // ADC จาก `gcloud auth application-default login`
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const adc = `${home}/.config/gcloud/application_default_credentials.json`;
+  if (home && existsSync(adc)) return;
+
+  console.error(
+    [
+      'ไม่พบ credential — สคริปต์นี้อ่าน production ต้องมีสิทธิ์ admin',
+      '',
+      'ทางเลือกที่ 1 — service account key ที่มีอยู่แล้วในเครื่อง:',
+      "  export GOOGLE_APPLICATION_CREDENTIALS=\"$(find ~ -maxdepth 4 -name '*.json' \\",
+      "    -exec grep -l '\"type\": *\"service_account\"' {} \\; 2>/dev/null | head -1)\"",
+      '',
+      'ทางเลือกที่ 2 — โหลดคีย์ใหม่จาก Firebase console',
+      '  (Project settings > Service accounts > Generate new private key) แล้ว:',
+      '  export GOOGLE_APPLICATION_CREDENTIALS="$(ls -t ~/Downloads/*firebase-adminsdk*.json | head -1)"',
+      '',
+      'ทางเลือกที่ 3 — ADC ผ่าน gcloud (ไม่มีไฟล์คีย์ค้างในเครื่อง):',
+      '  gcloud auth application-default login',
+      '',
+      'เก็บไฟล์คีย์ไว้นอกโฟลเดอร์ repo — มันคือสิทธิ์ admin ของโปรเจกต์ทั้งใบ',
+    ].join('\n')
+  );
+  process.exit(2);
+}
+
 async function main() {
+  assertCredentials();
+
   admin.initializeApp({
     credential: admin.credential.applicationDefault(),
     databaseURL: DATABASE_URL,
