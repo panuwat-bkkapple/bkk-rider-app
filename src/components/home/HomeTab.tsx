@@ -5,6 +5,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { MapBackground } from '../layout/MapBackground';
 import { IncomingJobCard } from './IncomingJobCard';
 import { ActiveJobCard } from './ActiveJobCard';
+import { PushStatusCard } from '../common/PushStatusCard';
 import { getAppointmentDateKey } from '../../utils/jobHelpers';
 import { logOffer } from '../../utils/offerLog';
 import type { RiderInfo, JobDateFilter } from '../../types';
@@ -123,6 +124,10 @@ export const HomeTab = ({
 
     {/* Job cards */}
     <div className="absolute top-28 bottom-24 left-4 right-4 z-30 overflow-y-auto hide-scrollbar pb-4 space-y-4">
+      {/* สถานะการแจ้งเตือน — โชว์เฉพาะตอนเครื่องนี้จะไม่เด้ง ไม่ขึ้นกับสวิตช์
+          รับงาน เพราะ push งาน broadcast ส่งให้ทุกคนที่อนุมัติแล้ว (#152) */}
+      <PushStatusCard variant="compact" />
+
       {/* Date filter bar */}
       {isOnline && (
         <div className="bg-white/90 backdrop-blur-md rounded-2xl px-3 py-2 shadow-sm border border-gray-100 flex items-center gap-2 overflow-x-auto hide-scrollbar">
