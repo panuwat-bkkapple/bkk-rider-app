@@ -55,17 +55,20 @@ export const WithdrawModal = ({
               <span>฿{est.gross.toLocaleString('th-TH')}</span>
             </div>
             <div className="flex justify-between text-amber-800 font-medium mt-1">
-              <span>หักภาษี ณ ที่จ่าย {est.ratePercent}%</span>
+              <span>หักภาษี ณ ที่จ่าย {est.ratePercent}% (สูงสุด)</span>
               <span>−฿{est.wht.toLocaleString('th-TH')}</span>
             </div>
             <div className="flex justify-between font-bold text-amber-900 mt-2 pt-2 border-t border-amber-200">
-              <span>ได้รับเข้าบัญชีจริง</span>
+              <span>ได้รับเข้าบัญชีอย่างน้อย</span>
               <span>฿{est.net.toLocaleString('th-TH')}</span>
             </div>
+            {/* พูดความจริงเรื่องทิศของความคลาดเคลื่อน: ตัวเลขนี้เป็นเพดาน ยอดจริง
+                ไม่หักส่วนที่เป็นเงินคืนค่าใช้จ่าย จึงได้เท่านี้หรือมากกว่า ไม่มีทางน้อยกว่า */}
             <p className="flex items-start gap-1.5 text-[11px] text-amber-700 mt-3 leading-relaxed">
               <Info size={13} className="shrink-0 mt-0.5" />
-              ภาษีที่หักไว้บริษัทนำส่งกรมสรรพากรแทนคุณ และจะส่งหนังสือรับรองหักภาษี ณ ที่จ่าย (50 ทวิ)
-              ให้ทางอีเมลและดูได้ในแอป ใช้เป็นเครดิตตอนยื่นภาษีสิ้นปีได้
+              ภาษีหักเฉพาะส่วนที่เป็นค่าจ้าง ไม่หักเงินคืนค่าทางด่วน/ที่จอดรถที่คุณเบิกไว้
+              ยอดจริงจึงเท่านี้หรือมากกว่า ดูตัวเลขที่แน่นอนได้จากหนังสือรับรอง (50 ทวิ)
+              ที่ส่งให้ทางอีเมลและในแอปหลังโอน ใช้เป็นเครดิตตอนยื่นภาษีสิ้นปีได้
             </p>
           </div>
         )}

@@ -3,7 +3,7 @@ import { Bike, Landmark, Wallet as WalletIcon, ReceiptText } from 'lucide-react'
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { walletCategoryLabel } from '../../utils/walletLedger';
 import { ExpenseQueueList } from './ExpenseQueueList';
-import type { QueuedUpload } from '../../utils/uploadQueue/types';
+import type { ExpenseClaimView } from '../../utils/expenseClaims';
 
 interface WalletTabProps {
   /** ยอดที่ถอนได้จริง = ledger ลบคำขอถอนที่ค้างอยู่ (คิดใน useRiderData) */
@@ -17,15 +17,18 @@ interface WalletTabProps {
   /** เบิกค่าใช้จ่ายที่ไรเดอร์สำรองจ่าย — อยู่ในกระเป๋าเพราะมันคือเงินของเขา
    *  ไม่ใช่ฟีเจอร์ของงาน (ค่าทางด่วน/ที่จอดรถอาจไม่ผูกกับงานใดเลย) */
   onOpenExpenseClaim: () => void;
-  expenseItems: QueuedUpload[];
+  /** คิวในเครื่อง + แถวบน server รวมแล้ว (utils/expenseClaims) */
+  expenseItems: ExpenseClaimView[];
   expenseStaleCount: number;
   onRetryExpenses: () => void;
   onDeleteExpense: (id: string) => void;
+  onResubmitExpense: (view: ExpenseClaimView) => void;
 }
 
 export const WalletTab = ({
   balance, pendingWithdrawals = [], transactions, hasMoreTx, onLoadMoreTx, onOpenWithdraw,
   onOpenExpenseClaim, expenseItems, expenseStaleCount, onRetryExpenses, onDeleteExpense,
+  onResubmitExpense,
 }: WalletTabProps) => (
   <div className="h-full bg-[#F9FAFB] overflow-y-auto pb-32 animate-in fade-in">
     {/* Header */}
@@ -52,6 +55,7 @@ export const WalletTab = ({
       staleCount={expenseStaleCount}
       onRetry={onRetryExpenses}
       onDelete={onDeleteExpense}
+      onResubmit={onResubmitExpense}
     />
 
     {/* คำขอถอนที่รอฝ่ายการเงินโอน — ยอดถูกกันออกจาก balance ข้างบนแล้ว */}

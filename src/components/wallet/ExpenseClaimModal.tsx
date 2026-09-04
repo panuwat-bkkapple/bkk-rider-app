@@ -8,10 +8,11 @@
 // อยู่ฝั่ง server (`riderSubmitExpense`) เพราะไรเดอร์ยิง callable ตรงได้
 
 import { useState } from 'react';
-import { Camera, X, Loader2, WifiOff, Download } from 'lucide-react';
+import { Camera, X, Loader2, WifiOff, Download, Undo2 } from 'lucide-react';
 import { enqueue } from '../../utils/uploadQueue/enqueue';
 import { isStandalone } from '../../utils/displayMode';
 import { RIDER_EXPENSE_DEFAULTS as LIMITS } from '../../utils/expenseLimits';
+import type { ServerExpenseRow } from '../../utils/expenseClaims';
 
 const CATEGORIES = [
   { id: 'toll', label: 'ค่าทางด่วน' },
@@ -26,13 +27,21 @@ interface Props {
   onClose: () => void;
   /** ส่งสำเร็จ/เข้าคิวแล้ว — caller เป็นคน flush กับ refresh */
   onQueued: (queued: boolean) => void;
+  /** โหมดแก้ใบที่แอดมินตีกลับ — prefill จากแถวเดิม รูปเดิมยังอยู่บน server
+   *  รูปใหม่จึงไม่บังคับ (ใบที่แก้แค่ยอดไม่ต้องถ่ายสลิปใหม่) */
+  resubmitOf?: ServerExpenseRow;
 }
 
-export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props) => {
-  const [category, setCategory] = useState<string>('toll');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [jobId, setJobId] = useState<string>('');
+export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued, resubmitOf }: Props) => {
+  const editing = !!resubmitOf;
+  const existingEvidence = (resubmitOf?.evidence || []).filter((e) => e?.url);
+  const [category, setCategory] = useState<string>(resubmitOf?.category || 'toll');
+  const [amount, setAmount] = useState(
+    resubmitOf?.amount_thb != null ? String(resubmitOf.amount_thb) : ''
+  );
+  const [note, setNote] = useState(resubmitOf?.note || '');
+  // งานเดิมอาจปิดไปแล้ว (ไม่อยู่ใน activeJobs) — เก็บ id ไว้ตามเดิม ไม่ล้างทิ้ง
+  const [jobId, setJobId] = useState<string>(resubmitOf?.job_id || '');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,8 +56,9 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
   const overCap = amountValid && amountNum > LIMITS.hard_max_per_item;
   const needsCeo = amountValid && !overCap && amountNum > LIMITS.manager_max_per_item;
   const noteRequired = category === 'other' && note.trim() === '';
+  const hasEvidence = files.length > 0 || existingEvidence.length > 0;
   const canSubmit =
-    !busy && !blockedOffline && files.length > 0 && amountValid && !overCap && !noteRequired;
+    !busy && !blockedOffline && hasEvidence && amountValid && !overCap && !noteRequired;
 
   const submit = async () => {
     setBusy(true);
@@ -60,10 +70,13 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
         category,
         amount_thb: amountNum,
         note: note.trim(),
-        occurred_at: Date.now(),
+        // ส่งซ้ำ = วันที่จ่ายเงินจริงยังเป็นวันเดิม ไม่ใช่วันที่กดแก้ (เส้นตาย
+        // เบิกย้อนหลังนับจากวันจ่าย ถ้ารีเซ็ตเป็นวันนี้ ใบเก่าจะหลบเส้นตายได้)
+        occurred_at: resubmitOf?.occurred_at || Date.now(),
         job_id: jobId || null,
       },
       online,
+      ...(resubmitOf ? { resubmitOf: resubmitOf.id } : {}),
     });
     setBusy(false);
     if (!r.ok) {
@@ -78,11 +91,23 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
       <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white">
-          <h3 className="font-bold text-gray-900">เบิกค่าใช้จ่ายที่จ่ายไปเอง</h3>
+          <h3 className="font-bold text-gray-900">
+            {editing ? 'แก้ไขใบเบิกแล้วส่งใหม่' : 'เบิกค่าใช้จ่ายที่จ่ายไปเอง'}
+          </h3>
           <button onClick={onClose} className="p-1 text-gray-400" aria-label="ปิด"><X size={20} /></button>
         </div>
 
         <div className="p-5 space-y-5">
+          {editing && (resubmitOf?.review_reason || resubmitOf?.reject_reason) && (
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-3 text-xs text-orange-900 flex items-start gap-2">
+              <Undo2 size={14} className="mt-0.5 shrink-0" />
+              <span>
+                <span className="font-bold">แอดมินขอให้แก้:</span>{' '}
+                {resubmitOf.review_reason || resubmitOf.reject_reason}
+              </span>
+            </div>
+          )}
+
           {blockedOffline && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
               <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
@@ -113,8 +138,22 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
           <div>
             <label className="text-xs font-bold text-gray-700 block mb-2">
               รูปสลิป/ใบเสร็จ <span className="text-red-500">*</span>
+              {editing && existingEvidence.length > 0 && (
+                <span className="text-gray-400 font-normal"> — รูปเดิมยังอยู่ แนบเพิ่มได้</span>
+              )}
             </label>
             <div className="flex gap-2 flex-wrap">
+              {/* รูปเดิมโชว์เป็นภาพเฉยๆ ลบไม่ได้จากตรงนี้ — server รวมรูปเดิมกับ
+                  รูปใหม่ให้ (mergeEvidence) การลบหลักฐานที่แอดมินเคยเห็นแล้ว
+                  ไม่ใช่สิ่งที่การส่งซ้ำควรทำได้ */}
+              {existingEvidence.map((e, i) => (
+                <img
+                  key={`old-${i}`}
+                  src={e.url}
+                  alt={`หลักฐานเดิม ${i + 1}`}
+                  className="w-20 h-20 object-cover rounded-xl border border-gray-200 opacity-80"
+                />
+              ))}
               {files.map((f, i) => (
                 <div key={`${f.name}-${i}`} className="relative">
                   <img
@@ -131,7 +170,7 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
                   </button>
                 </div>
               ))}
-              {files.length < 3 && (
+              {files.length + existingEvidence.length < 5 && files.length < 3 && (
                 <label className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 cursor-pointer">
                   <Camera size={20} />
                   <span className="text-[10px] mt-1">ถ่ายรูป</span>
@@ -252,7 +291,11 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
             className="w-full bg-emerald-600 disabled:bg-gray-200 disabled:text-gray-400 text-white py-4 rounded-2xl font-bold text-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
           >
             {busy && <Loader2 size={16} className="animate-spin" />}
-            {files.length === 0 ? 'แนบรูปหลักฐานก่อน' : online ? 'ส่งคำขอเบิก' : 'บันทึกไว้รอส่ง'}
+            {!hasEvidence
+              ? 'แนบรูปหลักฐานก่อน'
+              : online
+                ? (editing ? 'ส่งใบที่แก้แล้ว' : 'ส่งคำขอเบิก')
+                : 'บันทึกไว้รอส่ง'}
           </button>
         </div>
       </div>

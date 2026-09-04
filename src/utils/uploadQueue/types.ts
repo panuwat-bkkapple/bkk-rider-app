@@ -48,6 +48,10 @@ export interface QueuedUpload {
     note: string;
     occurred_at: number;
     job_id: string | null;
+    /** ส่งซ้ำใบที่แอดมินตีกลับ — `id` ของงานนี้คือ id ของแถวเดิม
+     *  ธงนี้ต้องไปถึง server ตรงๆ (ดู duplicateDecision ฝั่ง functions:
+     *  ห้ามอนุมานจากสถานะ ไม่งั้นการ retry ใบเดิมจะทับสิ่งที่แอดมินขอให้แก้) */
+    resubmit?: boolean;
   };
 
   state: QueueState;

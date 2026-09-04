@@ -4,14 +4,30 @@
 // กติกา refinement เคยถูกรีวิวและ confirm แล้วยังผิด และตัวที่จับได้คือเทส
 // ที่เขียนตามโซ่จริง ไม่ใช่คนอ่านโค้ด)
 
+// ผล injection ของส่วนส่งซ้ำ (วัดจริงทุกข้อ 4 ก.ย. 2569):
+//
+//   1. duplicateDecision อนุมาน resubmit จากสถานะ ไม่ต้องมีธง   → แดง 1
+//   2. ธง resubmit ปลุกใบได้ทุกสถานะ (รวม paid)                → แดง 1
+//   3. buildResubmitPatch ล้าง reviewed_by_name ของแอดมิน       → แดง 1
+//   4. ไม่เขียน `needs_ceo: null` เมื่อเป็นเท็จ (ธงเก่าค้าง)     → แดง 1
+//   5. mergeEvidence ทิ้งรูปเดิม ใช้แต่รูปใหม่                  → แดง 4
+//
+// **ยังไม่มีด่านคุม:** ใน callable `riderSubmitExpense` บรรทัดที่ตัด
+// `child.key !== id` ออกจากผลรวมต่องานตอนส่งซ้ำ (ไม่งั้นใบที่แก้ยอดจะเห็น
+// ยอดเดิมของตัวเองบวกเข้าไปแล้วติดเพดานผิดๆ) ต้องมี Firebase ถึงจะรัน
+// พิสูจน์ด้วยการอ่านโค้ดเท่านั้น — บันทึกไว้ตรงๆ แทนที่จะแต่ง fixture
+//
 import { describe, it, expect } from "vitest";
 import {
+  MAX_EVIDENCE,
   RIDER_EXPENSE_DEFAULTS as D,
   resolveExpenseSettings,
   evaluateExpense,
   evidenceBelongsTo,
   buildExpenseRow,
+  buildResubmitPatch,
   duplicateDecision,
+  mergeEvidence,
 } from "./riderExpensePolicy";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -247,5 +263,115 @@ describe("duplicateDecision — คิวยิงซ้ำต้องไม่
 
   it("แถวที่ไม่มี rider_id (ข้อมูลเสีย) นับเป็นของคนอื่น ไม่ใช่ของเรา", () => {
     expect(duplicateDecision({}, "riderA")).toBe("reject_not_owner");
+  });
+
+  it("ใบที่ถูกตีกลับ + ธง resubmit = ส่งซ้ำได้", () => {
+    expect(
+      duplicateDecision({ rider_id: "riderA", status: "needs_info" }, "riderA", { resubmit: true })
+    ).toBe("resubmit");
+  });
+
+  it("ใบที่ถูกตีกลับ แต่ไม่มีธง = คืนของเดิม (คิวยิงใบเดิมซ้ำหลังโดนตีกลับ)", () => {
+    // เคสจริงที่กันไว้: response หายกลางทาง → แอดมินตีกลับ → คิวยิงใบเดิมซ้ำ
+    // ถ้าอนุมานจากสถานะ ใบเดิมจะทับข้อมูลที่แอดมินขอให้แก้แล้วเด้งกลับเป็น
+    // submitted เหมือนไม่เคยถูกตีกลับ
+    expect(
+      duplicateDecision({ rider_id: "riderA", status: "needs_info" }, "riderA")
+    ).toBe("return_existing");
+  });
+
+  it("ธง resubmit ส่งซ้ำได้เฉพาะสถานะ needs_info — ใบที่จ่ายแล้วเด้งกลับไม่ได้", () => {
+    for (const status of ["submitted", "approved", "finance_approved", "paid", "rejected"]) {
+      expect(
+        duplicateDecision({ rider_id: "riderA", status }, "riderA", { resubmit: true })
+      ).toBe("return_existing");
+    }
+  });
+
+  it("ธง resubmit บนใบของคนอื่นยังโดนปฏิเสธ", () => {
+    expect(
+      duplicateDecision({ rider_id: "riderB", status: "needs_info" }, "riderA", { resubmit: true })
+    ).toBe("reject_not_owner");
+  });
+});
+
+describe("mergeEvidence — ส่งซ้ำไม่ต้องถ่ายใหม่ทั้งชุด", () => {
+  const e = (url: string, at = 1) => ({ url, uploaded_at: at });
+
+  it("ของเดิมอยู่ก่อน ของใหม่ต่อท้าย", () => {
+    const out = mergeEvidence([e("a")], [e("b", 2)]);
+    expect(out.map((x) => x.url)).toEqual(["a", "b"]);
+  });
+
+  it("ส่งซ้ำโดยไม่มีรูปใหม่ = รูปเดิมยังอยู่ครบ (ใบที่แก้แค่ยอด)", () => {
+    expect(mergeEvidence([e("a"), e("b")], []).length).toBe(2);
+  });
+
+  it("url ซ้ำนับครั้งเดียว", () => {
+    expect(mergeEvidence([e("a")], [e("a", 9)]).length).toBe(1);
+  });
+
+  it("ไม่เกินเพดาน MAX_EVIDENCE", () => {
+    const many = Array.from({ length: MAX_EVIDENCE + 3 }, (_, i) => e(`u${i}`));
+    expect(mergeEvidence(many, [e("z")]).length).toBe(MAX_EVIDENCE);
+  });
+
+  it("ของเดิมที่เสีย (ไม่มี url / ไม่ใช่ array) ไม่ทำให้พัง", () => {
+    expect(mergeEvidence(null, [e("a")]).map((x) => x.url)).toEqual(["a"]);
+    expect(mergeEvidence([{ foo: 1 }, e("b")], []).map((x) => x.url)).toEqual(["b"]);
+  });
+});
+
+describe("buildResubmitPatch — ส่งซ้ำต้องไม่ลบร่องรอยของแอดมิน", () => {
+  const patch = (over: Partial<Parameters<typeof buildResubmitPatch>[0]> = {}) =>
+    buildResubmitPatch({
+      jobId: null,
+      category: "toll",
+      amountThb: 65,
+      note: "",
+      evidence: [{ url: "a", uploaded_at: 1 }],
+      occurredAt: 100,
+      now: 200,
+      needsCeo: false,
+      late: false,
+      riderName: "สมชาย",
+      uid: "riderA",
+      historyKey: "h1",
+      ...over,
+    });
+
+  it("กลับเป็น submitted และไม่มีทางส่งสถานะอื่น", () => {
+    expect(patch().status).toBe("submitted");
+  });
+
+  it("ไม่แตะฟิลด์ที่แอดมินเขียน — เป็น patch ไม่ใช่แถวเต็ม", () => {
+    const keys = Object.keys(patch());
+    for (const k of ["reviewed_by_staff_id", "reviewed_by_name", "reviewed_at", "reject_reason", "history", "rider_id", "id"]) {
+      expect(keys).not.toContain(k);
+    }
+  });
+
+  it("ทิ้งแถวประวัติว่าไรเดอร์ส่งซ้ำ พร้อมชื่อที่แอดมินอ่านออก", () => {
+    const h = patch()["history/h1"] as Record<string, unknown>;
+    expect(h.action).toBe("resubmit");
+    expect(h.from).toBe("needs_info");
+    expect(h.to).toBe("submitted");
+    expect(h.by_name).toBe("สมชาย");
+  });
+
+  it("ล้าง review_reason (สิ่งที่ค้างอยู่) แต่ข้อความเดิมยังอยู่ใน history ของขั้นก่อน", () => {
+    expect(patch().review_reason).toBeNull();
+  });
+
+  it("ธงเพดานคิดใหม่จากยอดใหม่ — เท็จต้องลบคีย์ (null) ไม่ใช่ปล่อยธงเก่าค้าง", () => {
+    expect(patch({ needsCeo: false }).needs_ceo).toBeNull();
+    expect(patch({ needsCeo: true }).needs_ceo).toBe(true);
+    expect(patch({ late: false }).late).toBeNull();
+  });
+
+  it("submitted_at เดินใหม่ (คิวของแอดมินเรียงตามมัน) และจำเวลาส่งซ้ำแยกไว้", () => {
+    const p = patch();
+    expect(p.submitted_at).toBe(200);
+    expect(p.resubmitted_at).toBe(200);
   });
 });

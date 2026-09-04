@@ -581,11 +581,14 @@ export const riderRequestWithdraw = onCall(
 // prefix `rider*` ยังไม่ชนกับใคร
 
 import {
+  MAX_EVIDENCE,
   RIDER_EXPENSE_DEFAULTS,
   buildExpenseRow,
+  buildResubmitPatch,
   duplicateDecision,
   evaluateExpense,
   evidenceBelongsTo,
+  mergeEvidence,
   resolveExpenseSettings,
 } from "./riderExpensePolicy";
 
@@ -627,14 +630,11 @@ export const riderSubmitExpense = onCall(
     // และ URL ต้องอยู่ใต้โฟลเดอร์ของคนที่ยิงมาเอง — storage rules ให้ไรเดอร์
     // ทุกคนอ่านรูปของกันได้ การแนบ URL ของคนอื่นจึงทำได้ง่ายมากถ้าไม่ตรงนี้
     const rawEvidence = Array.isArray(data.evidence) ? data.evidence : [];
-    const evidence = rawEvidence
+    const incomingEvidence = rawEvidence
       .map((e) => (e && typeof e === "object" ? (e as Record<string, unknown>).url : e))
       .filter((url) => evidenceBelongsTo(url, uid))
-      .slice(0, 5)
+      .slice(0, MAX_EVIDENCE)
       .map((url) => ({ url: String(url), uploaded_at: Date.now() }));
-    if (evidence.length === 0) {
-      throw new HttpsError("invalid-argument", "แนบรูปสลิปหรือหลักฐานอย่างน้อย 1 รูป");
-    }
 
     // งานที่อ้างต้องเป็นของไรเดอร์คนนี้ — ไม่งั้นเบิกใส่งานคนอื่นได้ ซึ่งทำให้
     // ต้นทุนไปลงงานผิดใบและตามรอยย้อนกลับไม่ได้
@@ -646,12 +646,43 @@ export const riderSubmitExpense = onCall(
       }
     }
 
+    // id มาจาก client เพื่อให้ offline queue ยิงซ้ำได้โดยไม่เกิดแถวซ้ำ
+    // (queue ยิงซ้ำเป็นเรื่องปกติ ไม่ใช่ความผิดพลาด) — sanitize ให้เป็น key
+    // ที่ RTDB รับได้ก่อนเสมอ ไม่งั้น path พังหรือแตกโหนดโดยไม่ตั้งใจ
+    const rawId = String(data.id ?? "");
+    const id = /^[A-Za-z0-9_-]{8,64}$/.test(rawId)
+      ? rawId
+      : (db.ref("rider_expenses").push().key as string);
+
+    const rowRef = db.ref(`rider_expenses/${id}`);
+    const existing = (await rowRef.get()).val();
+    // ยิงซ้ำจากคิว = ตอบผลเดิม ไม่เขียนทับ (ทับแล้วรายการที่แอดมินอนุมัติไป
+    // แล้วจะกลับเป็น submitted แล้วอนุมัติได้อีกรอบ = จ่ายสองครั้ง)
+    // ยกเว้นใบที่ถูกตีกลับและไรเดอร์**ตั้งใจ**ส่งใหม่ (ธง resubmit) — ดูเหตุผล
+    // ที่ต้องเป็นธง ไม่ใช่การอนุมานจากสถานะ ที่ duplicateDecision
+    const dup = duplicateDecision(existing, uid, { resubmit: data.resubmit === true });
+    if (dup === "reject_not_owner") {
+      throw new HttpsError("permission-denied", "รหัสรายการนี้ถูกใช้แล้ว");
+    }
+    if (dup === "return_existing") {
+      return { id, status: existing.status, duplicate: true };
+    }
+
+    // ส่งซ้ำ = รูปเดิมยังอยู่ ไรเดอร์แนบเพิ่มได้แต่ไม่ต้องถ่ายใหม่ทั้งชุด
+    const evidence =
+      dup === "resubmit" ? mergeEvidence(existing.evidence, incomingEvidence) : incomingEvidence;
+    if (evidence.length === 0) {
+      throw new HttpsError("invalid-argument", "แนบรูปสลิปหรือหลักฐานอย่างน้อย 1 รูป");
+    }
+
     const settings = resolveExpenseSettings(
       (await db.ref("settings/rider_expense").get()).val()
     );
 
     // ยอดรวมของงานเดียวกันที่ยังมีชีวิต — ใช้ตัดสินว่าต้องขึ้น CEO ไหม
     // query ตาม index rider_id (มีใน rules แล้ว) ไม่กวาดทั้งโหนด (กฎค่า RTDB)
+    // **ตอนส่งซ้ำต้องไม่นับใบตัวเอง** ไม่งั้นยอดเดิมของใบนี้ถูกบวกเข้าไปด้วย
+    // แล้วใบ 600 บาทที่แก้ยอดจะเห็นตัวเองเป็น 1,200 และติดเพดานผิดๆ
     let jobTotalSoFar = 0;
     if (jobId) {
       const mine = await db
@@ -661,7 +692,7 @@ export const riderSubmitExpense = onCall(
         .get();
       mine.forEach((child) => {
         const v = child.val() || {};
-        if (v.job_id === jobId && v.status !== "rejected") {
+        if (child.key !== id && v.job_id === jobId && v.status !== "rejected") {
           jobTotalSoFar += Number(v.amount_thb) || 0;
         }
         return false;
@@ -684,24 +715,31 @@ export const riderSubmitExpense = onCall(
       throw new HttpsError("failed-precondition", verdict.message || "รายการนี้ส่งไม่ได้");
     }
 
-    // id มาจาก client เพื่อให้ offline queue ยิงซ้ำได้โดยไม่เกิดแถวซ้ำ
-    // (queue ยิงซ้ำเป็นเรื่องปกติ ไม่ใช่ความผิดพลาด) — sanitize ให้เป็น key
-    // ที่ RTDB รับได้ก่อนเสมอ ไม่งั้น path พังหรือแตกโหนดโดยไม่ตั้งใจ
-    const rawId = String(data.id ?? "");
-    const id = /^[A-Za-z0-9_-]{8,64}$/.test(rawId)
-      ? rawId
-      : (db.ref("rider_expenses").push().key as string);
-
-    const rowRef = db.ref(`rider_expenses/${id}`);
-    const existing = (await rowRef.get()).val();
-    // ยิงซ้ำจากคิว = ตอบผลเดิม ไม่เขียนทับ (ทับแล้วรายการที่แอดมินอนุมัติไป
-    // แล้วจะกลับเป็น submitted แล้วอนุมัติได้อีกรอบ = จ่ายสองครั้ง)
-    const dup = duplicateDecision(existing, uid);
-    if (dup === "reject_not_owner") {
-      throw new HttpsError("permission-denied", "รหัสรายการนี้ถูกใช้แล้ว");
-    }
-    if (dup === "return_existing") {
-      return { id, status: existing.status, duplicate: true };
+    if (dup === "resubmit") {
+      // update ไม่ใช่ set — ร่องรอยของแอดมิน (ใครตีกลับ เพราะอะไร) ต้องอยู่ครบ
+      await rowRef.update(
+        buildResubmitPatch({
+          jobId,
+          category,
+          amountThb: Number(data.amount_thb),
+          note,
+          evidence,
+          occurredAt: Number.isFinite(occurredAt) ? occurredAt : now,
+          now,
+          needsCeo: verdict.needsCeo,
+          late: verdict.late,
+          riderName: String(rider.name || ""),
+          uid,
+          historyKey: db.ref(`rider_expenses/${id}/history`).push().key as string,
+        })
+      );
+      return {
+        id,
+        status: "submitted",
+        resubmitted: true,
+        needs_ceo: verdict.needsCeo,
+        late: verdict.late,
+      };
     }
 
     // status ถูกตั้งเป็น submitted ข้างใน buildExpenseRow และ **ไม่มีช่องให้
