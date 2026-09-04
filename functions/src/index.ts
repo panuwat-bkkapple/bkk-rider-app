@@ -456,6 +456,8 @@ const RIDER_WALLET_CATEGORIES = new Set([
   "BONUS",
   "ADJUSTMENT",
   "EXPENSE_REIMBURSEMENT",
+  "COMPANY_ADVANCE",
+  "RIDER_DEPOSIT",
 ]);
 
 function walletTxAmount(t: Record<string, unknown> | null): number | null {

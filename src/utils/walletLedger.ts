@@ -40,6 +40,8 @@ export const RIDER_WALLET_CATEGORIES = [
   'BONUS',
   'ADJUSTMENT',
   'EXPENSE_REIMBURSEMENT',
+  'COMPANY_ADVANCE',
+  'RIDER_DEPOSIT',
 ] as const;
 export type RiderWalletCategory = (typeof RIDER_WALLET_CATEGORIES)[number];
 
@@ -58,6 +60,10 @@ export const WALLET_CATEGORY_LABEL_TH: Record<RiderWalletCategory, string> = {
   // **ไม่ใช่โบนัสและไม่ใช่ค่ารอบ** — มันคือเงินของเขาที่เดินกลับมา ป้ายจึงต้อง
   // ไม่อ่านว่าเป็นรายได้ ไม่งั้นทั้งไรเดอร์และบัญชีเข้าใจผิดคนละทาง
   EXPENSE_REIMBURSEMENT: 'คืนเงินสำรองจ่าย',
+  // เครดิตที่บริษัทเติมให้ล่วงหน้า (เช่น ให้ไว้จ่ายทางด่วนก่อน) — ไม่ใช่เงินได้
+  COMPANY_ADVANCE: 'เครดิตจากบริษัท',
+  // เงินที่ไรเดอร์ฝากเข้ามาเอง — เงินของเขาเดินเข้ามา ไม่ใช่รายได้
+  RIDER_DEPOSIT: 'ฝากเงินเข้ากระเป๋า',
 };
 
 export function walletCategoryLabel(category: unknown): string {
