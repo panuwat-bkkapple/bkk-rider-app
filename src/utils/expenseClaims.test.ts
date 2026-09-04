@@ -1,3 +1,12 @@
+// รวมคิวในเครื่องกับแถวบน server เป็นรายการเดียวที่ไรเดอร์เห็น
+//
+// ผล injection (วัดจริงทุกข้อ 4 ก.ย. 2569 — รวมกับ enqueue.test.ts):
+//
+//   6. enqueue ออก id ใหม่ตอนส่งซ้ำ (แทนที่จะใช้ id แถวเดิม)    → แดง 2
+//   7. enqueue ไม่ติดธง resubmit ลง payload                      → แดง 1
+//   8. server ชนะเสมอ แม้งานในคิวยังมีชีวิต (กำลังส่งซ้ำ)        → แดง 1
+//   9. ใบที่ถูกปฏิเสธก็ส่งซ้ำได้                                  → แดง 1
+//
 import { describe, it, expect } from 'vitest';
 import { mergeExpenseViews, CLAIM_STATUS_LABEL, needsRiderAction } from './expenseClaims';
 import type { QueuedUpload } from './uploadQueue/types';
