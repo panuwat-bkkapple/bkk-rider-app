@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { onValueCreated, onValueWritten } from "firebase-functions/v2/database";
 import * as logger from "firebase-functions/logger";
+import { isBroadcastRecipient } from "./riderStanding";
 
 admin.initializeApp();
 
@@ -386,9 +387,12 @@ export const onBroadcastJob = onValueWritten(
       ? `${firstDevice.brand || ""} ${firstDevice.model || ""} ${firstDevice.storage || ""}`.trim()
       : "อุปกรณ์";
 
-    // Send to each online rider
+    // ส่งให้ไรเดอร์ที่ **อนุมัติแล้ว** ทุกคน — ไม่ใช่ `status === 'Online' | 'Busy'`
+    // ของเดิม ซึ่งกรองด้วยฟิลด์ที่มีสองความหมาย: คนที่อนุมัติแล้วแต่ยังไม่เคยกด
+    // "รับงาน" ถือค่า `Active` อยู่ในฟิลด์นั้นจึงไม่เคยได้ push ส่วนคนที่ถูกระงับ
+    // แต่ `status` ค้างเป็น `Busy` กลับได้ (ดูเหตุผลเต็มใน riderStanding.ts)
     const promises = Object.entries(riders).map(async ([riderId, riderData]: [string, any]) => {
-      if (riderData.status !== "Online" && riderData.status !== "Busy") return;
+      if (!isBroadcastRecipient(riderData)) return;
 
       const tokens = await getRiderTokens(riderId);
       if (tokens.length === 0) return;
