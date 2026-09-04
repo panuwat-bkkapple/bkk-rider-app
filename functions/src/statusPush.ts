@@ -17,16 +17,13 @@
 //                                     (พฤติกรรมเดิม ไม่แตะในรอบนี้ — เป็นการตัดสินใจ
 //                                     ว่าจะให้ทางลัดนั้นนับเป็น payout ไหม)
 //
-// functions/src import enum จาก src/types ไม่ได้ (rootDir) จึงเขียนคู่สะกดตรงนี้
-// เหมือน case อื่นในไฟล์เดียวกัน; สถานะ B2B ตัวนี้มีสะกดเดียวใน DB
-
-const PAYOUT_STATUSES = new Set(["Waiting for Handover", "Waiting For Handover", "Payment Completed"]);
-const PAID_SPELLINGS = new Set(["Paid", "PAID"]);
-const B2B_AWAITING_FINANCE = "Pending Finance Approval";
+// สะกดเก่า (Waiting for Handover / Payment Completed / PAID) ถูก canonicalStatus
+// (./statusMatch.ts) พามาที่ canonical ก่อนเทียบ — ไม่ list ซ้ำที่นี่
+import { JOB_STATUS, canonicalStatus } from "./statusMatch";
 
 /** สถานะที่เปลี่ยนมานี้คือ "บัญชีโอนเงินให้ลูกค้าแล้ว" ไหม */
 export function isPayoutTransition(before: unknown, after: unknown): boolean {
-  if (typeof after !== "string") return false;
-  if (PAYOUT_STATUSES.has(after)) return true;
-  return PAID_SPELLINGS.has(after) && before === B2B_AWAITING_FINANCE;
+  const to = canonicalStatus(after);
+  if (to === JOB_STATUS.WAITING_FOR_HANDOVER) return true;
+  return to === JOB_STATUS.PAID && canonicalStatus(before) === JOB_STATUS.PENDING_FINANCE_APPROVAL;
 }

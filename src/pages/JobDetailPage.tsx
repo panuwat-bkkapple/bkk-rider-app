@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '../utils/formatters';
 import { getDisplayPrice, getCustomerName, getDevicesList, getPaymentSlip, getAppointmentDisplay, getAccessoryItems, getRiderPayout } from '../utils/jobHelpers';
 import { hasUnreadFromAdmin } from '../utils/jobChats';
 import { JOB_STATUS, CANCEL_CATEGORY } from '../types/job-statuses';
+import { statusIs } from '../utils/statusCompare';
 import { AmendmentStatusBanner } from '../components/amendments/AmendmentStatusBanner';
 import { RequestAmendmentModal } from '../components/amendments/RequestAmendmentModal';
 import { RIDER_EVENT } from '../utils/riderTransitions';
@@ -417,9 +418,8 @@ export const JobDetailPage = ({
           </button>
         )}
 
-        {/* Legacy 'In-Transit' and canonical 'Rider Returning' are the same
-            return-to-store leg — hide the discrepancy button on both spellings. */}
-        {mode === 'active' && !hasPendingDiscrepancy && !['In-Transit', JOB_STATUS.RIDER_RETURNING, 'Pending QC', 'Completed'].includes(job.status) && (
+        {/* statusIs normalizes — legacy 'In-Transit' on a Pickup reads as Rider Returning */}
+        {mode === 'active' && !hasPendingDiscrepancy && !statusIs(job, JOB_STATUS.RIDER_RETURNING, JOB_STATUS.PENDING_QC, JOB_STATUS.COMPLETED) && (
           <button
             onClick={() => onReportDiscrepancy(job)}
             className="w-full text-xs font-bold text-amber-500 hover:text-amber-600 underline py-2 flex items-center justify-center gap-1"
@@ -454,7 +454,7 @@ export const JobDetailPage = ({
             </div>
           )}
 
-          {mode === 'active' && (job.status === 'Accepted' || job.status === JOB_STATUS.RIDER_ACCEPTED) && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.RIDER_ACCEPTED) && (
             <div className="flex gap-2">
               <button onClick={() => onReject(job)} disabled={!!loadingAction} className="w-14 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition disabled:opacity-50">
                 <X size={20} />
@@ -465,14 +465,14 @@ export const JobDetailPage = ({
             </div>
           )}
 
-          {mode === 'active' && (job.status === 'Heading to Customer' || job.status === JOB_STATUS.RIDER_EN_ROUTE) && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.RIDER_EN_ROUTE) && (
             <button onClick={() => handleAction('arrived', () => onJobEvent(job.id, RIDER_EVENT.ARRIVED, 'ถึงจุดหมายแล้ว'))} disabled={!!loadingAction} className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-md active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
               {loadingAction === 'arrived' ? <Loader2 size={20} className="animate-spin" /> : <MapPin size={20} />} ถึงจุดหมายแล้ว
             </button>
           )}
 
-          {mode === 'active' && ((job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED) || job.status === 'Being Inspected') && (() => {
-            const arrived = job.status === 'Arrived' || job.status === JOB_STATUS.RIDER_ARRIVED;
+          {mode === 'active' && statusIs(job, JOB_STATUS.RIDER_ARRIVED, JOB_STATUS.BEING_INSPECTED) && (() => {
+            const arrived = statusIs(job, JOB_STATUS.RIDER_ARRIVED);
             return (
               <div className="space-y-2">
                 {/* Verification (battery / Find My / IMEI) now lives inside the
@@ -504,7 +504,7 @@ export const JobDetailPage = ({
             );
           })()}
 
-          {mode === 'active' && job.status === 'QC Review' && (() => {
+          {mode === 'active' && statusIs(job, JOB_STATUS.QC_REVIEW) && (() => {
             // KYC gate is now AFTER inspection (better UX — final price is
             // known so AMLO threshold check is correct, customer is committed).
             // Pickup only — Mail-in / Store-in capture at branch by admin.
@@ -556,14 +556,14 @@ export const JobDetailPage = ({
             );
           })()}
 
-          {mode === 'active' && (job.status === 'Payout Processing' || job.status === 'Price Accepted') && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.PAYOUT_PROCESSING, JOB_STATUS.PRICE_ACCEPTED) && (
             <div className="bg-blue-50 p-4 rounded-2xl text-center border border-blue-100">
               <Landmark size={28} className="text-blue-500 mx-auto mb-2 animate-bounce" />
               <p className="font-bold text-blue-700">แอดมินกำลังโอนเงิน!</p>
             </div>
           )}
 
-          {mode === 'active' && ['Waiting For Handover', 'Waiting for Handover', 'Paid', 'PAID'].includes(job.status) && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.WAITING_FOR_HANDOVER, JOB_STATUS.PAID) && (
             <div className="space-y-2">
               <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl text-center">
                 <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-1" />
@@ -575,13 +575,13 @@ export const JobDetailPage = ({
             </div>
           )}
 
-          {mode === 'active' && (job.status === 'In-Transit' || job.status === JOB_STATUS.RIDER_RETURNING) && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.RIDER_RETURNING) && (
             <button onClick={() => onCompleteJob(job)} disabled={!!loadingAction} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md flex justify-center gap-2 disabled:opacity-50">
               <PackageOpen size={20} /> ถึงสาขาแล้ว (ส่งมอบเครื่อง)
             </button>
           )}
 
-          {mode === 'active' && job.status === 'Revised Offer' && (
+          {mode === 'active' && statusIs(job, JOB_STATUS.REVISED_OFFER) && (
             <div className="bg-purple-50 p-4 rounded-2xl text-center border border-purple-100">
               <h3 className="font-bold text-purple-700 mb-2">ปรับราคาใหม่: {formatCurrency(getDisplayPrice(job))}</h3>
               <div className="flex gap-2">
