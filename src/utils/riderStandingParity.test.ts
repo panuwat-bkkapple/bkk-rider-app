@@ -74,6 +74,21 @@ describe('isBroadcastRecipient — ใครได้ push งาน broadcast',
   it('ค่าที่ไม่รู้จัก = ไม่ได้ (fail closed)', () => {
     expect(fn.isBroadcastRecipient({ approval_status: 'Frozen' })).toBe(false);
   });
+
+  // ปิดรับมีผลจริงตั้งแต่มี writer ของ Offline (utils/presence.ts)
+  it('อนุมัติแล้วแต่กดปิดรับ (status Offline) = ไม่ได้', () => {
+    expect(fn.isBroadcastRecipient({ approval_status: 'Active', status: 'Offline' })).toBe(false);
+  });
+
+  it('แถวเก่าไม่มี approval_status และ status เป็น Offline = ไม่ได้ (เคยอนุมัติ แต่ปิดรับอยู่)', () => {
+    expect(fn.isBroadcastRecipient({ status: 'Offline' })).toBe(false);
+  });
+
+  it('Online = ได้ — และต้องไม่กลับไปกรองด้วย Online/Busy (คนที่ยังไม่เคยกดรับงานถือค่า Active)', () => {
+    expect(fn.isBroadcastRecipient({ approval_status: 'Active', status: 'Online' })).toBe(true);
+    expect(fn.isBroadcastRecipient({ approval_status: 'Active', status: 'Active' })).toBe(true);
+    expect(fn.isBroadcastRecipient({ approval_status: 'Active' })).toBe(true);
+  });
 });
 
 describe('onBroadcastJob ต้องกรองผ่าน isBroadcastRecipient — ตรวจจาก SOURCE', () => {
