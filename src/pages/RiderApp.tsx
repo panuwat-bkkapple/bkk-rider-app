@@ -52,7 +52,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   // Data & state
   const {
     jobData, riderInfo, setRiderInfo,
-    isOnline, setIsOnline,
+    isOnline, setPresence,
     modelsData, conditionSets,
     jobsLoading,
     hasMoreTx, loadMoreTx
@@ -300,7 +300,8 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   };
 
   const confirmLogout = async () => {
-    setIsOnline(false);
+    // เขียน Offline ให้เสร็จก่อน signOut — หลัง token หายจะเขียนไม่ผ่าน
+    await setPresence(false);
     // ไรเดอร์กดเอง = อีกหนึ่งในสองเหตุที่ล้างการลงทะเบียนเครื่องได้ (หลักการข้อ 2)
     logAuthEvent(currentRiderId, 'explicit_logout');
     await signOut(auth);
@@ -318,7 +319,7 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
         <HomeTab
           riderInfo={riderInfo}
           isOnline={isOnline}
-          onToggleOnline={() => setIsOnline(!isOnline)}
+          onToggleOnline={() => { void setPresence(!isOnline); }}
           balance={jobData.balance}
           incomingList={visibleIncomingList}
           activeList={jobData.activeList}

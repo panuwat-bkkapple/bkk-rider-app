@@ -1,5 +1,5 @@
 // src/hooks/useRiderData.ts
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, auth } from '../api/firebase';
 import { signOut } from 'firebase/auth';
@@ -49,6 +49,7 @@ const HISTORY_LIST_STATUSES = new Set<AnyJobStatus>([
 
 import { toast } from '../components/common/Toast';
 import { isSuspended } from '../utils/riderStanding';
+import { offlineWriteNeeded, presenceIsOn, PRESENCE_OFFLINE } from '../utils/presence';
 import { setAuthNotice } from '../utils/authNotice';
 
 export const useRiderData = (currentRiderId: string) => {
@@ -64,6 +65,10 @@ export const useRiderData = (currentRiderId: string) => {
 
   const [dispatchMode, setDispatchMode] = useState('manual');
   const [isOnline, setIsOnline] = useState(false);
+  // สวิตช์เริ่มตามฐานข้อมูลครั้งเดียวตอนเปิดแอป — เดิมเริ่มที่ปิดเสมอ ขณะที่
+  // riders/{id}/status ยังบอกว่า Online จากกะที่ยังไม่จบ แอดมินจึงเห็นคนละอย่างกับ
+  // ไรเดอร์ และ GPS ไม่เดิน (เดินเฉพาะตอน isOnline) = หมุดค้างที่เดิม
+  const presenceInitialised = useRef(false);
 
   const [riderInfo, setRiderInfo] = useState<RiderInfo>({
     name: 'กำลังโหลด...', id: currentRiderId, bankName: '-', accountNo: '-',
@@ -109,6 +114,15 @@ export const useRiderData = (currentRiderId: string) => {
         return;
       }
 
+      if (!presenceInitialised.current) {
+        presenceInitialised.current = true;
+        if (presenceIsOn(data.status)) {
+          // กะยังเปิดอยู่ในฐานข้อมูล → เปิดสวิตช์ตาม (GPS จะเริ่มเขียนต่อเอง)
+          // ref ตามมาเองผ่าน effect ข้างล่าง การกดปิดครั้งแรกจึงเห็น prev=true
+          setIsOnline(true);
+        }
+      }
+
       setRiderInfo(prev => ({
         ...prev,
         name: data.name || 'ไม่ระบุชื่อ',
@@ -143,6 +157,41 @@ export const useRiderData = (currentRiderId: string) => {
   // ที่จำนวนงานเปลี่ยน ซึ่งรีเซ็ตตัวหน่วง 10 วินาทีไปด้วย
   const activeJobCountRef = useRef(0);
 
+  // writer ของ Offline — ปิดรับต้องมีผลจริง (เจ้าของงานเคาะ 4 ก.ย. 2569)
+  //
+  // เป็นฟังก์ชัน explicit ไม่ใช่ effect ที่เฝ้า isOnline — เพราะตอนออกจากระบบต้อง
+  // **เขียน Offline ให้เสร็จก่อน signOut** ไม่งั้น write ไปถึง RTDB หลัง token หาย
+  // = PERMISSION_DENIED เงียบๆ แล้วแอดมินเห็นคนที่ออกไปแล้วว่ายังเปิดรับอยู่
+  // effect ควบคุมลำดับนั้นไม่ได้ (มันยิงหลัง commit ซึ่งอาจช้ากว่า await signOut)
+  //
+  // เขียนเฉพาะตอนสวิตช์เปลี่ยนจากเปิดเป็นปิด (offlineWriteNeeded) ไม่ใช่ทุกครั้งที่
+  // เป็นปิด — ค่าเริ่มต้นตอน mount คือปิด. คนอ่านฟิลด์นี้ (grep ครบ 3 รีโป):
+  // DispatcherPage กรอง Offline ออกจากรายชื่อจ่ายงาน · RiderManagement ซ่อนจุดสี ·
+  // broadcast (functions/riderStanding) ข้ามคนที่ Offline · actor.js/riderStanding
+  // อ่าน Offline เป็น "เคยอนุมัติ" (ไม่กระทบสิทธิ์). ไม่ใช้ onDisconnect — เหตุผลใน
+  // utils/presence.ts
+  // ref ตามค่า state ผ่าน effect (ไม่เขียน ref ใน callback — React Compiler lint
+  // ถือว่า ref ใน useCallback เป็นค่าที่แก้ไม่ได้) callback อ่านอย่างเดียว
+  const isOnlineRef = useRef(false);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+  const setPresence = useCallback(async (next: boolean) => {
+    const prev = isOnlineRef.current;
+    setIsOnline(next);
+    if (!offlineWriteNeeded(prev, next) || !currentRiderId) return;
+    try {
+      await update(ref(db, `riders/${currentRiderId}`), {
+        status: PRESENCE_OFFLINE,
+        last_updated: Date.now(),
+      });
+    } catch (err) {
+      // เขียนไม่ผ่าน (เน็ตหลุด) = แอดมินยังเห็นเป็นเปิดอยู่ชั่วคราว ไม่ใช่เรื่องที่ต้อง
+      // ขวางการกดปิดรับ แค่ให้เห็นใน log
+      console.warn('[presence] write Offline failed:', err);
+    }
+  }, [currentRiderId]);
+
   // Geolocation tracking
   useEffect(() => {
     if (!isOnline) return;
@@ -171,7 +220,7 @@ export const useRiderData = (currentRiderId: string) => {
       console.warn('Geolocation error:', error.message);
       if (error.code === 1) {
         toast.error(messages[error.code]);
-        setIsOnline(false);
+        void setPresence(false);
       }
     };
 
@@ -183,7 +232,7 @@ export const useRiderData = (currentRiderId: string) => {
     }, handleGeoError, { enableHighAccuracy: true, maximumAge: 10000 });
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isOnline, riderInfo.id]);
+  }, [isOnline, riderInfo.id, setPresence]);
 
   const jobData = useMemo(() => {
     const list = Array.isArray(jobs) ? jobs : [];
@@ -245,7 +294,7 @@ export const useRiderData = (currentRiderId: string) => {
 
   return {
     jobData, riderInfo, setRiderInfo,
-    isOnline, setIsOnline,
+    isOnline, setPresence,
     modelsData, conditionSets,
     jobsLoading, txLoading, modelsLoading, conditionsLoading,
     hasMoreTx, loadMoreTx,

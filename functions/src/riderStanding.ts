@@ -23,14 +23,12 @@
 //   ยังค้างเป็น `Busy` จากกะสุดท้าย **ยังได้ push งานใหม่อยู่** — กรองด้วยฟิลด์
 //   ผิดจึงผิดทั้งสองทิศ
 //
-// **ทำไมไม่กรอง presence เลย ไม่ใช่แค่ย้ายไปอ่านฟิลด์อื่น:** ไม่มีใครในทั้ง 3 รีโป
-// เขียน `Offline` (grep แล้ว) การกด "ปิดรับ" แค่หยุดเขียน GPS ค่าเดิมค้างอยู่
-// ในฐานข้อมูล presence ในฐานข้อมูลจึงแปลว่า "เคยเปิดรับงานสักครั้ง" ไม่ใช่
-// "กำลังเปิดรับอยู่" — ใช้กรองอะไรไม่ได้ และเงื่อนไข `status !== 'Offline'` ก็เป็น
-// ด่านที่ไม่มีทางไปถึง (ไม่มี writer) ซึ่ง CLAUDE.md บอกให้ลบ ไม่ใช่ ship.
-// การให้ "ปิดรับ" มีผลจริงต้องมี writer ของ Offline ก่อน ซึ่งกระทบ DispatcherPage
-// ของแอดมิน (กรอง `status !== 'Offline'` ออกจากรายชื่อจ่ายงาน) = การตัดสินใจ
-// product แยกต่างหาก ไม่ทำในใบนี้
+// **presence กรองได้แค่ทางเดียว: `Offline` = ไม่ส่ง** (เจ้าของงานเคาะ 4 ก.ย. 2569)
+// ตอน #152 ไม่มีใครในทั้ง 3 รีโปเขียน `Offline` เงื่อนไขนี้จึงเป็นด่านที่ไม่มีทาง
+// ไปถึงและถูกลบ — ตอนนี้แอปเขียน Offline เมื่อไรเดอร์กด "ปิดรับ" (useRiderData +
+// utils/presence.ts) ด่านจึงมีทางไปถึงแล้ว. **ห้ามกลับไปกรองด้วย Online/Busy**:
+// ค่าเหล่านั้นยังค้างได้เมื่อไรเดอร์ปิดแอปโดยไม่กดปิดรับ และคนที่อนุมัติแล้วแต่
+// ยังไม่เคยกดรับงานเลยถือค่าอนุมัติอยู่ในฟิลด์นี้ — สองกลุ่มนั้นต้องได้ push
 
 export const STANDING = {
   ACTIVE: "ACTIVE",
@@ -60,8 +58,13 @@ export function riderStanding(rider: RiderLike): RiderStanding {
   return STANDING.BLOCKED;
 }
 
-/** ไรเดอร์คนนี้ควรได้ push งาน broadcast ไหม — คือ "อนุมัติแล้ว" เท่านั้น
- *  (เหตุผลที่ไม่ดู presence อยู่ในคอมเมนต์หัวไฟล์) */
+/** ค่าที่แอปเขียนเมื่อไรเดอร์กด "ปิดรับ" — MIRROR ของ PRESENCE_OFFLINE ใน
+ *  src/utils/presence.ts */
+const PRESENCE_OFFLINE = "Offline";
+
+/** ไรเดอร์คนนี้ควรได้ push งาน broadcast ไหม — อนุมัติแล้ว **และ** ไม่ได้กดปิดรับ
+ *  (เหตุผลที่กรองได้แค่ทาง Offline อยู่ในคอมเมนต์หัวไฟล์) */
 export function isBroadcastRecipient(rider: RiderLike): boolean {
-  return riderStanding(rider) === STANDING.ACTIVE;
+  if (riderStanding(rider) !== STANDING.ACTIVE) return false;
+  return rider?.status !== PRESENCE_OFFLINE;
 }
