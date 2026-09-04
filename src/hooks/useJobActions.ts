@@ -9,6 +9,7 @@ import { formatCurrency } from '../utils/formatters';
 import type { RiderInfo, KYCRecord } from '../types';
 import { DISCREPANCY_CATEGORIES, KYC_FALLBACK_REASON_LABEL_TH } from '../types';
 import { JOB_STATUS, CANCEL_CATEGORY_LABEL_TH } from '../types/job-statuses';
+import { canonicalStatus, statusIs } from '../utils/statusCompare';
 import type { CancelCategory } from '../types/job-statuses';
 import { toast } from '../components/common/Toast';
 import { getCheckpointForStage, recordCheckpoint, resolveCheckpointTarget, STAGE_LABEL_TH } from '../utils/checkpoints';
@@ -131,29 +132,27 @@ export const useJobActions = (riderInfo: RiderInfo) => {
   const notifyStatusChange = (nextStatus: string, jobId: string, job: unknown) => {
     const shortJobId = jobId.slice(-4).toUpperCase();
 
-    // Notifications match the canonical status names from
-    // ../types/job-statuses (Rider Accepted, Rider En Route, ...).
-    // Legacy spellings ("Accepted", "Heading to Customer", ...) are
-    // accepted too so a stale call site doesn't drop a notification
-    // during the writer-rename rollout.
-    if (nextStatus === JOB_STATUS.RIDER_ACCEPTED || nextStatus === 'Accepted') {
+    // `next` is the canonical form of whatever the caller passed — a stale
+    // call site still using a legacy spelling lands on the same branch.
+    const next = canonicalStatus(nextStatus);
+    if (next === JOB_STATUS.RIDER_ACCEPTED) {
       sendAdminNotification('ไรเดอร์รับงาน', `${riderInfo.name} กำลังเดินทางไปจุดหมาย งาน #${shortJobId}`);
       sendCustomerNotification(job, 'จัดสรรไรเดอร์สำเร็จ!', `ไรเดอร์ ${riderInfo.name} กำลังเตรียมตัวเดินทางไปหาคุณ`);
-    } else if (nextStatus === JOB_STATUS.RIDER_EN_ROUTE || nextStatus === 'Heading to Customer') {
+    } else if (next === JOB_STATUS.RIDER_EN_ROUTE) {
       sendAdminNotification('ไรเดอร์ออกเดินทาง', `${riderInfo.name} กำลังมุ่งหน้าไปหาลูกค้า งาน #${shortJobId}`);
       sendCustomerNotification(job, 'ไรเดอร์กำลังเดินทาง!', `ไรเดอร์ ${riderInfo.name} กำลังมุ่งหน้าไปยังจุดนัดรับเครื่องของคุณแล้ว`);
-    } else if (nextStatus === JOB_STATUS.RIDER_ARRIVED || nextStatus === 'Arrived') {
+    } else if (next === JOB_STATUS.RIDER_ARRIVED) {
       sendAdminNotification('ถึงจุดหมาย', `${riderInfo.name} เดินทางถึงจุดหมายแล้ว งาน #${shortJobId}`);
       sendCustomerNotification(job, 'ไรเดอร์มาถึงแล้ว!', `ไรเดอร์เดินทางถึงจุดนัดหมายแล้ว กรุณาเตรียมตัวเครื่องให้พร้อมครับ`);
-    } else if (nextStatus === JOB_STATUS.BEING_INSPECTED) {
+    } else if (next === JOB_STATUS.BEING_INSPECTED) {
       sendAdminNotification('เริ่มตรวจสภาพ', `${riderInfo.name} เริ่มตรวจสภาพเครื่อง งาน #${shortJobId}`);
       sendCustomerNotification(job, 'กำลังตรวจสภาพเครื่อง', `ไรเดอร์กำลังดำเนินการตรวจสอบสภาพเครื่องของคุณอย่างละเอียด`);
-    } else if (nextStatus === JOB_STATUS.QC_REVIEW) {
+    } else if (next === JOB_STATUS.QC_REVIEW) {
       sendAdminNotification('ด่วน! รออนุมัติ QC', `${riderInfo.name} ส่งรูปตรวจเครื่อง #${shortJobId} เข้ามาแล้ว`);
       sendCustomerNotification(job, 'รออนุมัติราคา', `ช่างเทคนิคกำลังประเมินภาพถ่ายตัวเครื่องของคุณ กรุณารอสักครู่ครับ`);
-    } else if (nextStatus === JOB_STATUS.RIDER_RETURNING || nextStatus === 'In-Transit') {
+    } else if (next === JOB_STATUS.RIDER_RETURNING) {
       sendAdminNotification('กำลังกลับสาขา', `${riderInfo.name} กำลังนำเครื่อง #${shortJobId} กลับมาส่ง`);
-    } else if (nextStatus === JOB_STATUS.PENDING_QC) {
+    } else if (next === JOB_STATUS.PENDING_QC) {
       sendAdminNotification('ส่งมอบเครื่องสำเร็จ', `${riderInfo.name} จบงานและส่งเครื่อง #${shortJobId} เข้าสาขาเรียบร้อย`);
     }
   };
@@ -399,7 +398,7 @@ export const useJobActions = (riderInfo: RiderInfo) => {
     // เช็คสถานะฝั่ง client ไว้เพื่อไม่ให้ยิงไปโดนปฏิเสธในเคสที่รู้อยู่แล้ว —
     // แต่ตัวที่ตัดสินจริงคือ engine (from: [QC Review] + blockedWhenPaid) ซึ่ง
     // เห็นสถานะสด ไม่ใช่สำเนาที่หน้าจอถืออยู่
-    if (!job || job.status !== 'QC Review') {
+    if (!job || !statusIs(job, JOB_STATUS.QC_REVIEW)) {
       toast.error('ไม่สามารถย้อนกลับได้ แอดมินเริ่มดำเนินการกับงานนี้แล้ว');
       return;
     }

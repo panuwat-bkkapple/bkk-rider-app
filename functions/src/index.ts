@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import { isBroadcastRecipient } from "./riderStanding";
 import { loadNotificationSettings, riderPushDecision, SETTINGS_PATH } from "./notificationGate";
 import { isPayoutTransition } from "./statusPush";
+import { JOB_STATUS, canonicalStatus, rawStatusIs } from "./statusMatch";
 
 admin.initializeApp();
 
@@ -175,7 +176,7 @@ export const onJobStatusChanged = onValueWritten(
     if (
       job.reopened_at &&
       Date.now() - job.reopened_at < 2 * 60 * 1000 &&
-      (after === "Rider En Route" || after === "Heading to Customer")
+      rawStatusIs(after, JOB_STATUS.RIDER_EN_ROUTE)
     ) {
       await sendToRider(riderId, tokens, "🔄 งานกลับมาแล้ว!", `${deviceName} - ลูกค้าขอขายใหม่ในราคาเดิม กรุณากลับไปรับเครื่อง`, {
         type: "job_status",
@@ -185,42 +186,36 @@ export const onJobStatusChanged = onValueWritten(
       return;
     }
 
-    // Tolerant matching: every case lists both the legacy DB string and
-    // the canonical name from src/types/job-statuses.ts so the trigger
-    // keeps firing while writers still emit legacy values (Phase 2D will
-    // unify them). The functions/ package can't import the TS enum
-    // directly because it has its own rootDir, hence the inline pairs.
-    switch (after) {
-      case "Assigned":
-      case "Rider Assigned":
+    // Cases are canonical only — canonicalStatus (./statusMatch.ts) folds the
+    // legacy DB spellings in first, and its parity test proves the alias
+    // table matches src/types/job-statuses.ts for every status named here.
+    switch (canonicalStatus(after)) {
+      case JOB_STATUS.RIDER_ASSIGNED:
         title = "📦 งานใหม่เข้า!";
         body = `${deviceName} - ${job.customer_name || "ลูกค้า"}`;
         break;
 
-      case "QC Review":
+      case JOB_STATUS.QC_REVIEW:
         // Don't notify rider for this - they submitted it
         return;
 
-      case "Price Accepted":
+      case JOB_STATUS.PRICE_ACCEPTED:
         title = "✅ ลูกค้ายอมรับราคา";
         body = `${deviceName} - รอดำเนินการต่อ`;
         break;
 
-      case "Revised Offer":
+      case JOB_STATUS.REVISED_OFFER:
         title = "💰 QC ปรับราคาใหม่";
         body = `${deviceName} - กรุณาตรวจสอบ`;
         break;
 
-      case "Completed":
+      case JOB_STATUS.COMPLETED:
         title = "🎉 งานเสร็จสมบูรณ์";
         body = `${deviceName} - ขอบคุณครับ!`;
         break;
 
-      case "Paid":
-      case "PAID":
-      case "Waiting for Handover":
-      case "Waiting For Handover":
-      case "Payment Completed":
+      case JOB_STATUS.PAID:
+      case JOB_STATUS.WAITING_FOR_HANDOVER:
         // Finance transferred the payout to the customer. The rider already
         // handed the device over at QC, so for them this is the closing signal
         // that the money went out. Previously this status hit `default` and the
@@ -241,7 +236,7 @@ export const onJobStatusChanged = onValueWritten(
         }
         break;
 
-      case "Cancelled": {
+      case JOB_STATUS.CANCELLED: {
         // Differentiate cancel source — rider needs to know whether to expect
         // a call from the customer, a refund flow from admin, or just move on.
         const cancelledBy: string = job.cancelled_by || "";
@@ -262,8 +257,8 @@ export const onJobStatusChanged = onValueWritten(
         break;
       }
 
-      case "Returning To Customer":
-      case "Return Confirmed":
+      case JOB_STATUS.RETURNING_TO_CUSTOMER:
+      case JOB_STATUS.RETURN_CONFIRMED:
         title = "🔙 ตีเครื่องกลับ";
         body = `${deviceName} - เตรียมตีเครื่องคืนลูกค้า`;
         break;
@@ -380,10 +375,7 @@ export const onBroadcastJob = onValueWritten(
     // Only trigger for the broadcast bucket. Accept both the legacy
     // plural string and the canonical singular from job-statuses.ts so
     // this push keeps firing through the Phase 2D writer rename.
-    if (
-      (after !== "Active Leads" && after !== "Active Lead") ||
-      before === after
-    ) {
+    if (!rawStatusIs(after, JOB_STATUS.ACTIVE_LEAD) || before === after) {
       return;
     }
 
