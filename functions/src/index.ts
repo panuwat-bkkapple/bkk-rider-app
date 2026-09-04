@@ -3,6 +3,7 @@ import { onValueCreated, onValueWritten } from "firebase-functions/v2/database";
 import * as logger from "firebase-functions/logger";
 import { isBroadcastRecipient } from "./riderStanding";
 import { loadNotificationSettings, riderPushDecision, SETTINGS_PATH } from "./notificationGate";
+import { isPayoutTransition } from "./statusPush";
 
 admin.initializeApp();
 
@@ -211,22 +212,33 @@ export const onJobStatusChanged = onValueWritten(
         break;
 
       case "Completed":
-      case "Paid":
-      case "PAID":
         title = "🎉 งานเสร็จสมบูรณ์";
         body = `${deviceName} - ขอบคุณครับ!`;
         break;
 
+      case "Paid":
+      case "PAID":
       case "Waiting for Handover":
       case "Waiting For Handover":
       case "Payment Completed":
         // Finance transferred the payout to the customer. The rider already
         // handed the device over at QC, so for them this is the closing signal
         // that the money went out. Previously this status hit `default` and the
-        // rider got nothing when Finance paid. (B2C Finance writes the
-        // lowercase-'for' legacy string; B2B writes "Payment Completed".)
-        title = "💸 โอนเงินให้ลูกค้าแล้ว";
-        body = `${deviceName} - งานเสร็จสมบูรณ์`;
+        // rider got nothing when Finance paid.
+        //
+        // `Paid` sits in this case too because the B2B payout lands there once
+        // finance writes through the engine (b2b_payment_confirmed) instead of
+        // the legacy "Payment Completed" — but `Paid` is also where a B2C job
+        // ends after the rider's handover, which is NOT a payout. The pair
+        // before→after decides (./statusPush.ts); the non-payout `Paid` keeps
+        // the "งานเสร็จสมบูรณ์" copy it always had.
+        if (isPayoutTransition(before, after)) {
+          title = "💸 โอนเงินให้ลูกค้าแล้ว";
+          body = `${deviceName} - งานเสร็จสมบูรณ์`;
+        } else {
+          title = "🎉 งานเสร็จสมบูรณ์";
+          body = `${deviceName} - ขอบคุณครับ!`;
+        }
         break;
 
       case "Cancelled": {
@@ -261,10 +273,8 @@ export const onJobStatusChanged = onValueWritten(
         return;
     }
 
-    const isPayout =
-      after === "Waiting for Handover" ||
-      after === "Waiting For Handover" ||
-      after === "Payment Completed";
+    // Same decision as the switch above — one seam, not two lists to keep equal.
+    const isPayout = isPayoutTransition(before, after);
     await sendToRider(riderId, tokens, title, body, {
       type: "job_status",
       jobId,
