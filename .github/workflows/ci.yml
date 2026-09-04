@@ -118,6 +118,7 @@ jobs:
             functions/status-engine.js
             functions/status-transition-api.js
             src/utils/transactionLogger.ts
+            functions/notification-settings.js
           sparse-checkout-cone-mode: false
           persist-credentials: false
 

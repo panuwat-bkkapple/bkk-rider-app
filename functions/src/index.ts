@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import { onValueCreated, onValueWritten } from "firebase-functions/v2/database";
 import * as logger from "firebase-functions/logger";
 import { isBroadcastRecipient } from "./riderStanding";
+import { loadNotificationSettings, riderPushDecision, SETTINGS_PATH } from "./notificationGate";
 
 admin.initializeApp();
 
@@ -43,6 +44,16 @@ async function sendToRider(
   data?: Record<string, string>
 ): Promise<void> {
   if (tokens.length === 0) return;
+
+  // สวิตช์ของแอดมิน (bkk-system /notification-settings) ต้องครอบที่นี่ด้วย —
+  // ทุก trigger ในไฟล์นี้ส่งผ่านฟังก์ชันนี้ตัวเดียว จึงเป็น choke point ที่ถูกต้อง
+  // (เพิ่มที่ยิง push ใหม่ = ต้องผ่านตรงนี้ ไม่งั้นสวิตช์ปิดแล้วยังเด้ง)
+  const settings = await loadNotificationSettings(async () => (await db.ref(SETTINGS_PATH).get()).val());
+  const gate = riderPushDecision(settings, data?.type);
+  if (!gate.allowed) {
+    logger.info("Rider push skipped — disabled in notification settings", { riderId, type: data?.type, reason: gate.reason });
+    return;
+  }
 
   // Data-only message: SW builds the notification from `data`. Including a
   // top-level `notification` field would cause iOS PWA to auto-display ON TOP
