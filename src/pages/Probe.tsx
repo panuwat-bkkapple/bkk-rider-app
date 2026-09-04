@@ -74,6 +74,16 @@ const btn: React.CSSProperties = {
   background: '#fff', fontSize: 14, cursor: 'pointer',
 };
 
+const TIMEOUT = '__probe_timeout__';
+
+/** เพดานเวลาให้ promise ที่รอ server — ไม่มีทางค้างเงียบ ดูเหตุผลที่ (ง) */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(TIMEOUT)), ms)),
+  ]);
+}
+
 /** สมัครฟัง online/offline ให้ useSyncExternalStore (ไม่ setState ใน effect) */
 const subscribeOnline = (cb: () => void) => {
   window.addEventListener('online', cb);
@@ -156,17 +166,37 @@ export const Probe = ({ onBack }: { onBack: () => void }) => {
 
   // (ง) เขียนทับ path เดิมใต้ riders/{uid} ได้ไหม (กฎอนุญาต self-write อยู่แล้ว
   //     แต่มี .validate หลายตัวบนฟิลด์ที่แอดมินเป็นเจ้าของ — ต้องยืนยันว่าคีย์ใหม่ไม่ติด)
+  //
+  // **ข้อนี้ต้องออนไลน์** ต่างจาก (ก) และ (ค) ที่ตั้งใจให้กดตอนออฟไลน์ — มันรอผล
+  // จริงจาก server ทั้งสามจังหวะ ถ้าไม่มีเน็ต `set()` จะไม่ resolve และหน้าค้างที่
+  // RUNNING ตลอดไป (เจอจริงตอนวัดบนเครื่อง 3 ก.ย. 2569 — การ์ดไม่ได้เขียนบอกไว้
+  // ขณะที่การ์ด (ค) เขียนว่า "เปิดโหมดเครื่องบินก่อน" ความไม่สม่ำเสมอนั้นทำให้
+  // อ่านแล้วเข้าใจว่าทุกข้อวัดตอนออฟไลน์)
+  //
+  // กันสองชั้นโดยตั้งใจ: เช็ค navigator.onLine เพื่อ**อธิบาย**ให้ถูก และมี timeout
+  // เป็นตาข่าย เพราะ onLine โกหกได้ (captive portal / OS ว่าออนไลน์แต่ RTDB ต่อ
+  // ไม่ติด) — ด่านที่พังแล้วค้างเงียบคือสิ่งที่ commit นี้มาแก้ จะแก้ด้วยด่านที่
+  // พังแล้วค้างเงียบอีกตัวไม่ได้
   const runOverwrite = useCallback(async () => {
+    if (!navigator.onLine) {
+      put('overwrite', 'fail', 'ข้อนี้ต้องออนไลน์ — ปิดโหมดเครื่องบินแล้วกดใหม่');
+      return;
+    }
     put('overwrite', 'running', 'กำลังเขียนรอบแรก...');
     try {
       const path = `riders/${uid}/_probe/overwrite`;
-      await set(ref(db, path), { v: 1, at: Date.now() });
-      await set(ref(db, path), { v: 2, at: Date.now() });
-      const snap = await get(ref(db, path));
-      const v = snap.val()?.v;
+      const v = await withTimeout((async () => {
+        await set(ref(db, path), { v: 1, at: Date.now() });
+        await set(ref(db, path), { v: 2, at: Date.now() });
+        const snap = await get(ref(db, path));
+        return snap.val()?.v;
+      })(), 15_000);
       put('overwrite', v === 2 ? 'pass' : 'fail', `อ่านกลับได้ v=${JSON.stringify(v)} (ต้องเป็น 2)`);
     } catch (e) {
-      put('overwrite', 'fail', `throw: ${(e as Error)?.message ?? String(e)}`);
+      const msg = (e as Error)?.message ?? String(e);
+      put('overwrite', 'fail', msg === TIMEOUT
+        ? 'ครบ 15 วิแล้วยังไม่ได้ผลจาก server — เน็ตต่อไม่ถึง RTDB (ไม่ใช่เรื่องกฎเขียนทับ)'
+        : `throw: ${msg}`);
     }
   }, [uid]);
 
@@ -272,7 +302,7 @@ export const Probe = ({ onBack }: { onBack: () => void }) => {
       <Row
         result={results.overwrite}
         title="(ง) เขียนทับ path เดิมใต้ riders/{uid}"
-        note="เขียน v=1 แล้วทับด้วย v=2 แล้วอ่านกลับ — ต้องได้ 2 (ยืนยันว่ากฎ self-write ไม่ติด .validate ของฟิลด์ที่แอดมินเป็นเจ้าของ)"
+        note="ต้องออนไลน์ (ต่างจาก ก และ ค) — เขียน v=1 แล้วทับด้วย v=2 แล้วอ่านกลับ ต้องได้ 2 ยืนยันว่ากฎ self-write ไม่ติด .validate ของฟิลด์ที่แอดมินเป็นเจ้าของ"
         actions={<button style={btn} onClick={runOverwrite}>วัด</button>}
       />
 
