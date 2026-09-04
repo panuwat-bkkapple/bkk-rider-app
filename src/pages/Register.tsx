@@ -92,6 +92,13 @@ export const Register = ({ onBack }: { onBack: () => void }) => {
         vehicle: { plate: formData.plateNo, model: formData.vehicleModel },
         bank: { name: formData.bankName, account: formData.bankAccount },
         documents: { idCard: idCardUrl, selfie: selfieUrl, license: licenseUrl },
+        // เขียนทั้งสองฟิลด์ — approval_status คือฟิลด์ที่ทุกด่านอ่านจริง (rules ของ
+        // jobs ทั้ง 4 จุด · riderStanding · actor.js · broadcast) ส่วน status เป็น
+        // ฟิลด์ที่ presence จะเขียนทับภายในสิบวินาทีหลังกดรับงาน. เดิมเขียนแค่ status
+        // ผู้สมัครใหม่จึงมี approval_status === undefined และทุกตัวอ่านต้องพึ่ง
+        // fallback (#145) — rules ฝั่ง bkk-frontend-next อนุญาตให้เจ้าของเขียน
+        // 'Pending' ได้เฉพาะตอนสร้างแถว (ค่าอื่น/แก้ทีหลัง = แอดมินเท่านั้น)
+        approval_status: 'Pending',
         status: 'Pending',
         created_at: Date.now()
       });
