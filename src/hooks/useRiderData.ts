@@ -12,7 +12,7 @@ import { isRiderWalletTx, walletBalance, pendingWithdrawalHold } from '../utils/
 import { compareByAppointment } from '../utils/pickupSchedule';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
-import type { JobStatus } from '../types/job-statuses';
+import type { JobStatus, AnyJobStatus } from '../types/job-statuses';
 
 // Status sets that the home/active/history filters care about. Defined as
 // canonical values from JOB_STATUS; jobs in the DB still carry legacy
@@ -20,7 +20,11 @@ import type { JobStatus } from '../types/job-statuses';
 // so every comparison runs job.status through normalizeStatus() first,
 // which handles legacy aliases (and the "In-Transit" overload via
 // receive_method).
-const ACTIVE_LIST_STATUSES = new Set<JobStatus>([
+// `AnyJobStatus` ไม่ใช่ `JobStatus` — ตั้งแต่สาย B2B เข้า enum แล้ว
+// `normalizeStatus` คืนได้ทั้งสองเส้น **สมาชิกของเซ็ตไม่เปลี่ยน** มีแต่ B2C
+// เหมือนเดิม ที่กว้างขึ้นคือชนิดของ *คีย์ที่ค้นได้* — สถานะ B2B จึงตอบ false
+// ซึ่งเป็นพฤติกรรมที่ต้องการอยู่แล้ว (ไรเดอร์ไม่แตะงาน B2B เลย)
+const ACTIVE_LIST_STATUSES = new Set<AnyJobStatus>([
   JOB_STATUS.RIDER_ACCEPTED,
   JOB_STATUS.RIDER_EN_ROUTE,
   JOB_STATUS.RIDER_ARRIVED,
@@ -34,7 +38,7 @@ const ACTIVE_LIST_STATUSES = new Set<JobStatus>([
   JOB_STATUS.PAID,
 ]);
 
-const HISTORY_LIST_STATUSES = new Set<JobStatus>([
+const HISTORY_LIST_STATUSES = new Set<AnyJobStatus>([
   JOB_STATUS.PENDING_QC,
   JOB_STATUS.IN_STOCK,
   JOB_STATUS.PAID,
