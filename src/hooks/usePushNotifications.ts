@@ -4,6 +4,8 @@ import { getFirebaseMessaging } from '../api/firebase';
 import { getToken, onMessage, type Messaging } from 'firebase/messaging';
 import { ref, set, get, remove } from 'firebase/database';
 import { db } from '../api/firebase';
+import { toast } from '../components/common/Toast';
+import { alertLine, foregroundAlert } from '../utils/pushDisplay';
 
 // Stable per-device identifier so token refreshes overwrite the same DB entry
 // instead of creating new ones. Without this each Service Worker reinstall left
@@ -112,22 +114,47 @@ export const usePushNotifications = (riderId: string | null, onOpenChat?: (jobId
         };
         document.addEventListener('visibilitychange', visibilityHandler);
 
+        // แอปที่เปิดค้างอยู่ต้องแสดงเอง — SW ไม่ช่วย
+        //
+        // SDK (`@firebase/messaging@0.12.12`, `onPush` ใน `dist/index.sw.cjs`)
+        // ทำแบบนี้: **ถ้ามี client ที่ visible อยู่ ให้ส่ง payload เข้าหน้าเว็บ
+        // แล้ว return ทันที** ไม่ว่าข้อความจะมี `notification` หรือไม่ก็ตาม
+        // เมื่อแอปเปิดอยู่จึงไม่มีใครแสดงให้นอกจากคอลแบ็กนี้
+        //
+        // ของเดิมขึ้นต้นด้วย `if (payload.notification)` ซึ่งกลายเป็นกิ่งที่ไม่มี
+        // วันเข้าตั้งแต่ฝั่ง functions เปลี่ยนไปส่ง data-only เพื่อกัน iOS เด้งซ้ำ
+        // → งานใหม่ · broadcast · แชท **เงียบสนิทเมื่อแอปเปิดอยู่** ซึ่งคือสภาพ
+        // ของไรเดอร์ที่กำลังนั่งรองานพอดี (ดูรายงานสำรวจ 3 ก.ย. 2569 ข้อ A)
         onMessage(messaging, (payload) => {
-          const data = payload.data;
-          if (payload.notification) {
-            const notification = new Notification(payload.notification.title || 'BKK Rider', {
-              body: payload.notification.body,
-              icon: '/android-chrome-192x192.png',
-              data,
-            });
-            if (data?.type === 'chat' && data?.jobId && onOpenChat) {
-              notification.onclick = () => {
-                window.focus();
-                onOpenChat(data.jobId);
-                notification.close();
-              };
+          const alert = foregroundAlert(payload);
+          if (!alert) return;
+
+          // (1) แจ้งในแอปเสมอ — ทางเดียวที่การันตีว่าคนที่จ้องจออยู่เห็น
+          //     ระบบปฏิบัติการอาจกลืน notification ของแอปที่กำลังเปิดอยู่ได้
+          //     ถ้าพึ่ง (2) อย่างเดียวก็เท่ากับเดิมพันกับพฤติกรรมที่คุมไม่ได้
+          toast.info(alertLine(alert));
+
+          // (2) แล้วยิง notification จริงผ่าน registration ของ SW
+          //     **ห้ามกลับไปใช้ `new Notification()`** — WebKit ไม่รองรับ
+          //     constructor นั้นในเว็บแอปบน iOS ซึ่งเป็นแพลตฟอร์มที่ไรเดอร์ใช้
+          //     ของเดิมจึงแสดงไม่ได้อยู่ดีแม้จะเข้ากิ่งถูก
+          //     การกดใบนี้ถูกจัดการโดย `notificationclick` ใน SW อยู่แล้ว
+          //     (โพสต์ OPEN_CHAT กลับมาที่ handleSWMessage ข้างล่าง) จึงไม่ผูก
+          //     onclick เอง — ผูกเองแปลว่ามีกฎการเปิดแชทสองสำเนา
+          void (async () => {
+            try {
+              const reg = swRegistration || (await navigator.serviceWorker?.getRegistration());
+              await reg?.showNotification(alert.title, {
+                body: alert.body,
+                icon: '/android-chrome-192x192.png',
+                badge: '/android-chrome-192x192.png',
+                tag: alert.tag,
+                data: alert.data,
+              });
+            } catch (err) {
+              console.warn('[Push] foreground showNotification failed:', err);
             }
-          }
+          })();
         });
       } catch (error) {
         console.warn('Push notifications not available:', error);
