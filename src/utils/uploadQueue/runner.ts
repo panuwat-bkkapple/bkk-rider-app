@@ -87,6 +87,8 @@ async function attempt(item: QueuedUpload): Promise<{ outcome: AttemptOutcome; i
       occurred_at: cur.payload.occurred_at,
       job_id: cur.payload.job_id,
       evidence: cur.files.map((f) => ({ url: f.url })),
+      // ธงส่งซ้ำต้องไปถึง server เป็นค่า boolean เป๊ะ — ไม่ส่ง = ใบใหม่/retry
+      ...(cur.payload.resubmit === true ? { resubmit: true } : {}),
     });
     return { outcome: { ok: true }, item: cur };
   } catch (e) {

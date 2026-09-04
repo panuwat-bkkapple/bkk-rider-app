@@ -39,6 +39,10 @@ export interface EnqueueInput {
   payload: QueuedUpload['payload'];
   /** ออนไลน์อยู่ไหม — ส่งมาจาก caller เพื่อให้เทสได้ */
   online: boolean;
+  /** ส่งซ้ำใบที่ถูกตีกลับ: ใช้ id ของแถวเดิม และรูปใหม่ไม่บังคับ (รูปเดิมยังอยู่บน server)
+   *  งานในคิวที่ id ชนกัน (เช่นแถว `done` ของรอบแรก) ถูกทับ — ถูกต้องแล้ว
+   *  เพราะ server เป็นความจริงของใบนั้นไปแล้ว */
+  resubmitOf?: string;
 }
 
 /**
@@ -63,7 +67,10 @@ export async function enqueue(input: EnqueueInput): Promise<EnqueueResult> {
     };
   }
 
-  if (input.files.length === 0) {
+  const resubmit = typeof input.resubmitOf === 'string' && input.resubmitOf !== '';
+  // ใบใหม่ไม่มีรูป = ส่งไม่ได้ (เหตุผลทั้งหมดของฟีเจอร์) · ใบส่งซ้ำรูปเดิมอยู่บน
+  // server แล้ว server เป็นคนบังคับว่ารวมกันแล้วต้องมีอย่างน้อย 1
+  if (!resubmit && input.files.length === 0) {
     return { ok: false, reason: 'invalid_file', message: 'แนบรูปสลิปหรือหลักฐานอย่างน้อย 1 รูป' };
   }
   for (const f of input.files) {
@@ -71,7 +78,7 @@ export async function enqueue(input: EnqueueInput): Promise<EnqueueResult> {
     if (err) return { ok: false, reason: 'invalid_file', message: err };
   }
 
-  const id = uuid();
+  const id = resubmit ? (input.resubmitOf as string) : uuid();
   const compressed: QueuedUpload['files'] = [];
   for (const f of input.files) {
     // บีบล้มเหลว = ใช้ไฟล์ดิบ ดีกว่าปฏิเสธทั้งรายการ (ไฟล์ ≤ 20 MB ผ่าน rules
@@ -104,7 +111,7 @@ export async function enqueue(input: EnqueueInput): Promise<EnqueueResult> {
     created_at: Date.now(),
     kind: 'expense_evidence',
     files: compressed,
-    payload: input.payload,
+    payload: resubmit ? { ...input.payload, resubmit: true } : input.payload,
     state: 'pending',
     attempts: 0,
     next_attempt_at: Date.now(),

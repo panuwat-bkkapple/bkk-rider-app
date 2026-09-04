@@ -24,6 +24,8 @@ import { HistoryTab } from '../components/history/HistoryTab';
 import { WalletTab } from '../components/wallet/WalletTab';
 import { ExpenseClaimModal } from '../components/wallet/ExpenseClaimModal';
 import { useExpenseQueue } from '../hooks/useExpenseQueue';
+import { useRiderExpenses } from '../hooks/useRiderExpenses';
+import { mergeExpenseViews, type ServerExpenseRow } from '../utils/expenseClaims';
 import * as expenseQueueStore from '../utils/uploadQueue/store';
 import { WithdrawModal } from '../components/wallet/WithdrawModal';
 import { ProfileTab } from '../components/profile/ProfileTab';
@@ -63,7 +65,15 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
   // คิวเบิกค่าใช้จ่าย — ผูกกับ currentRiderId ไม่ใช่กับ mount เพราะตัวส่ง
   // ต้องรอ auth settle ก่อน (token ยังไม่พร้อม = ล้มฟรี)
   const expenseQueue = useExpenseQueue(currentRiderId);
+  const expenseRows = useRiderExpenses(currentRiderId);
+  // คิวในเครื่อง + แถวบน server = รายการเดียวที่ไรเดอร์เห็น (server ชนะเมื่อ id ชน)
+  const expenseViews = useMemo(
+    () => mergeExpenseViews(expenseQueue.items, expenseRows),
+    [expenseQueue.items, expenseRows],
+  );
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  /** ใบที่แอดมินตีกลับซึ่งกำลังถูกแก้ — เปิดโมดอลเดียวกันในโหมดแก้ไข */
+  const [resubmitRow, setResubmitRow] = useState<ServerExpenseRow | null>(null);
 
   // UI state
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -383,12 +393,18 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
           onLoadMoreTx={loadMoreTx}
           onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
           onOpenExpenseClaim={() => setIsExpenseModalOpen(true)}
-          expenseItems={expenseQueue.items}
+          expenseItems={expenseViews}
           expenseStaleCount={expenseQueue.staleCount}
           onRetryExpenses={() => void expenseQueue.flushNow()}
           onDeleteExpense={(id) => {
             // ลบได้ทางเดียวคือไรเดอร์กดยืนยันเอง (ยืนยันอยู่ในการ์ด)
             void expenseQueueStore.remove(id).then(() => expenseQueue.refresh());
+          }}
+          onResubmitExpense={(view) => {
+            if (view.row) {
+              setResubmitRow(view.row);
+              setIsExpenseModalOpen(true);
+            }
           }}
         />
       )}
@@ -507,11 +523,12 @@ export const RiderApp = ({ currentRiderId, onLogout, pendingChatJobId, onClearPe
       )}
 
       {isExpenseModalOpen && (
-        <ModalErrorBoundary onClose={() => setIsExpenseModalOpen(false)}>
+        <ModalErrorBoundary onClose={() => { setIsExpenseModalOpen(false); setResubmitRow(null); }}>
           <ExpenseClaimModal
             uid={currentRiderId}
             activeJobs={jobData.activeList}
-            onClose={() => setIsExpenseModalOpen(false)}
+            resubmitOf={resubmitRow ?? undefined}
+            onClose={() => { setIsExpenseModalOpen(false); setResubmitRow(null); }}
             onQueued={(queued) => {
               // ออนไลน์ = ส่งทันที (ตัวกระตุ้นข้อ 1 ของแผนคิว)
               // ออฟไลน์ = แค่ refresh ให้เห็นว่ารายการเข้าคิวแล้ว

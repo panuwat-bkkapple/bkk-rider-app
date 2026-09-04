@@ -225,7 +225,12 @@ export function buildExpenseRow(i: ExpenseRowInput): Record<string, unknown> {
   };
 }
 
-export type DuplicateAction = "create" | "return_existing" | "reject_not_owner";
+export type DuplicateAction =
+  | "create"
+  | "return_existing"
+  | "reject_not_owner"
+  /** ใบที่แอดมินตีกลับ (`needs_info`) และไรเดอร์**ตั้งใจ**ส่งใหม่ */
+  | "resubmit";
 
 /**
  * เจอ id ซ้ำแล้วทำอย่างไร
@@ -236,11 +241,102 @@ export type DuplicateAction = "create" | "return_existing" | "reject_not_owner";
  * แล้วถูกอนุมัติได้อีกรอบ = **จ่ายสองครั้ง** ซึ่งไม่มีใครเห็นจนกระทบยอด
  *
  * และ id ที่ชนกันข้ามคนต้องปฏิเสธ ไม่ใช่คืนแถวของคนอื่นให้ดู
+ *
+ * **`resubmit` ต้องมาจากธงที่ client ตั้งใจส่ง ไม่ใช่อนุมานจากสถานะ** —
+ * เคสจริงที่กันไว้: ไรเดอร์ส่งใบ → response หายกลางทาง → แอดมินตีกลับ →
+ * คิวยิง*ใบเดิม*ซ้ำ ถ้าตัดสินจากสถานะอย่างเดียว ใบเดิมจะเขียนทับข้อมูลที่
+ * แอดมินขอให้แก้แล้วเด้งกลับเป็น submitted เหมือนไม่เคยถูกตีกลับ
  */
 export function duplicateDecision(
-  existing: { rider_id?: unknown } | null | undefined,
-  uid: string
+  existing: { rider_id?: unknown; status?: unknown } | null | undefined,
+  uid: string,
+  opts: { resubmit?: boolean } = {}
 ): DuplicateAction {
   if (!existing) return "create";
-  return existing.rider_id === uid ? "return_existing" : "reject_not_owner";
+  if (existing.rider_id !== uid) return "reject_not_owner";
+  if (opts.resubmit === true && existing.status === "needs_info") return "resubmit";
+  return "return_existing";
+}
+
+export const MAX_EVIDENCE = 5;
+
+/**
+ * รวมหลักฐานเดิมกับที่ส่งมาใหม่ตอนส่งซ้ำ — ของเดิมอยู่ก่อน ไม่ซ้ำ url ไม่เกินเพดาน
+ *
+ * ทำไมไม่แทนที่ทั้งชุด: ใบถูกตีกลับเพราะ "ยอดไม่ตรง" ไม่ควรบังคับให้ถ่ายสลิป
+ * ใหม่ และการทิ้งรูปเดิมโดยไม่ตั้งใจแปลว่าหลักฐานที่แอดมินเคยเห็นหายไป
+ */
+export function mergeEvidence(
+  existing: unknown,
+  incoming: { url: string; uploaded_at: number }[]
+): { url: string; uploaded_at: number }[] {
+  const out: { url: string; uploaded_at: number }[] = [];
+  const seen = new Set<string>();
+  const push = (e: unknown) => {
+    if (!e || typeof e !== "object") return;
+    const url = (e as { url?: unknown }).url;
+    if (typeof url !== "string" || url === "" || seen.has(url)) return;
+    seen.add(url);
+    const at = Number((e as { uploaded_at?: unknown }).uploaded_at);
+    out.push({ url, uploaded_at: Number.isFinite(at) ? at : 0 });
+  };
+  (Array.isArray(existing) ? existing : []).forEach(push);
+  incoming.forEach(push);
+  return out.slice(0, MAX_EVIDENCE);
+}
+
+export interface ResubmitInput {
+  jobId: string | null;
+  category: string;
+  amountThb: number;
+  note: string;
+  evidence: { url: string; uploaded_at: number }[];
+  occurredAt: number;
+  now: number;
+  needsCeo: boolean;
+  late: boolean;
+  /** ชื่อไรเดอร์สำหรับแถวประวัติ — แอดมินอ่านชื่อ ไม่ได้อ่าน uid */
+  riderName: string;
+  uid: string;
+  historyKey: string;
+}
+
+/**
+ * patch สำหรับ `rider_expenses/{id}` ตอนส่งซ้ำ — **update ไม่ใช่ set**
+ *
+ * ฟิลด์ที่แอดมินเขียน (`reviewed_by_*`, `history/*` ของขั้นก่อน) ต้องอยู่ครบ
+ * ไม่งั้นการส่งซ้ำลบร่องรอยว่าใครตีกลับเพราะอะไร. `status` กลับเป็น
+ * `submitted` ตรงนี้ที่เดียว และ**ไม่มีพารามิเตอร์ให้ส่งค่าอื่น** ด้วยเหตุผล
+ * เดียวกับ `buildExpenseRow`
+ *
+ * `needs_ceo`/`late` ถูกคิดใหม่จากยอดใหม่ — ใบที่แก้ยอดจาก 400 เป็น 4,000
+ * ต้องกลับมาติดเพดานเหมือนใบใหม่ (เขียน `null` เมื่อเป็นเท็จ = ลบคีย์ทิ้ง
+ * เพราะธงเก่าที่ค้างจากยอดเดิมคือธงที่โกหก)
+ *
+ * `review_reason` ถูกล้างเพราะมันคือ "สิ่งที่ค้างอยู่ตอนนี้" ส่วนข้อความเดิม
+ * ยังอยู่ในแถว history ของขั้นตีกลับ
+ */
+export function buildResubmitPatch(i: ResubmitInput): Record<string, unknown> {
+  return {
+    job_id: i.jobId,
+    category: i.category,
+    amount_thb: i.amountThb,
+    note: i.note,
+    evidence: i.evidence,
+    occurred_at: i.occurredAt,
+    submitted_at: i.now,
+    resubmitted_at: i.now,
+    status: "submitted",
+    needs_ceo: i.needsCeo ? true : null,
+    late: i.late ? true : null,
+    review_reason: null,
+    [`history/${i.historyKey}`]: {
+      at: i.now,
+      action: "resubmit",
+      from: "needs_info",
+      to: "submitted",
+      by_rider_id: i.uid,
+      by_name: i.riderName,
+    },
+  };
 }

@@ -172,3 +172,45 @@ describe('เขียนลงเครื่องไม่ได้ — ห�
     expect(r.reason).toBe('storage_unavailable');
   });
 });
+
+describe('ส่งซ้ำใบที่ถูกตีกลับ (resubmitOf)', () => {
+  it('ใช้ id ของแถวเดิม ไม่ออก id ใหม่ — ไม่งั้น server เห็นเป็นใบใหม่แล้วใบเดิมค้างที่ needs_info ตลอดไป', async () => {
+    const r = await run({ resubmitOf: 'exp-old-1' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.id).toBe('exp-old-1');
+    const saved = vi.mocked(store.put).mock.calls[0][0] as QueuedUpload;
+    expect(saved.id).toBe('exp-old-1');
+  });
+
+  it('ติดธง resubmit ลง payload ให้ runner ส่งถึง server', async () => {
+    await run({ resubmitOf: 'exp-old-1' });
+    const saved = vi.mocked(store.put).mock.calls[0][0] as QueuedUpload;
+    expect(saved.payload.resubmit).toBe(true);
+  });
+
+  it('ใบใหม่ไม่ติดธง — ธงที่ติดผิดคือการทับใบที่ถูกตีกลับโดยไม่ตั้งใจ', async () => {
+    await run();
+    const saved = vi.mocked(store.put).mock.calls[0][0] as QueuedUpload;
+    expect(saved.payload.resubmit).toBeUndefined();
+  });
+
+  it('ส่งซ้ำโดยไม่มีรูปใหม่ได้ (รูปเดิมอยู่บน server) — แก้แค่ยอดไม่ต้องถ่ายสลิปใหม่', async () => {
+    const r = await run({ resubmitOf: 'exp-old-1', files: [] });
+    expect(r.ok).toBe(true);
+    const saved = vi.mocked(store.put).mock.calls[0][0] as QueuedUpload;
+    expect(saved.files).toEqual([]);
+  });
+
+  it('ใบใหม่ไม่มีรูปยังถูกปฏิเสธเหมือนเดิม', async () => {
+    const r = await run({ files: [] });
+    expect(r.ok).toBe(false);
+    expect(store.put).not.toHaveBeenCalled();
+  });
+
+  it('รูปใหม่ของใบส่งซ้ำอยู่ใต้โฟลเดอร์ของแถวเดิม — server ตรวจว่า url อยู่ใต้ uid ของผู้ยิง', async () => {
+    await run({ resubmitOf: 'exp-old-1' });
+    const saved = vi.mocked(store.put).mock.calls[0][0] as QueuedUpload;
+    expect(saved.files[0].storage_path.startsWith('riders/riderA/expenses/exp-old-1/')).toBe(true);
+  });
+});
