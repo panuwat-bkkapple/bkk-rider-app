@@ -1,6 +1,7 @@
 // src/components/profile/ProfileTab.tsx
 import { X, CreditCard, FileText, ChevronRight, LogOut, Camera, Loader2 } from 'lucide-react';
 import type { RiderInfo } from '../../types';
+import { PushStatusCard } from '../common/PushStatusCard';
 
 interface ProfileTabProps {
   riderInfo: RiderInfo;
@@ -60,6 +61,9 @@ export const ProfileTab = ({ riderInfo, onGoHome, onOpenBank, onOpenDoc, onLogou
           <ChevronRight size={20} className="text-gray-300" />
         </button>
       </div>
+
+      {/* การแจ้งเตือน — โชว์เสมอ ให้ตรวจ/ซ่อมได้แม้ตอนสถานะดี */}
+      <PushStatusCard variant="full" />
 
       {/* Logout */}
       <button
