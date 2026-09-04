@@ -22,7 +22,7 @@ const CATEGORIES = [
 interface Props {
   uid: string;
   /** งานที่ไรเดอร์ถืออยู่ตอนนี้ — ให้เลือกแนบได้ ไม่บังคับ */
-  activeJobs: { id: string; ref?: string }[];
+  activeJobs: { id: string; OID?: string; ref_no?: string; model?: string }[];
   onClose: () => void;
   /** ส่งสำเร็จ/เข้าคิวแล้ว — caller เป็นคน flush กับ refresh */
   onQueued: (queued: boolean) => void;
@@ -220,9 +220,22 @@ export const ExpenseClaimModal = ({ uid, activeJobs, onClose, onQueued }: Props)
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-white"
               >
                 <option value="">ไม่แนบกับงานใด</option>
-                {activeJobs.map((j) => (
-                  <option key={j.id} value={j.id}>{j.ref || `#${j.id.slice(-4)}`}</option>
-                ))}
+                {/* ป้ายต้องเป็นสิ่งที่ไรเดอร์เพิ่งเห็นบนการ์ดงาน ไม่ใช่ id ภายใน —
+                    `OID || ref_no || #4ตัวท้าย` คือสำนวนเดียวกับ ActiveJobCard /
+                    IncomingJobCard / HistoryTab / ChatModal / JobDetailPage และ
+                    ต่อด้วยรุ่นเครื่องซึ่งเป็นพาดหัวของการ์ดงานทุกใบ
+
+                    เดิมบรรทัดนี้อ่าน `j.ref` ซึ่ง **ไม่มีอยู่จริงในระบบ** (ไม่มีที่ไหน
+                    เขียนฟิลด์ชื่อนี้เลย) มันจึงตกไปที่ `#4ตัวท้าย` ของ push key
+                    ทุกครั้ง = รายการเป็น #AQsf #TMBp ที่ไม่มีความหมายกับใคร */}
+                {activeJobs.map((j) => {
+                  const oid = j.OID || j.ref_no || `#${j.id.slice(-4)}`;
+                  return (
+                    <option key={j.id} value={j.id}>
+                      {j.model ? `${oid} · ${j.model}` : oid}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           )}
