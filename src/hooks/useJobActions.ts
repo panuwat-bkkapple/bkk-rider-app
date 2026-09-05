@@ -21,6 +21,7 @@ import { markOfferAccepted, markOfferRejected } from '../utils/offerLog';
 import { EVENT_CHECKPOINT_STAGE, RIDER_EVENT, engineErrorCode, transitionErrorMessage } from '../utils/riderTransitions';
 import type { RiderEvent } from '../utils/riderTransitions';
 import type { CheckpointStage } from '../utils/jobTimeline';
+import { handoverPatch } from '../utils/handoverPatch';
 
 /**
  * รูปงานเท่าที่เส้นทาง event ต้องรู้จัก
@@ -429,11 +430,14 @@ export const useJobActions = (riderInfo: RiderInfo) => {
       // job fall back to that fixed amount and starved the wallet.
       // Just mark the job ready for settlement and let the function
       // compute the actual fee.
+      //
+      // rider_fee_status ผ่าน handoverPatch เท่านั้น — เขียน Pending เฉพาะเมื่อยังว่าง
+      // Paid/Waived เป็นปลายทาง ห้ามทับ (ใบที่แอดมิน waive แล้วเคยกลับมานั่งในคิวได้)
       const ok = await runTransition(
         job.id,
         RIDER_EVENT.RETURN_ARRIVED,
         'ไรเดอร์ส่งมอบเครื่องเข้าสาขาเรียบร้อยแล้ว',
-        { completed_at: Date.now(), rider_fee_status: 'Pending' },
+        handoverPatch(job, Date.now()),
         jobLists
       );
       // engine ปฏิเสธ = แจ้งไปแล้วใน runTransition ห้ามขึ้น "ปิดจ๊อบสำเร็จ" ทับ

@@ -25,6 +25,11 @@
 - **สวิตช์ `settings/notifications` ของแอดมินครอบ `sendToRider` แล้ว** (#155, `notificationGate.ts`) fail-open — หมวดของ type ฝั่งนี้ (`chat`/`job_status`/`broadcast_job`) เป็น MIRROR ของ `EVENT_CATEGORY` ใน `bkk-system/functions/notification-settings.js` ซึ่งเป็นต้นทาง เทส parity อ่านไฟล์นั้น (CI sparse-checkout มาให้)
 - **ไม่ต้อง patch `atob` แบบแอปแอดมิน** — SDK เวอร์ชันที่ติดตั้งเติม padding base64url ให้เองแล้ว (ตรวจจากซอร์สใน node_modules) ลอกมาคือของที่ไม่มีวันถูกเรียก
 
+## ค่ารอบ — แอปนี้เขียน `rider_fee_status` ได้ค่าเดียวคือ Pending และห้ามทับปลายทาง (5 ก.ย. 2569)
+- `handleCompleteJob` ส่ง patch ผ่าน `utils/handoverPatch.ts` เท่านั้น — เขียน `'Pending'` เฉพาะเมื่อยังว่าง `Paid`/`Waived` เป็นปลายทาง (`types/riderFeeStatus.ts`). ก่อนหน้านี้เขียนทับทุกครั้ง ใบที่แอดมิน waive แล้ว (บัญชีเจ้าของ / ไม่มีไรเดอร์ — bkk-system PR #731) กลับมานั่งในคิวอนุมัติได้ถ้าไรเดอร์กดส่งมอบซ้ำ
+- **ต้อง deploy แอปนี้ก่อน Martens รัน `bkk-system/scripts/reverse-owner-rider-payouts.cjs --apply`** ไม่งั้นสคริปต์ waive แล้วแอปเก่าเขียน Pending กลับได้
+- แอปนี้ไม่เขียน `Paid`/`Waived` เอง (สองค่านั้นเป็นของ callable `adminRiderFeeApprove`/`adminRiderFeeWaive` ที่ bkk-system) และอ่าน `'Paid'` แค่ที่ `HistoryJobSheet` — ใบ Waived ขึ้นว่ายังไม่จ่าย ซึ่งตรงความจริง
+
 ## MIRROR ข้ามรีโป — รายการที่มีด่าน
 | ของ | สำเนาที่นี่ | ต้นทาง/สำเนาอื่น | ด่าน |
 |---|---|---|---|
@@ -33,6 +38,7 @@
 | หมวดของ push type | `functions/src/notificationGate.ts` | `bkk-system/functions/notification-settings.js` | `riderNotificationGate.test.ts` (อ่านไฟล์ต้นทาง) |
 | สูตร WHT | `src/utils/riderWht.ts` | `bkk-system/functions/rider-wht.js` + `src/utils/riderWht.ts` | — |
 | job statuses | `src/types/job-statuses.ts` | อีก 2 รีโป | — |
+| `rider_fee_status` (Pending/Paid/Waived) | `src/types/riderFeeStatus.ts` | `bkk-system/src/types/riderFeeStatus.ts` + `functions/rider-fee-status.js` ที่นั่น | `riderFeeStatusParity.test.ts` (อ่านไฟล์ต้นทาง) |
 
 **เพิ่มเทสที่อ่านไฟล์ของ bkk-system = ต้องเพิ่ม path นั้นใน sparse-checkout ของ `.github/workflows/ci.yml`** — ด่านในขั้น "ตรวจว่า sparse-checkout ครอบไฟล์ที่เทสอ้างครบ" จะแดงพร้อมบอกชื่อไฟล์ (#143 — ก่อนหน้านั้นเทสข้ามเงียบๆ ทุกรอบ)
 
