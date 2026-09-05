@@ -1,6 +1,7 @@
 // src/utils/jobHelpers.ts
 import type { Job, Device } from '../types';
 import { parseAppointmentWindow, formatWindow } from './pickupSchedule';
+import { JOB_STATUS, normalizeStatus } from '../types/job-statuses';
 
 export const getDisplayPrice = (job: any): number => {
   if (job.net_payout !== undefined && job.net_payout !== null) return Number(job.net_payout);
@@ -95,10 +96,57 @@ export const normalizeVehicleType = (value: unknown): 'motorcycle' | 'car' | nul
   return null;
 };
 
+// งานถูกยกเลิกไหม — เทียบผ่าน normalizeStatus เพราะ DB มีสะกด legacy ค้างถาวร
+export const isCancelledJob = (job: any): boolean =>
+  normalizeStatus(job?.status, job?.receive_method) === JOB_STATUS.CANCELLED;
+
+// ค่ารอบที่ไรเดอร์ "ได้จริง" จากงานใบนี้ — คืน null เมื่อไม่มี
+//
+// ทำไมต้องดูสถานะงานประกอบ ไม่ใช่ดูแค่ `rider_fee > 0`: ตั้งแต่ bkk-system เริ่ม
+// ตรึงยอดตอนกดรับ (onRiderAssignedRecalcEstimate → rider_fee + rider_fee_meta.
+// frozen_source='accepted') งานทุกใบมี `rider_fee` ตั้งแต่วินาทีที่กดรับ ซึ่งเป็น
+// **คำสัญญาว่าจะได้เท่านี้ถ้าทำงานจบ** ไม่ใช่เงินที่ได้แล้ว. ลูกค้ายกเลิกหลังกดรับ
+// (เว็บลูกค้า /api/cancel-order) เขียนแค่ status + cancelled_* ไม่ล้าง rider_id
+// ไม่ล้าง rider_fee — ยอดที่ตรึงไว้จึงค้างอยู่บนงานที่ยกเลิก แล้วหน้าประวัติเคยอ่าน
+// มันเป็น "รายได้" (เคสจริง 5 ก.ย. 2569: กดรับ ยังไม่ออกเดินทาง ลูกค้ายกเลิก
+// ขึ้น +฿324 ทั้งบนการ์ดและยอดรวม)
+//
+// กติกา: งานที่ยกเลิกจะมีค่ารอบก็ต่อเมื่อยอดนั้น **เข้าคิวจ่ายเงินแล้ว**
+// (`rider_fee_status` = Pending/Paid) — ทางเดียวที่เกิดได้คือค่าเสียเวลาเมื่อ
+// ลูกค้ายกเลิกหลังไรเดอร์ออกเดินทางแล้ว (bkk-system reviewAmendment
+// customer_request_cancel เขียน rider_fee + rider_fee_status='Pending' คู่กัน).
+// ยอดที่ตรึงไว้เฉยๆ โดยไม่มีสถานะ = ไม่มีใครจะจ่าย (RiderSettlements ฝั่งแอดมิน
+// กรองด้วย rider_fee_status === 'Pending' เท่านั้น) จึงต้องไม่โชว์เป็นเงิน
+//
+// งานที่ไม่ได้ยกเลิก ยอดที่ตรึงไว้คือเงินที่จะได้แน่ (trigger ตอนส่งมอบข้าม
+// เพราะมียอดแล้ว และตั้ง Pending ให้) จึงนับตามเดิม
+// คำศัพท์ของ `rider_fee_status` (สถานะการจ่ายค่ารอบ) — คนละแกนกับสถานะงาน แม้
+// คำว่า 'Paid' จะพ้องกัน อ่านผ่านสองฟังก์ชันนี้ที่เดียว ไม่เทียบ literal ตามจุดใช้
+// (statusLiteralCensus.test.ts จะนับ `=== 'Paid'` เป็นการเทียบสถานะงานเพราะ
+// ตัวจำแนกดูแต่ข้อความ — ค่าคงที่ตรงนี้คือทางที่ทำให้มันไม่ต้องเดา)
+// ค่าที่ระบบเขียนจริงมีสองค่า: 'Pending' (onJobHandedOverCalcRiderFee /
+// ค่าเสียเวลา / คำแย้งหมุด ตั้งตอนเข้าคิว) และ 'Paid' (Finance อนุมัติจ่าย)
+const RIDER_FEE_STATUS_PENDING = 'Pending';
+const RIDER_FEE_STATUS_PAID = 'Paid';
+export const riderFeePaid = (job: any): boolean => job?.rider_fee_status === RIDER_FEE_STATUS_PAID;
+export const riderFeeQueued = (job: any): boolean =>
+  job?.rider_fee_status === RIDER_FEE_STATUS_PENDING || riderFeePaid(job);
+
+export const earnedRiderFee = (job: any): number | null => {
+  const fee = Number(job?.rider_fee);
+  if (!Number.isFinite(fee) || fee <= 0) return null;
+  if (isCancelledJob(job)) return riderFeeQueued(job) ? fee : null;
+  return fee;
+};
+
 export const getRiderPayout = (job: any, vehicleType?: 'motorcycle' | 'car' | null): number => {
   // จ่ายจริง/คิดปิดงานแล้ว = เลขนั้นคือคำตอบ ไม่ใช่ประมาณการอีกต่อไป
-  const settled = Number(job?.rider_fee);
-  if (Number.isFinite(settled) && settled > 0) return settled;
+  const settled = earnedRiderFee(job);
+  if (settled !== null) return settled;
+
+  // งานที่ยกเลิกไม่มี "ประมาณการ" ให้ตกไปหา — ประมาณการคือเงินของงานที่จะทำ
+  // และงานนี้จะไม่ถูกทำแล้ว
+  if (isCancelledJob(job)) return 0;
 
   // ยังไม่รู้ยานพาหนะ (แอดมินไม่ได้ตั้ง) = ใช้ตัวเลขกลางที่เก็บไว้ ไม่เดา
   const byVehicle = job?.rider_fee_estimate_meta?.fee_by_vehicle;
@@ -130,3 +178,31 @@ export const sumRiderPayout = (
     (sum, job) => sum + getRiderPayout(job, vehicleType),
     0,
   );
+
+// สรุปหัวหน้าประวัติ — "จำนวนงาน" นับเฉพาะงานที่ทำจบ งานที่ยกเลิกแยกออกมาเป็น
+// ตัวเลขของตัวเอง (ไม่ใช่นับรวมเงียบๆ และไม่ใช่ซ่อนหาย) ส่วนรายได้เดินผ่าน
+// getRiderPayout ทุกใบ ค่าเสียเวลาของงานที่ยกเลิกจึงยังเข้ายอดรวมได้ตามกติกาข้างบน
+export const historyStats = (
+  jobs: any[],
+  vehicleType?: 'motorcycle' | 'car' | null,
+): { income: number; count: number; cancelled: number } => {
+  const list = Array.isArray(jobs) ? jobs : [];
+  const cancelled = list.filter(isCancelledJob).length;
+  return {
+    income: sumRiderPayout(list, vehicleType),
+    count: list.length - cancelled,
+    cancelled,
+  };
+};
+
+// ป้ายว่าใครยกเลิกงาน — `cancelled_by` เก็บรูป 'customer' | 'customer:…' |
+// 'admin' | 'admin:…' | 'system' | 'rider:{id}' (ดู buildAdminStatusLabel ใน
+// bkk-system). ค่าที่ไม่รู้จัก/ไม่มี = บอกแค่ว่ายกเลิก ไม่เดาว่าใคร
+export const cancelSourceLabel = (cancelledBy: unknown): string => {
+  const raw = typeof cancelledBy === 'string' ? cancelledBy : '';
+  if (raw === 'customer' || raw.startsWith('customer:')) return 'ลูกค้ายกเลิกงาน';
+  if (raw === 'admin' || raw.startsWith('admin:')) return 'แอดมินยกเลิกงาน';
+  if (raw === 'system') return 'ระบบยกเลิกงานอัตโนมัติ';
+  if (raw.startsWith('rider:')) return 'คุณยกเลิกงานนี้';
+  return 'งานถูกยกเลิก';
+};

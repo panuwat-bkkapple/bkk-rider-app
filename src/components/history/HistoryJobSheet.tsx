@@ -6,7 +6,7 @@
 // ไม่มีการเขียนอะไร และ query เพิ่มมีแค่ reviews/{review_id} ใบเดียว
 import { useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { AlertTriangle, Bike, CheckCircle2, Clock, MapPinOff, MessageSquare, Navigation, Star, X } from 'lucide-react';
+import { AlertTriangle, Ban, Bike, CheckCircle2, Clock, MapPinOff, MessageSquare, Navigation, Star, X } from 'lucide-react';
 import { functions } from '../../api/firebase';
 import { toast } from '../common/Toast';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -19,7 +19,7 @@ import {
   travelToCustomerMs,
 } from '../../utils/jobTimeline';
 import { useJobReview } from '../../hooks/useJobReview';
-import { JOB_STATUS, normalizeStatus } from '../../types/job-statuses';
+import { cancelSourceLabel, earnedRiderFee, isCancelledJob, riderFeePaid } from '../../utils/jobHelpers';
 
 interface HistoryJobSheetProps {
   job: any;
@@ -80,11 +80,12 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
     }
   };
 
-  const canonical = normalizeStatus(job.status, job.receive_method);
-  const isCancelled = canonical === JOB_STATUS.CANCELLED;
-  const fee = Number(job.rider_fee);
-  const hasFee = Number.isFinite(fee) && fee > 0;
-  const feePaid = job.rider_fee_status === 'Paid';
+  const isCancelled = isCancelledJob(job);
+  // ค่ารอบที่ได้จริง — งานที่ยกเลิกมี `rider_fee` ที่ตรึงไว้ตอนกดรับค้างอยู่ได้
+  // ซึ่งไม่ใช่เงิน (ดู earnedRiderFee) ห้ามอ่าน job.rider_fee ตรงที่นี่
+  const fee = earnedRiderFee(job) ?? 0;
+  const hasFee = fee > 0;
+  const feePaid = riderFeePaid(job);
 
   // บรรทัดเสริมใต้แต่ละจุด — เล่าเฉพาะสิ่งที่มีข้อมูลจริง
   const subLines = (entry: (typeof timeline)[number]): string[] => {
@@ -116,7 +117,9 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
   };
 
   return (
-    <div className="fixed inset-0 z-50">
+    // z-[100] ให้เท่ากับโมดอลตัวอื่นของแอป — BottomNav เป็น fixed z-50 และอยู่หลัง
+    // แท็บใน DOM ที่ z-50 เท่ากันแถบล่างจึงลอยทับ sheet (เห็นจริงบน iOS 5 ก.ย. 2569)
+    <div className="fixed inset-0 z-[100]">
       <div className="absolute inset-0 bg-gray-900/45" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 bg-white rounded-t-[2rem] shadow-2xl max-h-[88vh] overflow-y-auto hide-scrollbar px-6 pb-7 pt-2.5 flex flex-col gap-3 animate-in slide-in-from-bottom">
 
@@ -220,18 +223,35 @@ export const HistoryJobSheet = ({ job, onClose, onOpenChat }: HistoryJobSheetPro
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5 flex items-center gap-3">
               <Clock size={22} className="text-amber-700 shrink-0" />
               <div className="flex-grow min-w-0">
-                <div className="text-[13px] font-bold text-amber-900">ค่ารอบรอเข้ากระเป๋า</div>
-                <div className="text-[10px] text-amber-700">รอฝ่ายการเงินอนุมัติค่ารอบ</div>
+                <div className="text-[13px] font-bold text-amber-900">
+                  {isCancelled ? 'ค่าเสียเวลารอเข้ากระเป๋า' : 'ค่ารอบรอเข้ากระเป๋า'}
+                </div>
+                <div className="text-[10px] text-amber-700">
+                  {isCancelled ? 'ลูกค้ายกเลิกหลังคุณออกเดินทางแล้ว · รอฝ่ายการเงินอนุมัติ' : 'รอฝ่ายการเงินอนุมัติค่ารอบ'}
+                </div>
               </div>
               <div className="text-[15px] font-bold text-amber-700 shrink-0">{formatCurrency(fee)}</div>
             </div>
           )
-        ) : (
-          !isCancelled && (
-            <div className="border border-dashed border-gray-200 rounded-2xl px-4 py-3 text-[11px] text-gray-400 text-center">
-              งานนี้ยังไม่ได้กำหนดค่ารอบ — ติดต่อแอดมิน
+        ) : isCancelled ? (
+          // ยกเลิกโดยไม่มีค่าเสียเวลา — บอกตรงๆ ว่าไม่มีเงินจากงานนี้ ไม่ปล่อยให้
+          // ช่องว่างถูกอ่านว่า "ระบบยังคิดไม่เสร็จ"
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+            <Ban size={22} className="text-gray-400 shrink-0" />
+            <div className="flex-grow min-w-0">
+              <div className="text-[13px] font-bold text-gray-700">{cancelSourceLabel(job.cancelled_by)}</div>
+              <div className="text-[10px] text-gray-500">
+                {job.cancelled_at ? `${formatDate(job.cancelled_at)} · ` : ''}ไม่มีค่ารอบสำหรับงานนี้
+              </div>
+              {job.cancel_reason && (
+                <div className="text-[10px] text-gray-400 mt-0.5 leading-snug break-words">เหตุผล: {String(job.cancel_reason)}</div>
+              )}
             </div>
-          )
+          </div>
+        ) : (
+          <div className="border border-dashed border-gray-200 rounded-2xl px-4 py-3 text-[11px] text-gray-400 text-center">
+            งานนี้ยังไม่ได้กำหนดค่ารอบ — ติดต่อแอดมิน
+          </div>
         )}
 
         {/* แย้งหมุดลูกค้า — ค่าวิ่งคิดจากเส้นทาง "หมุด → สาขา" ถ้าหมุดผิด

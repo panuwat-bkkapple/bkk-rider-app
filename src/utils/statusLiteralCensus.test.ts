@@ -19,7 +19,7 @@ const ROOT = resolve(__dirname, '../..');
 const SCAN_DIRS = [resolve(ROOT, 'src'), resolve(ROOT, 'functions/src')];
 
 // ---- เพดาน (วัดจริง 4 ก.ย. 2569 หลัง sweep) ----
-const CANONICAL_CEILING = 3; // วัดจริง 4 ก.ย. 2569 — 2 = query list ใน useRiderJobs, 1 = rider_fee_status === 'Paid' (HistoryJobSheet, ไม่ใช่สถานะงาน แต่ตัวจำแนกแยกไม่ออก)
+const CANONICAL_CEILING = 2; // วัดจริง 5 ก.ย. 2569 — 2 = query list ใน useRiderJobs (เคยเป็น 3: rider_fee_status === 'Paid' ใน HistoryJobSheet ซึ่งไม่ใช่สถานะงาน ย้ายไปอ่านผ่าน riderFeePaid ใน jobHelpers แล้ว)
 
 /**
  * ไฟล์ที่ยังถือ literal สะกดเก่าโดยเจตนา — จำนวนเป๊ะ พร้อมเหตุผล
