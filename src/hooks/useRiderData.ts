@@ -12,40 +12,10 @@ import { isRiderWalletTx, walletBalance, pendingWithdrawalHold } from '../utils/
 import { compareByAppointment } from '../utils/pickupSchedule';
 import type { RiderInfo } from '../types';
 import { JOB_STATUS, RECEIVE_METHOD, normalizeStatus } from '../types/job-statuses';
-import type { JobStatus, AnyJobStatus } from '../types/job-statuses';
-
-// Status sets that the home/active/history filters care about. Defined as
-// canonical values from JOB_STATUS; jobs in the DB still carry legacy
-// strings ("Assigned", "Active Leads" plural, "PAID", "In-Transit", ...)
-// so every comparison runs job.status through normalizeStatus() first,
-// which handles legacy aliases (and the "In-Transit" overload via
-// receive_method).
-// `AnyJobStatus` ไม่ใช่ `JobStatus` — ตั้งแต่สาย B2B เข้า enum แล้ว
-// `normalizeStatus` คืนได้ทั้งสองเส้น **สมาชิกของเซ็ตไม่เปลี่ยน** มีแต่ B2C
-// เหมือนเดิม ที่กว้างขึ้นคือชนิดของ *คีย์ที่ค้นได้* — สถานะ B2B จึงตอบ false
-// ซึ่งเป็นพฤติกรรมที่ต้องการอยู่แล้ว (ไรเดอร์ไม่แตะงาน B2B เลย)
-const ACTIVE_LIST_STATUSES = new Set<AnyJobStatus>([
-  JOB_STATUS.RIDER_ACCEPTED,
-  JOB_STATUS.RIDER_EN_ROUTE,
-  JOB_STATUS.RIDER_ARRIVED,
-  JOB_STATUS.BEING_INSPECTED,
-  JOB_STATUS.QC_REVIEW,
-  JOB_STATUS.PRICE_ACCEPTED,
-  JOB_STATUS.REVISED_OFFER,
-  JOB_STATUS.PAYOUT_PROCESSING,
-  JOB_STATUS.RIDER_RETURNING, // legacy "In-Transit" on Pickup
-  JOB_STATUS.WAITING_FOR_HANDOVER,
-  JOB_STATUS.PAID,
-]);
-
-const HISTORY_LIST_STATUSES = new Set<AnyJobStatus>([
-  JOB_STATUS.PENDING_QC,
-  JOB_STATUS.IN_STOCK,
-  JOB_STATUS.PAID,
-  JOB_STATUS.COMPLETED,
-  JOB_STATUS.RETURN_CONFIRMED, // legacy "Returned"
-  JOB_STATUS.CLOSED_LOST,
-]);
+// แบ่ง active/history ผ่านกติกาเดียวใน utils/riderJobLists (ChatModal ถามที่เดียวกัน)
+// — ลิสต์สถานะที่เคยพิมพ์มือตรงนี้ขาด Sent To QC Lab / Sold ฯลฯ แล้วงานหายจากจอ
+// ไรเดอร์ตอนแอดมินส่ง QC (5 ก.ย. 2569) ดูหัวไฟล์นั้น
+import { classifyRiderJob, historyTimeOf } from '../utils/riderJobLists';
 
 import { toast } from '../components/common/Toast';
 import { isSuspended } from '../utils/riderStanding';
@@ -270,16 +240,11 @@ export const useRiderData = (currentRiderId: string) => {
       .sort(compareByAppointment);
 
     return {
-      activeList: myJobs.filter((j: any) => {
-        const canonical = normalizeStatus(j.status, j.receive_method);
-        return canonical && ACTIVE_LIST_STATUSES.has(canonical) && !j.completed_at;
-      }),
+      activeList: myJobs.filter((j: any) => classifyRiderJob(j) === 'active'),
       incomingList,
-      history: myJobs.filter((j: any) => {
-        const canonical = normalizeStatus(j.status, j.receive_method);
-        if (canonical === JOB_STATUS.CANCELLED) return true;
-        return canonical && HISTORY_LIST_STATUSES.has(canonical) && j.completed_at;
-      }).sort((a: any, b: any) => (b.completed_at || 0) - (a.completed_at || 0)),
+      history: myJobs
+        .filter((j: any) => classifyRiderJob(j) === 'history')
+        .sort((a: any, b: any) => historyTimeOf(b) - historyTimeOf(a)),
       balance,
       pendingWithdrawals,
       transactions: myTx

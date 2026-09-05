@@ -31,6 +31,11 @@
 - **`rider_fee_status` อ่านผ่าน `riderFeePaid` / `riderFeeQueued` ที่เดียว** — คำว่า `'Paid'` พ้องกับสถานะงาน `statusLiteralCensus.test.ts` แยกไม่ออก การเทียบ literal ตามจุดใช้จะดันเพดานสำมะโนขึ้น
 - ด่าน: `src/utils/jobHelpers.test.ts` (ตาราง injection ในหัวไฟล์ — ข้อที่เขียวมีเหตุผลกำกับ ไม่ได้แต่ง fixture)
 
+## งานหายจากจอไรเดอร์ตอนแอดมินส่ง QC — ลิสต์สถานะที่พิมพ์มือ (5 ก.ย. 2569)
+- **อาการ:** แอดมินกด "ผ่าน QC → ส่ง QC Lab" (หรือ Ready To Sell / Reserved / Sold) แล้วงานหายจากแท็บประวัติของไรเดอร์ทันที ไม่มี error — `useRiderData` เคยกรองประวัติด้วยเซ็ตสถานะที่พิมพ์มือ (Pending QC / In Stock / Paid / Completed / Return Confirmed / Closed (Lost)) ซึ่งไม่มีสถานะที่คลังเดินต่อ และ `ChatModal` มีเซ็ตของตัวเองอีกชุดที่ขาดตัวเดียวกัน (กฎมีสองคนอ่าน ติดตั้งไว้คนละที่)
+- **วันนี้:** `src/utils/riderJobLists.ts` (pure) เป็นเจ้าของ active/history ที่เดียว ตัดสินด้วย **phase** ของสถานะ (`INVENTORY`/`TERMINAL`/`PENDING_CLOSE`/`EXCEPTION` = ส่วนของไรเดอร์จบ → history **โดยไม่ต้องมี `completed_at`** เพราะแอดมินรับเครื่องเข้าคลังผ่าน engine ได้โดยไม่ประทับ) — เพิ่มสถานะใหม่ใน `job-statuses.ts` แล้วจัด phase = ครอบเอง ไม่ต้องแก้ที่นี่. ผู้อ่านสองคน (`useRiderData` · `ChatModal`) ห้ามพิมพ์เซ็ตเอง มีเทสสแกน source กันไว้
+- ด่าน: `src/utils/riderJobLists.test.ts` (injection 5 ตัว แดงทุกตัว ตารางในหัวไฟล์)
+
 ## MIRROR ข้ามรีโป — รายการที่มีด่าน
 | ของ | สำเนาที่นี่ | ต้นทาง/สำเนาอื่น | ด่าน |
 |---|---|---|---|
