@@ -9,8 +9,7 @@ import {
   jobDistanceKm,
   totalJobMs,
 } from '../../utils/jobTimeline';
-import { getRiderPayout, sumRiderPayout } from '../../utils/jobHelpers';
-import { JOB_STATUS, normalizeStatus } from '../../types/job-statuses';
+import { getRiderPayout, historyStats, isCancelledJob } from '../../utils/jobHelpers';
 import { HistoryJobSheet } from './HistoryJobSheet';
 import type { HistoryFilter } from '../../types';
 
@@ -45,13 +44,10 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat,
       if (historyFilter === 'this_week') return time >= todayStart - (7 * 86400000);
       return true;
     });
-    return {
-      list: filtered,
-      stats: {
-        income: sumRiderPayout(filtered, vehicleType),
-        count: filtered.length
-      }
-    };
+    // รายได้/จำนวนงานผ่าน historyStats ที่เดียว — งานที่ลูกค้ายกเลิกหลังกดรับ
+    // ยังอยู่ในลิสต์ (ไรเดอร์ควรเห็นว่าเกิดอะไรขึ้น) แต่ไม่ใช่งานที่ทำจบและ
+    // ไม่ใช่รายได้ ดูคอมเมนต์ earnedRiderFee ใน jobHelpers
+    return { list: filtered, stats: historyStats(filtered, vehicleType) };
   }, [history, historyFilter, vehicleType]);
 
   // Sheet อ่านงานสดจาก list เสมอ (ไม่ freeze snapshot ตอนกด) — ค่ารอบ/รีวิว
@@ -91,6 +87,9 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat,
           <div className="border-l border-emerald-400 pl-6">
             <p className="text-xs text-emerald-100 mb-1">จำนวนงาน</p>
             <p className="text-3xl font-bold">{displayData.stats.count} <span className="text-sm font-normal">งาน</span></p>
+            {displayData.stats.cancelled > 0 && (
+              <p className="text-[10px] text-emerald-100 mt-1">ยกเลิก {displayData.stats.cancelled} งาน (ไม่นับ)</p>
+            )}
           </div>
         </div>
       </div>
@@ -109,7 +108,11 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat,
             const distanceKm = jobDistanceKm(job);
             const totalMs = totalJobMs(job);
             const hasMetaRow = acceptedAt !== null || distanceKm !== null || totalMs !== null;
-            const cancelled = normalizeStatus(job.status, job.receive_method) === JOB_STATUS.CANCELLED;
+            const cancelled = isCancelledJob(job);
+            // งานที่ยกเลิก payout เป็น 0 เว้นแต่ได้ค่าเสียเวลา (earnedRiderFee)
+            // — ป้ายเงินขึ้นเฉพาะตอนมีเงินจริง ไม่ขึ้น "+฿0" ให้อ่านเหมือนได้เงิน
+            const payout = getRiderPayout(job, vehicleType);
+            const showPayout = !cancelled || payout > 0;
             return (
               <button
                 key={job.id}
@@ -124,6 +127,11 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat,
                         {job.OID || job.ref_no || `#${job.id.slice(-4)}`}
                       </span>
                       <span>{formatDate(job.completed_at || job.updated_at || job.created_at)}</span>
+                      {/* ป้ายยกเลิก — การ์ดเคยไม่มีป้ายนี้ ทั้งที่ sheet ข้างในมี
+                          ไรเดอร์จึงเห็นงานที่ยกเลิกหน้าตาเหมือนงานที่ทำจบ */}
+                      {cancelled && (
+                        <span className="bg-rose-50 text-rose-600 font-bold px-2 py-0.5 rounded-full">ยกเลิก</span>
+                      )}
                       {/* ป้ายรีวิว — งานที่ยกเลิกไม่มีวันได้รีวิว ไม่ต้องขึ้นป้าย */}
                       {!cancelled && (job.is_reviewed ? (
                         <span className="flex items-center gap-1 bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full">
@@ -137,9 +145,13 @@ export const HistoryTab = ({ history, historyFilter, onFilterChange, onOpenChat,
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
-                      +{formatCurrency(getRiderPayout(job, vehicleType))}
-                    </div>
+                    {showPayout ? (
+                      <div className="text-base font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-xl">
+                        +{formatCurrency(payout)}
+                      </div>
+                    ) : (
+                      <div className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-xl">ไม่มีค่ารอบ</div>
+                    )}
                     <ChevronRight size={16} className="text-gray-300" />
                   </div>
                 </div>

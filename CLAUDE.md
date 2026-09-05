@@ -25,6 +25,12 @@
 - **สวิตช์ `settings/notifications` ของแอดมินครอบ `sendToRider` แล้ว** (#155, `notificationGate.ts`) fail-open — หมวดของ type ฝั่งนี้ (`chat`/`job_status`/`broadcast_job`) เป็น MIRROR ของ `EVENT_CATEGORY` ใน `bkk-system/functions/notification-settings.js` ซึ่งเป็นต้นทาง เทส parity อ่านไฟล์นั้น (CI sparse-checkout มาให้)
 - **ไม่ต้อง patch `atob` แบบแอปแอดมิน** — SDK เวอร์ชันที่ติดตั้งเติม padding base64url ให้เองแล้ว (ตรวจจากซอร์สใน node_modules) ลอกมาคือของที่ไม่มีวันถูกเรียก
 
+## ค่ารอบที่ตรึงตอนกดรับ ≠ รายได้ (5 ก.ย. 2569)
+- **bkk-system ตรึง `rider_fee` ลงงานตั้งแต่วินาทีที่กดรับ** (`onRiderAssignedRecalcEstimate` → `rider_fee_meta.frozen_source='accepted'`) โดย**ไม่**ตั้ง `rider_fee_status` — มันคือคำสัญญาว่าจะได้เท่านี้ถ้าทำงานจบ ไม่ใช่เงินที่ได้แล้ว. ลูกค้ายกเลิกจากเว็บ (`/api/cancel-order`) ไม่ล้าง `rider_id`/`rider_fee` ยอดจึงค้างบนงานที่ยกเลิก แล้วหน้าประวัติเคยอ่านเป็น "+฿324" ทั้งบนการ์ดและยอดรวม (ไรเดอร์กดรับ ยังไม่ออกเดินทาง)
+- **ทุกที่ที่โชว์เงินของงานอ่านผ่าน `getRiderPayout` / `earnedRiderFee` (`src/utils/jobHelpers.ts`) เท่านั้น** — งานที่ยกเลิกจะมีค่ารอบก็ต่อเมื่อยอด**เข้าคิวจ่ายแล้ว** (`rider_fee_status` Pending/Paid = ค่าเสียเวลาที่ `reviewAmendment` ฝั่ง bkk-system เขียนคู่กัน) และ**ไม่ตกไปหาประมาณการ**. ฝั่งแอดมินปลอดภัยอยู่แล้ว (`RiderSettlements` กรอง `rider_fee_status === 'Pending'`) นี่เป็นบั๊กการแสดงผลของแอปนี้ล้วนๆ
+- **`rider_fee_status` อ่านผ่าน `riderFeePaid` / `riderFeeQueued` ที่เดียว** — คำว่า `'Paid'` พ้องกับสถานะงาน `statusLiteralCensus.test.ts` แยกไม่ออก การเทียบ literal ตามจุดใช้จะดันเพดานสำมะโนขึ้น
+- ด่าน: `src/utils/jobHelpers.test.ts` (ตาราง injection ในหัวไฟล์ — ข้อที่เขียวมีเหตุผลกำกับ ไม่ได้แต่ง fixture)
+
 ## MIRROR ข้ามรีโป — รายการที่มีด่าน
 | ของ | สำเนาที่นี่ | ต้นทาง/สำเนาอื่น | ด่าน |
 |---|---|---|---|
