@@ -1,4 +1,5 @@
 // src/types/index.ts
+import type { RiderFeeStatus } from './riderFeeStatus';
 
 export interface RiderInfo {
   name: string;
@@ -44,7 +45,8 @@ export interface Job {
   final_price?: number;
   net_payout?: number;
   rider_fee?: number;
-  rider_fee_status?: string;
+  /** 'Pending' | 'Paid' | 'Waived' — ดู types/riderFeeStatus.ts (แถวเก่าอาจเป็นค่าอื่น/ว่าง) */
+  rider_fee_status?: RiderFeeStatus | string;
   pickup_fee?: number;
   /** ส่วนลดค่าไรเดอร์ที่บริษัทรับภาระ — หัก pickup_fee (ไม่แตะค่าจ้างไรเดอร์) */
   rider_fee_discount?: number;

@@ -119,6 +119,7 @@ jobs:
             functions/status-transition-api.js
             src/utils/transactionLogger.ts
             functions/notification-settings.js
+            src/types/riderFeeStatus.ts
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -134,7 +135,7 @@ jobs:
         id: sibling_placed
         run: |
           missing=""
-          for f in functions/status-engine.js functions/status-transition-api.js src/utils/transactionLogger.ts; do
+          for f in functions/status-engine.js functions/status-transition-api.js src/utils/transactionLogger.ts src/types/riderFeeStatus.ts; do
             [ -f "bkk-system-src/$f" ] || missing="$missing $f"
           done
           if [ -z "$missing" ]; then
