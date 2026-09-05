@@ -1,7 +1,6 @@
 // src/components/chat/ChatModal.tsx
 import { useState, useRef, useEffect } from 'react';
-import { JOB_STATUS } from '../../types/job-statuses';
-import { statusIn } from '../../utils/statusCompare';
+import { isRiderJobDone } from '../../utils/riderJobLists';
 import { X, MessageSquare, Send, Image as ImageIcon } from 'lucide-react';
 import { uploadImageToFirebase } from '../../utils/uploadImage';
 import { sendAdminNotification } from '../../utils/notifications';
@@ -14,12 +13,6 @@ interface ChatModalProps {
   riderInfo: RiderInfo;
   onClose: () => void;
 }
-
-// canonical only — statusIn normalizes the legacy spellings ('PAID', 'Returned') first
-const CLOSED_STATUSES = new Set<string>([
-  JOB_STATUS.PENDING_QC, JOB_STATUS.IN_STOCK, JOB_STATUS.PAID, JOB_STATUS.COMPLETED,
-  JOB_STATUS.RETURN_CONFIRMED, JOB_STATUS.CLOSED_LOST, JOB_STATUS.CANCELLED,
-]);
 
 export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   const [chatText, setChatText] = useState('');
@@ -43,7 +36,9 @@ export const ChatModal = ({ chatJob, riderInfo, onClose }: ChatModalProps) => {
   const chatMessages = Object.values(chats).sort((a: any, b: any) => a.timestamp - b.timestamp);
 
   const orderIdDisplay = chatJob?.OID || chatJob?.ref_no || `#${chatJob?.id?.slice(-4)}`;
-  const isClosed = statusIn(chatJob, CLOSED_STATUSES);
+  // "จบงาน" = กติกาเดียวกับแท็บประวัติ (utils/riderJobLists) — ลิสต์ที่เคยพิมพ์ไว้
+  // ตรงนี้ขาด Sent To QC Lab / Sold เหมือนกับที่ useRiderData เคยขาด
+  const isClosed = isRiderJobDone(chatJob);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
