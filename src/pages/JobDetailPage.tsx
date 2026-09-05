@@ -259,7 +259,7 @@ export const JobDetailPage = ({
                   <div key={d.device_id || i} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
                     <div className="flex justify-between items-start gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-gray-800 truncate">{d.model}</p>
+                        <p className="text-sm font-bold text-gray-800 truncate">{devices.length > 1 ? `#${i + 1} ` : ''}{d.model}</p>
                         {d.variant && <p className="text-xs text-gray-500 mt-0.5">{d.variant}</p>}
                         {d.inspection_status && (
                           <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-semibold">
