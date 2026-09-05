@@ -514,7 +514,8 @@ export const InspectionModal = ({ job, modelsData, conditionSets, onClose, onSub
                 <ChevronLeft size={20} />
               </button>
               <h3 className="text-base font-bold text-gray-900 leading-tight flex-1 line-clamp-1">
-                {activeDevice?.model}
+                {/* #N เหมือนในรายการ — จอนี้คือตอนที่ไรเดอร์ต้องรู้จริงว่าถืออยู่ใบไหน (เจอตอนทดสอบ 5 ก.ย. 2569: รายการมีป้ายแต่หัวจอตรวจไม่มี) */}
+                {activeDeviceIndex !== null && devicesList.length > 1 ? `#${activeDeviceIndex + 1} ` : ''}{activeDevice?.model}
               </h3>
               <span className="text-[11px] font-bold text-gray-400">ขั้น {step}/{STEPS.length}</span>
             </div>
